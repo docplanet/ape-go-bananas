@@ -70,6 +70,20 @@ config — `acceptEdits` set through config comes back as `default`, while the
 same value set through `setMode` is adopted. Config is advisory; `setMode` and
 `setConfigOption` are authoritative. Read `currentModeId`; do not deduce it.
 
+## Never commit a raw ACP wire capture
+
+Capturing both directions of the stdio stream is the right way to verify
+anything about a real agent — it is how every live finding in
+`docs/STATUS.md` was established. But the Claude adapter emits the signed-in
+user's account block in its own responses:
+
+    "account":{"plan":"max","email":"...","organization":"..."}
+
+So a raw capture carries the operator's email and plan. Keep captures in a
+scratch directory, never in the tree, and quote only the specific frames you
+need into docs — redacted. This repo is a sibling of a deliberately
+anonymized one; a capture committed once lives in history forever.
+
 ## Environment
 
 - **Node 24 only** (`.nvmrc`). On Node 20 the test runner does not discover
