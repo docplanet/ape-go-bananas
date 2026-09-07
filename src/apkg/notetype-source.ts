@@ -1,0 +1,18 @@
+// Verbatim source values for the Custom Cloze notetype, transcribed directly
+// from anki/custom-cloze.json (the AnkiConnect createModel payload this
+// pipeline actually applies) via JSON.parse + JSON.stringify -- never
+// hand-retyped, so this cannot drift from the source by a transcription slip.
+// See docs/research/apkg-format.md §5d for how these map onto the schema-11
+// `models` JSON blob.
+
+export const CUSTOM_CLOZE_MODEL_NAME = "Custom Cloze";
+
+export const CUSTOM_CLOZE_FIELD_NAMES: readonly string[] = ["Text","Extra","Source"];
+
+export const CUSTOM_CLOZE_CSS = ".card { font-family: Menlo, baskerville, sans;\n        font-size: 19px; line-height: 1.5; max-width: 760px; margin: 0 auto; padding: 8px;\n        text-align: center; color: #D7DEE9; background-color: #333B45; }\n.nightMode.card, .night_mode .card { color: #D7DEE9 !important; background-color: #333B45 !important; }\n.cloze { font-weight: bold; color: MediumSeaGreen; }\n.nightMode .cloze, .night_mode .cloze { color: MediumSeaGreen !important; }\nb { color: #C695C6 !important; }\ni { color: IndianRed !important; }\nu { color: #5EB3B3 !important; }\nimg { max-width: 100%; height: auto; border-radius: 6px; margin: 8px 0; }\nhr { border: none; border-top: 1px solid #555; margin: 14px 0; }\n.btn-reveal { display: inline-block; background: #3b4654; color: #D7DEE9;\n              border: 1px solid #51606e; border-radius: 6px; padding: 5px 12px;\n              font-size: 14px; cursor: pointer; margin: 12px 0 6px; }\n.btn-reveal:hover { background: #45525f; }\n.extra { text-align: center; background: #2c343d; border-radius: 8px;\n         padding: 10px 14px; margin: 6px 0; }\n.src { color: #839496; font-size: 13px; font-style: italic; margin-top: 10px; }";
+
+export const CUSTOM_CLOZE_TEMPLATE_NAME = "Cloze";
+
+export const CUSTOM_CLOZE_QFMT = "{{cloze:Text}}";
+
+export const CUSTOM_CLOZE_AFMT = "{{cloze:Text}}{{#Extra}}<div class=\"extra\">{{Extra}}</div>{{/Extra}}{{#Source}}<div class=\"src\">{{Source}}</div>{{/Source}}";

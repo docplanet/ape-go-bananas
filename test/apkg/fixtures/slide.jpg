@@ -1,0 +1,1 @@
+APE apkg-writer test fixture -- not a real image, just deterministic bytes for zip/media round-trip checks.

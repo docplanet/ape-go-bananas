@@ -1,0 +1,211 @@
+# A.P.E.
+
+Deck-pipeline structural checks, a `.apkg` (Anki package) writer, a CLI over
+both, and (planned; see [Status](#status)) an ACP (Agent Client Protocol)
+client, in TypeScript. Nobody has defined what the letters stand for — none
+of this repo's code, comments, or docs do either.
+
+## Requirements
+
+- Node 24.12.0, pinned in `.nvmrc`. A system-default `node` on an older major
+  will run the wrong runtime silently; use the pinned version explicitly if
+  your shell isn't already picking up `.nvmrc`.
+- Zero runtime dependencies. `typescript` and `@types/node` are the only
+  devDependencies. Tests run on `node --test`, not a separate framework.
+
+## Build and test
+
+```sh
+npm install
+npm run build      # tsc: src/**/*.ts -> dist/**/*.js (+ .d.ts)
+npm run typecheck  # builds, then tsc --noEmit over src + test together
+npm test           # builds, then runs dist-backed tests under node --test
+```
+
+## CLI
+
+```sh
+npm run build
+node dist/cli/index.js <command> [args]      # or: ./dist/cli/index.js ... (executable, shebang)
+# or, once installed/linked (package.json's "bin"): ape <command> [args]
+```
+
+Three subcommands, each `-h`/`--help`-able on its own. `check` and `review`
+mirror `tools/check_deck.py` and `tools/render_review.py` from the engine
+repo closely enough that a user of those two scripts should recognize both
+immediately; `export` has no Python original — it is this project's own
+replacement for the AnkiConnect hand-off step, using `src/apkg` instead.
+
+- **`ape check <deck.json> [--no-media] [--transcript <file>]... [--inventory <file>]`**
+  Runs the structural checks (`src/checks`) and prints the exact report
+  `check_deck.py` prints, in the same order (`docs/research/check-deck-contract.md`
+  §9). Exit codes match the original: `0` clean, `1` the deck has findings
+  (or a deck/transcript/inventory failed to load), `2` a usage error or a
+  deck that parses but names zero notes.
+- **`ape review <deck.json> [-o <out.html>]`**
+  Renders one self-contained HTML review page (`src/checks`'
+  `renderReview`) — every note's front faces, back, and Extra block. `-o`
+  defaults to `review.html` next to `deck.json`, the same default
+  `render_review.py` uses.
+- **`ape export <deck.json> [-o <out.apkg>] [--deck-name <name>] [--media-dir <dir>]`**
+  Writes a real `.apkg` via `src/apkg`'s `writeApkg`. `--deck-name` defaults
+  to the deck's own `notes[0].deckName` (every note must share one deckName;
+  a multi-deck `deck.json` needs one `export` call per deck — the module
+  rejects a mismatch by design, see `src/apkg/collection.ts`). `-o` defaults
+  to `<deck>.apkg` next to `deck.json`.
+
+`check` and `review` resolve the Anki media directory the same way the two
+Python originals do: the `ANKI_MEDIA` environment variable if set, otherwise
+whichever of the two hardcoded per-profile paths exists on disk (the macOS
+path is tried first regardless of host OS — a filesystem probe, not a
+platform check). `export`'s `--media-dir` uses the same resolution when
+omitted.
+
+### The TS-to-test story
+
+Test files live under `test/` as `.ts` and run directly — no `tsx`, no
+`ts-node`, no test framework. Node 24 strips TypeScript syntax from a `.ts`
+file with no flag needed, and bare `node --test` (no path argument)
+auto-discovers any file under a directory named `test/`, so `npm test` is
+just that plus a build first.
+
+The one rule this depends on: **test files import runtime code from the
+compiled `dist/`, never from `src/` directly.** Source files import each
+other with `.js`-extensioned specifiers, per NodeNext module resolution, so
+that `tsc` emits a `dist/` that runs standalone as plain JavaScript — that
+compiled output is the actual product, not a side effect of testing.
+
+Running a `src/*.ts` file raw, instead, hits those same `.js` specifiers
+before there's any compiled `.js` for Node to find. Confirmed by hand: a
+`.ts` file that imports a sibling via `./sibling.js` cannot be run directly
+when only `sibling.ts` exists on disk — Node does not fall back from `.js` to
+`.ts`, it throws `ERR_MODULE_NOT_FOUND`. Importing from `dist/` instead
+sidesteps this entirely, because there the specifier and the on-disk file are
+both genuinely `.js`.
+
+Concretely, in a test file:
+
+```ts
+import { checkNote } from '../dist/checks/foo.js';  // runtime value: from dist
+import type { Finding } from '../dist/types.js';    // type only: also from dist,
+                                                      // resolved via dist/types.d.ts
+```
+
+Type-only imports need the `type` keyword. Node's stripping works one file at
+a time with no cross-file knowledge of what's a type versus a value — an
+import written without `type` is left as a real runtime import, and if the
+name is actually type-only (as everything in `src/types.ts` is), that import
+has no matching runtime export and throws at test time. Always write `import
+type` for anything that's only ever a type.
+
+Because tests resolve against `dist/` (gitignored, so a fresh clone starts
+without it), both `npm test` and `npm run typecheck` build first — already
+wired into both scripts, nothing extra to run by hand.
+
+The one exception: a `.ts` helper that only other test files import (nothing
+under `src/` needs it) can use an explicit `.ts` specifier instead —
+`tsconfig.test.json` turns on `allowImportingTsExtensions` for exactly that
+case, and it resolves fine at runtime because the specifier and the on-disk
+file agree there too.
+
+## Layout
+
+- `src/types.ts` — the shared contract: the AnkiConnect-shaped note
+  (`DeckNote`, `NoteFields`) and the structural-check result (`Finding`).
+  Deliberately minimal — nothing module-specific lives here.
+- `src/checks/` — port of the Python deck checker's structural checks.
+- `src/apkg/` — `.apkg` writer.
+- `src/acp/` — Agent Client Protocol client. Not yet implemented — see
+  [Status](#status).
+- `src/cli/` — the `ape` CLI: argv parsing and exit codes wired onto
+  `src/checks` and `src/apkg` (see [CLI](#cli) above). Owns deck.json
+  loading/validation (`deck-loader.ts`) and Anki-media-directory resolution
+  (`media-dir.ts`) — neither `src/checks` nor `src/apkg` does this itself,
+  since both treat `DeckNote[]` as already-validated input.
+- `test/integration/` — drives the built CLI as a real child process
+  (never `checkDeck`/`renderReview`/`writeApkg` called directly) through
+  the full check → review → export pipeline on the seven reference cards,
+  then reopens the produced `.apkg` with the system `unzip` and
+  `node:sqlite` — tools sharing no code with this repo. A second file
+  covers CLI-boundary argument/exit-code behavior the golden path doesn't
+  (usage errors, a dirty deck, a missing file, `--inventory`/`--transcript`
+  wiring).
+- `test/fixtures/reference-cards.json` — the seven canonical reference cards
+  (`ref-01`..`ref-07`) that define the card style, copied verbatim from their
+  source (see `docs/research/check-deck-contract.md` for exactly where and
+  the full rationale). Any check or renderer this repo ships must pass all
+  seven before its verdict is trusted: a check that rejects one of these, or
+  accepts something one of these would reject, is what's wrong, not the
+  fixture. `test/scaffold.test.ts` pins the fixture's exact text against that
+  source so an edit can't silently drift it.
+- `docs/research/` — implementer's-reference notes written before this code:
+  the ACP v1 wire protocol, the `.apkg` file format, and the behavioral
+  contracts of the two Python tools being ported. Read the one that matches
+  before touching a given module.
+- `docs/STATUS.md` — per-module: what works, what is stubbed, what the next
+  concrete step is. The detail behind the summary below.
+
+## Status
+
+Everything claimed here was checked by actually running the command named,
+not by reading the code and assuming — see `docs/STATUS.md` for the same
+picture broken out per module.
+
+**`src/checks` and `src/apkg` are solid.** Both have exhaustive suites:
+`src/checks`' differential tests run the real `python3 tools/check_deck.py`
+and `tools/render_review.py` in the engine repo and diff output
+byte-for-byte; `src/apkg`'s tests reopen every `.apkg` they write with the
+system `unzip` and `node:sqlite`, tools sharing no code with the writer
+itself. All green.
+
+**`src/cli` (this integration pass) works end-to-end against the reference
+fixture.** `test/integration/pipeline.test.ts` spawns the real, built
+`dist/cli/index.js` — never the underlying functions directly — through
+`check` (clean) → `review` (writes real HTML) → `export` (writes a real
+`.apkg`), then reopens that `.apkg` independently and checks its note count,
+card count, deck name, notetype, and every field's round-tripped content.
+`test/integration/cli-errors.test.ts` covers the CLI-boundary behavior the
+golden path doesn't: usage errors, a missing file, malformed JSON, a note
+missing `fields.Text`, a deck naming zero notes, a genuinely dirty note,
+`--inventory`/`--transcript` wiring, and an `--deck-name` mismatch. Also
+exercised by hand beyond what's automated, including the media-directory
+default-resolution fallback.
+
+**What has not been verified, by anyone, at any point:**
+
+- **Anki import: now verified** (this bullet previously said it was not).
+  `test/apkg/anki-import.test.ts` imports an exported package into a
+  disposable Anki 26.5 collection and asserts 7 notes / 14 cards with the
+  expected cloze ordinals. It was written after that exact check found that
+  every package this repo produced was rejected by Anki — see
+  [docs/STATUS.md](docs/STATUS.md). It skips, loudly, where Anki is absent.
+  **AnkiConnect sync is still unverified**, and no live tier is built.
+- **No ACP agent handshake — because there is no ACP client yet.**
+  `src/acp/` currently holds only a placeholder (`.gitkeep`); no
+  implementation exists there. `test/acp/*.test.ts` (mock-agent scaffolding
+  and framing/lifecycle/cancellation/permissions cases) already exist and
+  import from `dist/acp/index.js`, but that module has never been built, so
+  all five of those test files fail with `ERR_MODULE_NOT_FOUND` — confirmed
+  by running `npm test`, not inferred. This is a pre-existing gap this
+  integration pass found, not one it introduced or was able to fix: none of
+  it falls under `src/cli/`, `test/integration/`, `package.json`, or this
+  file, and building a full ACP client is not a small, in-scope fix.
+  Consequently:
+  - `npx tsc --noEmit` (the plain command, root `tsconfig.json`, `src/`
+    only) is clean, because `src/acp/` has no `.ts` files for it to
+    typecheck at all.
+  - `npm run typecheck` (which also typechecks `test/**/*.ts`, per
+    `tsconfig.test.json`) is **not** clean — every error it reports is
+    confined to `test/acp/*.ts`, none in `src/cli/`, `test/integration/`,
+    or anywhere this pass touched.
+  - `npm test` reports `168 pass, 5 fail` on this repo as it stands; the 5
+    failures are exactly those five `test/acp/*.test.ts` files.
+  - `npm run typecheck` exits 2 with 43 errors, every one of them in
+    `test/acp/*` and rooted in the missing `dist/acp/index.js`.
+
+Given a `deck.json` shaped like `test/fixtures/reference-cards.json`, a user
+can check it, render a review page for it, and export an `.apkg` that real
+Anki imports — all three verified by running them, the last against a
+disposable Anki 26.5 collection. What they cannot yet do through this repo
+is drive an actual ACP coding agent: `src/acp/` is empty, and the tests
+waiting for it are red on purpose.

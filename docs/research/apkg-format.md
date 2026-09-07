@@ -559,7 +559,7 @@ Top level (`NotetypeSchema11`):
 | `mod` | required | seconds |
 | `usn` | required | `-1` for a from-scratch file |
 | `sortf` | required | `0` (sort field = field index 0 = `Text`) |
-| `did` | optional (`default_on_invalid`) | omit, or `null` |
+| `did` | **required, but nullable** | emit `null`. Do **not** omit the key. `default_on_invalid` tolerates a bad *value*, not an absent *key* — without `#[serde(default)]` alongside it, serde still demands the key be present. Omitting it aborts the whole import with `decoding models: missing field `did``. This row previously read "optional — omit, or `null`", the first implementer followed it, and every exported package was rejected by Anki. Corrected after importing into a disposable Anki 26.5 collection. |
 | `tmpls` | required | array, one entry — see below |
 | `flds` | required | array, three entries — see below |
 | `css` | optional but obviously wanted | the CSS from `anki/custom-cloze.json`, verbatim |
