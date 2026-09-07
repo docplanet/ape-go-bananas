@@ -183,14 +183,16 @@ default-resolution fallback.
   every package this repo produced was rejected by Anki — see
   [docs/STATUS.md](docs/STATUS.md). It skips, loudly, where Anki is absent.
   **AnkiConnect sync is still unverified**, and no live tier is built.
-- **Real agents: handshake proven, prompt turn not.** Live smoke tests
-  against `@agentclientprotocol/claude-agent-acp` 0.75.1 and Gemini CLI
-  0.40.1 confirm `initialize`, protocol negotiation, `session/new`, streamed
-  updates and clean shutdown on the wire. No prompt turn has completed —
-  both credentials are currently expired — so `end_turn`, live tool calls,
-  live permission requests and cancellation remain mock-only. Live runs
-  surfaced three defects a mock structurally cannot produce; see
-  [docs/STATUS.md](docs/STATUS.md).
+- **Real agents: proven through the prompt turn.** Against
+  `@agentclientprotocol/claude-agent-acp` 0.75.1, live: handshake, protocol
+  negotiation, `session/new`, a completed turn (`end_turn`), streamed
+  updates, real tool calls, and mid-turn cancellation (`cancelled`).
+- **Permission requests remain untested live, by design not accident.** The
+  agent issued none — including for a file write, which it performed
+  unasked — because its session mode is inherited from the host's Claude
+  Code config. `session/set_mode` is not implemented here, so A.P.E. cannot
+  yet force "always ask". Do not treat ACP permission requests as a safety
+  boundary until it can; see [docs/STATUS.md](docs/STATUS.md).
 - **Sign-in is the agent CLI's job, not A.P.E.'s.** The Claude adapter
   returns `authMethods: []` and handles auth out-of-band, so ACP
   `authenticate` will not unblock Claude Code — log in with the `claude`

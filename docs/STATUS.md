@@ -161,16 +161,46 @@ still have passed**. This is the class of defect a mock cannot produce.
    literal `false` on the wire would read as *supported*. Neither real agent
    does this today.
 
-**Still unproven, and blocked on a human.** No prompt turn has completed, so
-a successful `end_turn`, live tool calls, live `session/request_permission`
-(zero were issued), and live cancellation remain untested. Both credentials
-are dead: the Claude OAuth token is expired — the standalone `claude -p` CLI
-fails identically, so this is not the ACP path — and Gemini Code Assist for
-individuals is discontinued server-side for that client version. Note the
-real failure shape, which differs from §5.2's description: `session/new`
-*succeeds*, and the failure arrives at `session/prompt` as `-32603 Internal
-error: Failed to authenticate: OAuth session expired` with
-`data.errorKind: "authentication_failed"`.
+**The prompt turn is now proven live.** After a `claude` CLI re-login, a
+full smoke test ran against `@agentclientprotocol/claude-agent-acp` 0.75.1:
+
+- a prompt turn completes with `stopReason: "end_turn"`, streaming
+  `agent_message_chunk` / `usage_update` / `available_commands_update`;
+- real tool calls flow as `tool_call` + `tool_call_update`;
+- `session.cancel()` mid-turn yields `stopReason: "cancelled"` (§14.1's
+  MUST), with the turn's own iterator returning it rather than throwing;
+- `close()` reaps the subprocess, zero strays.
+
+**The permission path is still unexercised live, and the reason is a design
+problem, not a bug.** Across three turns including a file *write*, the agent
+issued **zero** `session/request_permission` calls — it wrote the file
+without asking, and the write landed. The client behaved correctly: it had
+nothing to route. The cause is that `session/new` returns
+
+    "modes": {"currentModeId": "auto", "availableModes": [
+        {"id": "default", "name": "Manual", "description": "Always ask before making changes"},
+        {"id": "acceptEdits"}, {"id": "plan"}, {"id": "auto"}, {"id": "bypassPermissions"}]}
+
+and `currentModeId` is inherited from the host's own Claude Code config
+(`~/.claude/settings.json` had `"defaultMode": "auto"`). An agent in `auto`
+decides permissions itself and never consults the client.
+
+**This matters for the app, not just the module.** APP.md's flag-and-approve
+model assumes the client mediates tool use. It does not, by default — that
+boundary silently disappears depending on a setting A.P.E. does not control
+and currently cannot see. `session/set_mode` (§17.1) is the lever, and
+**this client does not implement it**, so A.P.E. cannot presently force
+`default` ("Manual — always ask before making changes"). Until it can, no
+part of the app should present ACP permission requests as a safety
+guarantee.
+
+**Next concrete step:** implement `session/set_mode` and surface
+`modes`/`currentModeId` from the `session/new` result, so a host can require
+Manual mode and observe when an agent switches away from it
+(`current_mode_update`). Then re-run this smoke test with the mode pinned to
+`default` and verify a real `session/request_permission` round trip,
+including the denial path — the only client-side surface still untested
+against a real agent.
 
 **Auth is out-of-band for Claude Code.** The adapter returns
 `authMethods: []` and reports state via an `_auth/status_update`
