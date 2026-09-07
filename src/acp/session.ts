@@ -88,6 +88,7 @@ import {
   type RequestPermissionParams,
   type SessionId,
   type SessionUpdate,
+  type TerminalAuthLaunch,
 } from './protocol.js';
 
 // ---- public surface --------------------------------------------------------
@@ -185,6 +186,43 @@ export interface AcpClient {
   readonly agentInfo: Implementation | undefined;
   readonly agentCapabilities: AgentCapabilities;
   newSession(params: NewSessionParams): Promise<AcpSession>;
+  /**
+   * Protocol-driven authentication (#5.2): sends `authenticate` with
+   * `{methodId}` and resolves on the empty-object result. `methodId` must
+   * name a **default (`agent`-type)** entry of `authMethods`.
+   *
+   * Rejects without sending anything for an id the agent never advertised,
+   * and -- the case that matters -- for a `type: "terminal"` id, which
+   * #5.3 says a client MUST NOT put in an `authenticate` request. Both are
+   * caller bugs detectable locally, and a terminal id in particular routes
+   * a credential-bearing request down a flow the agent never offered, so
+   * neither is worth a round trip to discover.
+   */
+  authenticate(methodId: string): Promise<void>;
+  /**
+   * Ends the authenticated state (#5.4). Rejects without sending anything
+   * unless `agentCapabilities.auth.logout` was advertised at initialize.
+   *
+   * Per #5.4 the fate of already-running sessions is explicitly undefined
+   * -- agents "may terminate them, keep them running, or return
+   * auth_required errors" -- so this deliberately does not touch the
+   * `sessions` map. Expect -32000 on any in-flight session afterwards and
+   * re-authenticate; this client cannot know which agents do which.
+   */
+  logout(): Promise<void>;
+  /**
+   * Resolves #5.3 steps 1-2 for a `type: "terminal"` auth method: the
+   * command from **this client's own** launch configuration (the spec is
+   * explicit that "the descriptor cannot provide a command"), the method's
+   * `args` appended to the base args, and its `env` merged over the base
+   * environment.
+   *
+   * Pure: it launches nothing. Steps 3-4 -- presenting the terminal and
+   * reconnecting -- are the host's, since neither can be done from a
+   * transport client without a UI. Throws for an unknown or non-terminal
+   * method id.
+   */
+  terminalAuthLaunch(methodId: string): TerminalAuthLaunch;
   /** Ends the connection and reaps the agent subprocess. Idempotent; never rejects. */
   close(): Promise<void>;
 }
@@ -263,12 +301,24 @@ export async function connect(options: ConnectOptions): Promise<AcpClient> {
         `agent negotiated protocol version ${raw.protocolVersion}, but this client only supports version ${PROTOCOL_VERSION} (acp-protocol.md #4.3: "the Client SHOULD close the connection and inform the user")`,
       );
     }
-    return new AcpClientImpl(transport, sessions, pendingSessionUpdates, {
-      protocolVersion: raw.protocolVersion,
-      authMethods: raw.authMethods ?? [],
-      agentInfo: raw.agentInfo ?? undefined,
-      agentCapabilities: normalizeAgentCapabilities(raw.agentCapabilities),
-    });
+    return new AcpClientImpl(
+      transport,
+      sessions,
+      pendingSessionUpdates,
+      {
+        protocolVersion: raw.protocolVersion,
+        authMethods: raw.authMethods ?? [],
+        agentInfo: raw.agentInfo ?? undefined,
+        agentCapabilities: normalizeAgentCapabilities(raw.agentCapabilities),
+      },
+      {
+        command: options.command,
+        args: options.args ?? [],
+        // Same merge transport.ts spawns with, so a #5.3 relaunch
+        // reproduces this connection rather than a bare subset of it.
+        env: { ...(process.env as Record<string, string>), ...(options.env ?? {}) },
+      },
+    );
   } catch (err) {
     // Fire-and-forget: see file header, point 4. transport.close() is
     // documented to never reject, so this cannot produce an unhandled
@@ -523,6 +573,18 @@ interface NormalizedInitInfo {
   agentCapabilities: AgentCapabilities;
 }
 
+/**
+ * The connection's own launch configuration, retained solely so
+ * terminalAuthLaunch() can satisfy #5.3's "the Client derives the command
+ * from its own Agent configuration". Mirrors what transport.ts actually
+ * spawned, env merge included, so a relaunch reproduces this connection.
+ */
+interface BaseLaunchConfig {
+  command: string;
+  args: string[];
+  env: Record<string, string>;
+}
+
 class AcpClientImpl implements AcpClient {
   readonly protocolVersion: ProtocolVersion;
   readonly authMethods: AuthMethod[];
@@ -531,20 +593,73 @@ class AcpClientImpl implements AcpClient {
   private readonly transport: AcpTransport;
   private readonly sessions: Map<SessionId, AcpSessionImpl>;
   private readonly pendingSessionUpdates: Map<SessionId, SessionUpdate[]>;
+  private readonly launch: BaseLaunchConfig;
 
   constructor(
     transport: AcpTransport,
     sessions: Map<SessionId, AcpSessionImpl>,
     pendingSessionUpdates: Map<SessionId, SessionUpdate[]>,
     init: NormalizedInitInfo,
+    launch: BaseLaunchConfig,
   ) {
     this.transport = transport;
     this.sessions = sessions;
     this.pendingSessionUpdates = pendingSessionUpdates;
+    this.launch = launch;
     this.protocolVersion = init.protocolVersion;
     this.authMethods = init.authMethods;
     this.agentInfo = init.agentInfo;
     this.agentCapabilities = init.agentCapabilities;
+  }
+
+  /** #5.2; see the AcpClient interface for why both refusals are local. */
+  async authenticate(methodId: string): Promise<void> {
+    const method = this.authMethods.find((m) => m.id === methodId);
+    if (!method) {
+      const known = this.authMethods.map((m) => m.id).join(', ') || '<none>';
+      throw new Error(
+        `authenticate: the agent did not advertise an auth method with id "${methodId}" (advertised: ${known}) (acp-protocol.md #5.1)`,
+      );
+    }
+    if (method.type === 'terminal') {
+      throw new Error(
+        `authenticate: "${methodId}" is a terminal-type auth method; acp-protocol.md #5.3 says the Client MUST NOT send an authenticate request for it -- use terminalAuthLaunch("${methodId}") and run that flow instead`,
+      );
+    }
+    // #5.2's success result is an empty object carrying nothing to read.
+    await this.transport.request('authenticate', { methodId });
+  }
+
+  /** #5.4. */
+  async logout(): Promise<void> {
+    if (!this.agentCapabilities.auth.logout) {
+      throw new Error(
+        'logout: the agent did not advertise agentCapabilities.auth.logout at initialize (acp-protocol.md #5.4 says to call it only if it did)',
+      );
+    }
+    // Empty object, not omitted: #5.4 shows `"params": {}` on the wire.
+    await this.transport.request('logout', {});
+  }
+
+  /** #5.3 steps 1-2 only -- a description, never a launch. */
+  terminalAuthLaunch(methodId: string): TerminalAuthLaunch {
+    const method = this.authMethods.find((m) => m.id === methodId);
+    if (!method) {
+      throw new Error(`terminalAuthLaunch: no auth method with id "${methodId}" was advertised (acp-protocol.md #5.1)`);
+    }
+    if (method.type !== 'terminal') {
+      throw new Error(
+        `terminalAuthLaunch: "${methodId}" is an agent-type auth method, which has no terminal launch configuration -- call authenticate("${methodId}") instead (acp-protocol.md #5.2)`,
+      );
+    }
+    return {
+      command: this.launch.command,
+      // "Appends the method's args" (#5.3 step 2) -- appended to the base
+      // args, never substituted for them, or the relaunch would lose
+      // whatever selects the agent program in the first place.
+      args: [...this.launch.args, ...(method.args ?? [])],
+      env: { ...this.launch.env, ...(method.env ?? {}) },
+    };
   }
 
   async newSession(params: NewSessionParams): Promise<AcpSession> {

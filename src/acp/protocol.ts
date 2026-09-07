@@ -110,12 +110,24 @@ export interface InitializeResult {
 
 // ---- authentication (#5) -------------------------------------------------
 //
-// Modeled for completeness of the initialize response's `authMethods` field
-// only. This client never calls `authenticate`/`logout` itself (out of
-// scope -- see lifecycle.test.ts's header comment); nothing here is a
-// method this client can invoke.
+// `authenticate` (#5.2) and `logout` (#5.4) ARE implemented, on AcpClient in
+// session.ts. What is deliberately NOT implemented is the terminal-type
+// flow's interactive half (#5.3 steps 3-4: "presents the terminal to the
+// user and waits for the process to exit", then "reconnects and
+// reinitializes") -- that is a UI plus a reconnect loop, neither of which
+// belongs in a transport client. This file's TerminalAuthLaunch and
+// session.ts's terminalAuthLaunch() cover steps 1-2 (derive the command,
+// append args, apply env) so a host can drive the rest itself.
+//
+// Consequence worth knowing before reading the terminal guard as a live
+// code path: buildInitializeParams() does not advertise
+// `clientCapabilities.auth.terminal`, and #5.1 says an agent may only offer
+// a terminal method to a client that did. Claiming that capability while
+// unable to present a terminal would be a lie, so the guard in
+// authenticate() is defensive coding against a NON-compliant agent, not a
+// path a spec-following one can reach.
 
-/** Default variant when `type` is absent (#5.1). The client would call `authenticate` with this `id` -- not implemented here. */
+/** Default variant when `type` is absent (#5.1); its `id` is what `authenticate` takes. */
 export interface AgentAuthMethod {
   type?: undefined;
   id: string;
@@ -134,6 +146,24 @@ export interface TerminalAuthMethod {
 }
 
 export type AuthMethod = AgentAuthMethod | TerminalAuthMethod;
+
+/**
+ * A resolved launch configuration for #5.3 steps 1-2, as returned by
+ * `AcpClient.terminalAuthLaunch()`. Describing the relaunch is all this
+ * client does: it never spawns the process, presents a terminal, or
+ * reconnects afterwards (steps 3-4), which is why this is a plain value
+ * rather than a method that performs anything.
+ *
+ * `env` is the connection's own effective environment with the method's
+ * `env` merged over it, matching the transport's `{...process.env,
+ * ...options.env}` -- #5.3's "base launch configuration", not a bare copy
+ * of the method's own additions.
+ */
+export interface TerminalAuthLaunch {
+  command: string;
+  args: string[];
+  env: Record<string, string>;
+}
 
 // ---- content blocks (#9) -- five variants, all pass-through -------------
 //
