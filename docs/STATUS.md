@@ -322,13 +322,13 @@ wording; it is commented as such at the site). The context in question
 flagged this unprompted every time, which is the only reason it is visible
 here at all. Do not read "209 pass" as uniform evidence.
 
-**Still untested against a real agent:** `session/load` and `session/resume`;
-a completed `authenticate` sign-in (the adapter advertises `authMethods: []`,
-so there is nothing to authenticate against); and `configOptions`, which
-`session/new` also returns and this client still discards — §17.2 is the
-mechanism the spec calls current and says will replace modes, and adopting it
-needs its own scoping decision including the
-`clientCapabilities.session.configOptions.boolean` question.
+**Still untested against a real agent:** `session/load` and `session/resume`
+— both agents advertise `loadSession: true` and the client implements
+neither — and a completed `authenticate` sign-in, which is not actionable:
+the Claude adapter advertises `authMethods: []`, so there is nothing to
+authenticate against, and Gemini's individual tier is discontinued
+server-side. (`configOptions` was on this list; it is implemented and live-
+verified as of `21f7f87`.)
 
 **Auth is out-of-band for Claude Code.** The adapter returns
 `authMethods: []` and reports state via an `_auth/status_update`
@@ -344,10 +344,11 @@ them — `clientCapabilities` is hardcoded all-`false`, so a spec-compliant
 agent will not call them. Legal per §12/§13, and no oracle covers the wired
 path.
 
-**Next concrete step:** re-login the `claude` CLI, then re-run the smoke
-test to close the prompt turn, tool calls, permissions and cancellation.
-That is the only remaining question a human unblocks; everything beneath it
-is now proven against real agents.
+**Next concrete step:** `session/load` / `session/resume`. Both agents
+advertise `loadSession: true` and the client implements neither, so a host
+cannot reopen a session it created — which the app's resumable-run design
+needs. Everything else in this module is either done, live-verified, or
+blocked on something no agent can do.
 
 
 ## `src/cli`
