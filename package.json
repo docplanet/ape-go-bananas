@@ -3,16 +3,17 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Deck-pipeline structural checks, .apkg export, and an ACP client.",
+  "description": "Deck-pipeline structural checks, .apkg export, an ACP client, and a stdio sidecar over all three.",
   "engines": {
     "node": ">=24.12.0"
   },
   "bin": {
-    "ape": "dist/cli/index.js"
+    "ape": "dist/cli/index.js",
+    "ape-sidecar": "dist/sidecar/index.js"
   },
   "scripts": {
     "build": "tsc",
-    "postbuild": "chmod +x dist/cli/index.js",
+    "postbuild": "chmod +x dist/cli/index.js dist/sidecar/index.js",
     "typecheck": "npm run build && tsc --noEmit -p tsconfig.test.json",
     "check-node": "node -e \"const [maj]=process.versions.node.split('.').map(Number); if (maj < 24) { console.error('\\nape requires Node >= 24 (found '+process.versions.node+').\\nOn Node 20 the test runner does not discover .ts files, so the suite silently reports 0 tests and exits 0 -- a false green.\\nRun: nvm use\\n'); process.exit(1); }\"",
     "pretest": "npm run check-node",

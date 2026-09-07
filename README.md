@@ -1,7 +1,8 @@
 # A.P.E.
 
 Deck-pipeline structural checks, a `.apkg` (Anki package) writer, a CLI over
-both, and an ACP (Agent Client Protocol) client, in TypeScript. Every claim
+both, an ACP (Agent Client Protocol) client, and a stdio sidecar that exposes
+all of it to the desktop app in `app/` (`docs/APP.md`), in TypeScript. Every claim
 about what works here is backed by a command in [Status](#status) that was
 actually run. Nobody has defined what the letters stand for — none
 of this repo's code, comments, or docs do either.

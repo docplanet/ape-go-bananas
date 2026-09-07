@@ -1,0 +1,25 @@
+{
+  "name": "ape-app",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Tauri shell over the A.P.E. engine: drop course material in, review cards, get a deck out.",
+  "engines": { "node": ">=24.12.0" },
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "tauri": "tauri",
+    "app:dev": "APE_NODE=\"$(command -v node)\" tauri dev",
+    "app:build": "tauri build"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "2.11.1",
+    "@tauri-apps/plugin-dialog": "2.7.3"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "2.11.4",
+    "typescript": "6.0.3",
+    "vite": "8.2.2"
+  }
+}

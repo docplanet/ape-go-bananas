@@ -43,6 +43,9 @@ once (see `git notes show 2d5d0f4`).
 | item | why it is open |
 | --- | --- |
 | `session/load` / `session/resume` | both agents advertise `loadSession: true`; the client implements neither. Real gap, bigger surface than the claimed items. |
+| `agent/*` sidecar bridge (protocol §5) | the chat pane and the flag → adjudicator route both wait on it; the reverse `agent/requestPermission` needs an answer path in `sidecar.rs` |
+| designed screens (Claude Design) over `app/src/{sidecar,preview,main}.ts` | the current layout is a placeholder by declaration (`docs/APP.md`) |
+| packaging the engine into a release build | `resolve_paths` refuses without `APE_SIDECAR`; Node SEA vs. require-Node is undecided |
 | Gemini writes bare non-JSON to stdout, violating §2 | needs a behavioural decision — tolerate stdout noise, or keep erroring — not just an implementation |
 | a completed `authenticate` sign-in | not actionable: the Claude adapter advertises `authMethods: []`, and Gemini's tier is discontinued server-side |
 
@@ -64,6 +67,8 @@ once (see `git notes show 2d5d0f4`).
 | §17.2 `configOptions`, `setConfigOption()`, `config_option_update` | `21f7f87` |
 | `!= null` read a literal `false` as supported — `isSupported()` + CAPS_LITERAL_FALSE | `25aa8aa` |
 | all four independent-review findings (cwd, three regexes, explicit `null`, `authMethods`) | `7236a4e` |
+| stdio sidecar (`src/sidecar`, protocol doc, 36-case oracle written blind) | _this commit_ |
+| Tauri shell `app/`: Rust-owned sidecar, typed frontend surface, review-page preview with flags, placeholder layout | _this commit_ |
 
 Only the `cwd` omission changed behaviour on the wire. The regex finding was
 the most instructive: re-running the reviewer's mutation confirms the terminal

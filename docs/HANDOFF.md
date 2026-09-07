@@ -1,6 +1,7 @@
 # Handoff: building the app on top of this engine
 
-Read this first, then `docs/STATUS.md`. Everything below is either a fact
+Read this first, then `docs/STATUS.md`, then `docs/APP.md` — the build
+log for the app, which now exists under `app/`. Everything below is either a fact
 established by running something, or a constraint with a reason attached.
 
 ## Where you are

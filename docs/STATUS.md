@@ -397,3 +397,78 @@ already do.
 specified. If `src/acp` is implemented, an `ape agent`-style subcommand (or
 similar) would be the natural next piece of CLI surface, but nothing in the
 current task called for it and no such subcommand exists.
+
+## `src/sidecar`
+
+**Works, oracle-tested.** The engine as a stdio child process for the app:
+newline-delimited JSON-RPC 2.0 per `docs/research/sidecar-protocol.md`,
+framed by `src/acp/framing.ts` unchanged. Ten methods: `sidecar/ping`,
+`sidecar/shutdown`, `media/dir`, `deck/load`, `deck/check`, `deck/review`,
+`deck/export`, `flags/read`, `flags/write`. Each is a thin adapter over the
+same calls `src/cli` makes; none decides anything about a card.
+
+- `test/sidecar/` (36 cases: lifecycle 11, framing 11, methods 14) was
+  written from the spec by a context barred from reading `src/sidecar/` or
+  `dist/sidecar/`, before the implementation was run against it. First run
+  against the implementation: 36 pass, 0 fail. Two strict readings the
+  oracle took are now pinned by it: `deck/review` writes nothing without
+  `outPath`, and a rejected `flags/write` stores nothing.
+- Each error code in §3 is exercised, and the process is shown to survive
+  every one. `deck/export` is reopened with `unzip` + `node:sqlite` (7 notes,
+  14 cards), the same independent-reader technique as `test/integration`.
+- One defect found by hand before the oracle existed: `sidecar/shutdown`'s
+  `{}` was never written, because the exit was scheduled against the
+  outbound queue *before* the handler's own response joined it. Fixed by
+  deferring the exit one tick; `lifecycle.test.ts` now pins the order.
+- Verified via `npm test`: 256 pass (219 prior + 36 + the helper file), 0
+  fail, 0 skipped; `npm run typecheck` exits 0.
+
+**Not verified:** nothing beyond what `src/checks`/`src/apkg`/`src/cli`
+leave unverified; the sidecar adds no engine behaviour of its own.
+`agent/*` (§5) is reserved and unimplemented.
+
+**Next concrete step:** the `agent/*` bridge over `src/acp`, including the
+reverse-direction `agent/requestPermission` request, which `app/src-tauri/
+src/sidecar.rs` already routes to a `sidecar://request` event but does not
+answer.
+
+## `app/`
+
+**Launches, drives the engine end to end, placeholder UI.** Tauri 2.11 shell
+with a Rust-owned Node sidecar (`src-tauri/src/sidecar.rs`), a typed
+frontend surface (`src/sidecar.ts`), and the engine's own review page
+framed as the card preview with a Flag button per card (`src/preview.ts`).
+Decisions and their reasons: `docs/APP.md`.
+
+Verified by running `npm run app:dev` with `APE_OPEN=<fixture deck>` and
+`ANKI_MEDIA=<temp media dir>`, reading the app's stderr:
+
+| step | observed |
+| --- | --- |
+| `cargo build` (debug) | clean, 49 s cold |
+| window up | `node …/v24.12.0/bin/node …/dist/sidecar/index.js` running as a child of `target/debug/ape-app` |
+| frontend start | `sidecar/ping` then, for the opened deck, `deck/load`, `deck/check`, `deck/review`, `flags/read` — the full preview path, driven from the webview through `sidecar_call` |
+| window closed | no sidecar process remains |
+
+Two defects found by launching, neither reachable by any test here:
+
+1. tokio's `Command::spawn` panicked (`there is no reactor running`) because
+   Tauri's `setup` hook runs outside the async runtime. Fixed with
+   `tauri::async_runtime::block_on` around the spawn.
+2. The default shell `node` here is 20; the sidecar died on
+   `ERR_UNKNOWN_BUILTIN_MODULE: node:sqlite`. `resolve_paths` now runs
+   `--version` and refuses below 24 with a message naming `APE_NODE`;
+   `app:dev` sets `APE_NODE` to npm's own Node.
+
+**Not verified:** the rendered window itself (screen capture is not
+permitted from this session — the layout was checked only through the Vite
+dev server in a browser, where the engine bridge is absent by design); the
+Flag button's click path (the message bridge in `preview.ts` and
+`flags/write` are each verified separately, the click between them is not);
+drag-and-drop of a folder; asset-protocol image loading inside the preview
+iframe; a release build (`resolve_paths` refuses without `APE_SIDECAR` —
+packaging is an open decision in `docs/APP.md`).
+
+**Next concrete step:** Claude Design screens over the same three seams
+(`sidecar.ts`, `preview.ts`, `main.ts`), then the `agent/*` bridge so the
+chat pane and the flag → adjudicator route exist.
