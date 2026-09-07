@@ -96,3 +96,22 @@ jobs:
           prerelease: false
           includeUpdaterJson: true
           args: ${{ matrix.args }}
+
+      # Version-free copies, so a link written once keeps working:
+      # https://github.com/docplanet/ape-go-bananas/releases/latest/download/APE-<platform>.<ext>
+      - name: stable-name copies on the release
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          cd APE/app/src-tauri/target
+          tag="${GITHUB_REF_NAME}"
+          copy() { src=$(ls $1 2>/dev/null | head -1); [ -n "$src" ] || return 0; cp "$src" "$2"; gh release upload "$tag" "$2" --clobber --repo "$GITHUB_REPOSITORY"; }
+          case "${{ matrix.triple }}" in
+            aarch64-apple-darwin)      copy 'aarch64-apple-darwin/release/bundle/dmg/*.dmg' APE-macos-arm64.dmg ;;
+            x86_64-apple-darwin)       copy 'x86_64-apple-darwin/release/bundle/dmg/*.dmg' APE-macos-intel.dmg ;;
+            x86_64-pc-windows-msvc)    copy 'release/bundle/nsis/*-setup.exe' APE-windows-x64-setup.exe ;;
+            x86_64-unknown-linux-gnu)  copy 'release/bundle/appimage/*.AppImage' APE-linux-x64.AppImage; copy 'release/bundle/deb/*.deb' APE-linux-x64.deb ;;
+          esac

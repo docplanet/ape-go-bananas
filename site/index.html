@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>A.P.E. — download</title>
+<meta name="description" content="Drop a lecture in, review the cards, get an Anki deck out. Free desktop app for macOS, Windows and Linux.">
+<style>
+  :root { color-scheme: light dark; --fg: #1d2329; --muted: #5b6672; --bg: #f7f8f9; --panel: #fff; --line: #dde2e7; --accent: #2a8f8f; --warn: #9a6b00; }
+  @media (prefers-color-scheme: dark) { :root { --fg: #d7dee9; --muted: #98a4b0; --bg: #1d2329; --panel: #252c34; --line: #3d4753; --accent: #5eb3b3; --warn: #e8c07d; } }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 16px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  main { max-width: 680px; margin: 0 auto; padding: 56px 24px 80px; }
+  h1 { font-size: 40px; letter-spacing: .04em; margin: 0 0 8px; }
+  .tag { color: var(--muted); font-size: 18px; margin: 0 0 32px; }
+  .cta { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 24px; margin-bottom: 24px; }
+  .btn { display: inline-block; background: var(--accent); color: #fff; text-decoration: none; padding: 14px 22px; border-radius: 10px; font-weight: 600; font-size: 17px; }
+  .btn:hover { filter: brightness(1.08); }
+  .small { color: var(--muted); font-size: 14px; margin-top: 10px; }
+  .others { margin-top: 18px; font-size: 14px; }
+  .others a { color: var(--accent); }
+  .others li { margin: 4px 0; }
+  h2 { font-size: 18px; margin: 32px 0 8px; }
+  .note { border-left: 3px solid var(--warn); padding: 4px 14px; margin: 10px 0; color: var(--fg); }
+  code { background: var(--panel); border: 1px solid var(--line); border-radius: 4px; padding: 1px 5px; font-size: 90%; }
+  footer { margin-top: 48px; color: var(--muted); font-size: 14px; }
+  footer a { color: var(--accent); }
+</style>
+</head>
+<body>
+<main>
+  <h1>A.P.E.</h1>
+  <p class="tag">Drop a lecture in. Review the cards. Get an Anki deck out.</p>
+
+  <section class="cta">
+    <a class="btn" id="dl" href="https://github.com/docplanet/ape-go-bananas/releases/latest">Download</a>
+    <div class="small" id="dlinfo">Finding the right build for your computer…</div>
+    <div class="others">
+      <div>All downloads:</div>
+      <ul id="all"><li><a href="https://github.com/docplanet/ape-go-bananas/releases/latest">release page on GitHub</a></li></ul>
+    </div>
+  </section>
+
+  <h2>What it does</h2>
+  <p>Point it at a folder of course material — slides as PDF, the transcript, the objectives — and pick an agent: any subscription agent from the public ACP registry (Claude, Gemini CLI, Codex and more), installed with one click and signed in through your browser, or any model through an OpenRouter key. It runs a three-step method: extract a fact inventory with verbatim sources, organize it into a card plan, write the cards. You review each artifact, flag cards in the preview, an independent auditor and adjudicator rule on what was flagged, and the deck exports as an <code>.apkg</code> or goes straight into Anki.</p>
+
+  <h2>First launch</h2>
+  <div class="note"><strong>macOS:</strong> this is free software and the build is not notarized with Apple, so the first double-click says the app "cannot be opened". Open <strong>System Settings → Privacy &amp; Security</strong>, scroll down, click <strong>Open Anyway</strong>. Once.</div>
+  <div class="note"><strong>Windows:</strong> SmartScreen warns that the publisher is unknown. <strong>More info → Run anyway</strong>. Once.</div>
+  <div class="note"><strong>Linux:</strong> mark the AppImage executable (<code>chmod +x</code>) or install the <code>.deb</code>.</div>
+
+  <h2>Nothing leaves your machine except what you send the agent</h2>
+  <p>No accounts, no server, no telemetry. Your course folder stays where it is; every artifact is written beside it. API keys go to your OS keychain. Updates are checked on launch and installed only when you click.</p>
+
+  <footer>Free and open source · <a href="https://github.com/docplanet/ape-go-bananas">source and issues on GitHub</a> · the method the app follows lives in <a href="https://github.com/docplanet/anki-process-engine-live">its own repository</a>.</footer>
+</main>
+<script>
+(async () => {
+  const dl = document.getElementById('dl'), info = document.getElementById('dlinfo'), all = document.getElementById('all');
+  let rel;
+  try { rel = await (await fetch('https://api.github.com/repos/docplanet/ape-go-bananas/releases/latest')).json(); } catch { info.textContent = 'Downloads are on the GitHub release page.'; return; }
+  const assets = (rel.assets || []).filter(a => !/\.sig$|latest\.json|\.tar\.gz$/.test(a.name));
+  const pick = (re) => assets.find(a => re.test(a.name));
+  const ua = navigator.userAgent, plat = navigator.platform || '';
+  let best, label;
+  if (/Mac/.test(plat)) {
+    // Apple silicon Safari/Chrome report x86 in navigator; WebGL renderer is the usual tell.
+    let arm = false;
+    try { const gl = document.createElement('canvas').getContext('webgl'); const ext = gl && gl.getExtension('WEBGL_debug_renderer_info'); const r = ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : ''; arm = /Apple (M\d|GPU)/i.test(r); } catch {}
+    best = arm ? pick(/aarch64\.dmg$/) : pick(/x64\.dmg$/); label = arm ? 'macOS · Apple silicon' : 'macOS · Intel';
+  } else if (/Win/.test(plat)) { best = pick(/setup\.exe$/); label = 'Windows'; }
+  else if (/Linux/.test(plat)) { best = pick(/\.AppImage$/); label = 'Linux · AppImage'; }
+  if (best) { dl.href = best.browser_download_url; dl.textContent = `Download for ${label}`; info.textContent = `${rel.tag_name} · ${(best.size / 1e6).toFixed(0)} MB`; }
+  else info.textContent = `${rel.tag_name} — pick your platform below.`;
+  all.innerHTML = assets.map(a => `<li><a href="${a.browser_download_url}">${a.name}</a> <span style="color:var(--muted)">${(a.size / 1e6).toFixed(0)} MB</span></li>`).join('');
+})();
+</script>
+</body>
+</html>
