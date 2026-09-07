@@ -89,6 +89,21 @@ pane, selectors and permission prompt are one implementation. Keys go to
 the OS credential store through Rust (`keyring`), reach the sidecar only
 inside `agent/connect`, and are never written by it.
 
+## The audit is the method's, not the app's
+
+The first real run put a card in front of the owner that split its subject
+across the blank (`{{c1::<b>Peripheral</b>::which position?}} <b>nuclei</b>
+…`) and asked "which type?" of nothing. The structural check passed it — by
+design it judges shape, not meaning — and the app's audit stage at the time
+adjudicated only what the owner had flagged, so no independent reader ever
+saw the deck. The method's own run-sheet has that reader: `deck-auditor.md`,
+a fixed brief that reads the whole deck against the sources and the seven
+reference cards on four angles and files findings without editing. It now
+ships as the fourth method file (`4-audit.md`) and the audit stage runs it
+first, in a session that wrote none of the cards; its findings join the
+owner's flags on the way to the adjudicator. The line holds: the app added a
+stage the method already prescribed, not a rule of its own about cards.
+
 ## What is placeholder, and what is real
 
 | piece | state |
@@ -97,7 +112,7 @@ inside `agent/connect`, and are never written by it.
 | Rust sidecar owner, `sidecar_call` / `sidecar_status` | real |
 | deck preview, checks pane, flag loop, `.apkg` export | real, against the engine |
 | layout, styling, copy | **placeholder** — the shape from APP.md drawn plainly; replaced by Claude Design output |
-| stage rail | real: extract / organize / cards run the method file on the folder; the review gates show the artifact; audit adjudicates flags in a fresh session and the writer applies verdicts; deliver exports |
+| stage rail | real: extract / organize / cards run the method file on the folder; the review gates show the artifact; audit runs the method's deck-auditor brief over the whole deck in a fresh session, then a separate adjudicator rules on its findings plus the owner's flags and the writer applies fixes and cuts verbatim; deliver exports |
 | provider picker, install, sign-in, chat, selectors, permission prompt | real, against the engine; clicks unverified from a session, calls verified at the sidecar |
 | icon | a generated teal square (`app/app-icon.png`); regenerate with `npx tauri icon <png> -o src-tauri/icons` |
 

@@ -162,14 +162,22 @@ async function runStage(stage: StageId) {
     } else if (stage === 'deck preview') {
       await openDeck(`${courseDir}/deck.json`);
     } else if (stage === 'audit') {
-      const { flags } = await sidecar.readFlags(`${courseDir}/deck.json`);
-      if (flags.length === 0) return say('no flags to adjudicate — flag cards in the deck preview first', true);
+      // The method's run-sheet: an auditor who wrote none of the cards reads
+      // the whole deck first; its findings and the owner's flags then go to
+      // a separate adjudicator. The owner sees the report before that step.
       running = true;
-      say(`adjudicating ${flags.length} flag(s) in a fresh session…`);
-      const r = await runner.adjudicate(flags);
-      gate(`<header class="bar"><span>verdicts.md</span><span class="grow"></span><button data-apply="1">Apply verdicts verbatim</button><button data-close="1" class="quiet">Close</button></header>
-        <pre class="artifact">${r.verdicts === null ? '(no verdicts.md was written)' : esc(r.verdicts)}</pre>`);
-      say(r.stopReason === 'end_turn' ? 'verdicts ready' : `adjudicator stopped: ${r.stopReason}`, r.stopReason !== 'end_turn');
+      say('auditing the whole deck in a fresh session…');
+      const a = await runner.audit();
+      const { flags } = await sidecar.readFlags(`${courseDir}/deck.json`);
+      const merged = [
+        ...flags,
+        ...a.findings.filter((f) => f.card > 0).map((f) => ({ noteIndex: f.card - 1, note: `[${f.angle}] ${f.finding}`, at: new Date().toISOString() })),
+      ];
+      await sidecar.writeFlags(`${courseDir}/deck.json`, merged);
+      gate(`<header class="bar"><span>audit.md · ${a.findings.length} finding(s), ${flags.length} owner flag(s)</span><span class="grow"></span>
+          ${merged.length ? `<button data-adjudicate="1">Adjudicate ${merged.length}</button>` : ''}<button data-close="1" class="quiet">Close</button></header>
+        <pre class="artifact">${a.report === null ? '(no audit.md was written)' : esc(a.report)}</pre>`);
+      say(a.stopReason === 'end_turn' ? `audit filed ${a.findings.length} finding(s)` : `auditor stopped: ${a.stopReason}`, a.stopReason !== 'end_turn');
     } else if (stage === 'deliver') {
       await exportDeck(`${courseDir}/deck.json`);
     }

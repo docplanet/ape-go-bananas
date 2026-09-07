@@ -55,6 +55,26 @@ export async function stageBlocks(stage: WritingStage, courseDir: string, deckNa
   return blocks;
 }
 
+export interface AuditFinding {
+  card: number; // 1-based; 0 for a deck-wide (coverage) finding
+  angle: 'truth' | 'fluency' | 'coverage' | 'style' | string;
+  finding: string;
+}
+
+/** The auditor's prompt: the deck-auditor brief as the system block, the step-3 method for its reference cards, the deck. A fresh session that wrote none of the cards. */
+export async function auditBlocks(courseDir: string): Promise<ContentBlock[]> {
+  const [brief, method, deck] = await Promise.all([sidecar.readMethod('4-audit.md'), sidecar.readMethod('3-cards.md'), sidecar.readCourse(courseDir, 'deck.json')]);
+  return [
+    { type: 'resource', resource: { uri: 'ape://system', text: brief.text, mimeType: 'text/markdown' } },
+    {
+      type: 'text',
+      text: `Audit the deck in the course folder below. The seven reference cards your brief tells you to read first are at the top of the attached step-3 method; review.html is already rendered beside deck.json, so do not run render_review.py. Cards are numbered from 1 in deck.json array order. Write your findings to audit.md beside the deck -- all four angles of your brief -- and ALSO write audit.json beside it: a JSON array of objects { "card": <number>, "angle": "truth"|"fluency"|"coverage"|"style", "finding": "<one or two sentences>" }, one per finding that names a specific card (a coverage finding with no card uses "card": 0). Edit nothing else.\n\nCourse folder: ${courseDir}`,
+    },
+    { type: 'resource', resource: { uri: 'ape://method/3-cards.md', text: method.text, mimeType: 'text/markdown' } },
+    { type: 'resource', resource: { uri: fileUri(courseDir, 'deck.json'), text: deck.text, mimeType: 'application/json' } },
+  ];
+}
+
 /** The adjudicator's prompt: method 3, the deck, the flags -- and a verdict per flag, written beside the deck. */
 export async function adjudicateBlocks(courseDir: string, flags: Flag[]): Promise<ContentBlock[]> {
   const [method, deck] = await Promise.all([sidecar.readMethod('3-cards.md'), sidecar.readCourse(courseDir, 'deck.json')]);
@@ -63,7 +83,7 @@ export async function adjudicateBlocks(courseDir: string, flags: Flag[]): Promis
     { type: 'resource', resource: { uri: 'ape://system', text: method.text, mimeType: 'text/markdown' } },
     {
       type: 'text',
-      text: `You are the adjudicator for a deck you did not write. You wrote none of these cards. For each flag below, read the card in deck.json (cards are numbered from 1 in array order) against the method above and the sources in the course folder, and return exactly one verdict per flag: either "approve" with one sentence saying why the card stands, or "fix" with the complete corrected Text/Extra/Source fields. Write the verdicts to verdicts.md beside deck.json, numbered like the flags, and nothing else.\n\nCourse folder: ${courseDir}\n\nFlags:\n${list}`,
+      text: `You are the adjudicator for a deck you did not write. You wrote none of these cards. For each flag below, read the card in deck.json (cards are numbered from 1 in array order) against the method above and the sources in the course folder, and return exactly one verdict per flag: "approve" with one sentence saying why the card stands as written, "fix" with the complete corrected Text/Extra/Source fields, or "cut" if the card should not exist. Write the verdicts to verdicts.md beside deck.json, numbered like the flags, and nothing else.\n\nCourse folder: ${courseDir}\n\nFlags:\n${list}`,
     },
     { type: 'resource', resource: { uri: fileUri(courseDir, 'deck.json'), text: deck.text, mimeType: 'application/json' } },
   ];
@@ -75,13 +95,15 @@ export async function applyVerdictsBlocks(courseDir: string): Promise<ContentBlo
   return [
     {
       type: 'text',
-      text: `An adjudicator who wrote none of the cards has ruled on the flagged ones. Apply every "fix" verdict below to deck.json exactly as written -- do not re-judge, soften, or improve on them -- and leave every "approve" card as it is. Rewrite deck.json in place and stop.\n\nCourse folder: ${courseDir}\n\n${verdicts.text}`,
+      text: `An adjudicator who wrote none of the cards has ruled on the flagged ones. Apply every "fix" verdict below to deck.json exactly as written -- do not re-judge, soften, or improve on them -- remove every card with a "cut" verdict, and leave every "approve" card as it is. Keep the array order of surviving cards. Rewrite deck.json in place and stop.\n\nCourse folder: ${courseDir}\n\n${verdicts.text}`,
     },
   ];
 }
 
 export interface Runner {
   run(stage: WritingStage): Promise<{ stopReason: string; artifactText: string | null }>;
+  /** The whole-deck read the method's run-sheet calls step 3: a fresh session files findings; nothing is edited. */
+  audit(): Promise<{ stopReason: string; report: string | null; findings: AuditFinding[] }>;
   adjudicate(flags: Flag[]): Promise<{ stopReason: string; verdicts: string | null }>;
   applyVerdicts(): Promise<{ stopReason: string }>;
 }
@@ -99,6 +121,19 @@ export function makeRunner(conn: ConnectResult, courseDir: string, deckName: () 
         if (!(err instanceof SidecarError)) throw err;
       }
       return { stopReason, artifactText };
+    },
+    async audit() {
+      const fresh = await sidecar.newSession(conn.connectionId);
+      const { stopReason } = await sidecar.prompt(fresh.session.sessionId, await auditBlocks(courseDir));
+      const report = await sidecar.readCourse(courseDir, 'audit.md').then((r) => r.text, () => null);
+      let findings: AuditFinding[] = [];
+      try {
+        const raw = JSON.parse((await sidecar.readCourse(courseDir, 'audit.json')).text) as unknown;
+        if (Array.isArray(raw)) findings = raw.filter((f): f is AuditFinding => typeof f === 'object' && f !== null && typeof (f as AuditFinding).finding === 'string');
+      } catch {
+        /* no machine-readable findings: the report still shows */
+      }
+      return { stopReason, report, findings };
     },
     async adjudicate(flags) {
       const fresh = await sidecar.newSession(conn.connectionId);
