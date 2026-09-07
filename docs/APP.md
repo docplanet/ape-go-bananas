@@ -118,12 +118,22 @@ overrides, then the dev checkout. Nothing is downloaded at run time except
 agents the user chooses to install. Not shipped: SEA or pkg (Node 24's SEA
 is experimental and the binary is the same size either way).
 
-Still needed before a stranger can double-click it: an Apple Developer ID
-(signing + notarization, `APPLE_SIGNING_IDENTITY` / `APPLE_ID` /
-`APPLE_PASSWORD` / `APPLE_TEAM_ID` at build), a Windows build on a Windows
-runner, and the updater plugin with a GitHub Releases feed. An unsigned
-macOS build runs on the machine that built it and is blocked by Gatekeeper
-elsewhere.
+**Ad-hoc signed, not notarized, on purpose.** `signingIdentity: "-"` seals
+the bundle so a copy out of a zip stays internally consistent (an unsealed
+copy failed to find its own Resources), but this is free software and no one
+is paying Apple 99 dollars a year for a Developer ID. Gatekeeper checks signatures on every
+downloaded app regardless of licence, so a Mac user's first launch is:
+double-click, "cannot be opened", System Settings → Privacy & Security →
+**Open Anyway**, once. The download page says so in two lines. Windows
+shows a SmartScreen warning with "More info → Run anyway"; Linux has no
+gate. If the app ever earns a sponsor, signing is four environment
+variables at build time (`APPLE_SIGNING_IDENTITY`, `APPLE_ID`,
+`APPLE_PASSWORD`, `APPLE_TEAM_ID`) and `Entitlements.plist` is already
+right for the re-signed node. Artifacts: a `.zip` of the app (`ditto -c -k --keepParent`) and a plain
+`.dmg` (`hdiutil create -format UDZO`); Tauri's own DMG step drives Finder
+through Apple events and cannot run headless. Still needed: a Windows
+build on a Windows runner, and the updater plugin with a GitHub Releases
+feed.
 
 ## Running it
 
@@ -141,8 +151,6 @@ default to `../../dist/sidecar/index.js` relative to `src-tauri/`).
 
 ## Open, deliberately
 
-- **Signing.** Decided in shape (above), blocked on an Apple Developer
-  account; Windows signing (Azure Trusted Signing) when budget allows.
 - **CSP.** `tauri.conf.json` sets an explicit policy; `script-src 'self'`
   means the review page's own inline script runs only because the iframe is
   sandboxed `srcdoc`. Re-check when the designed screens arrive.

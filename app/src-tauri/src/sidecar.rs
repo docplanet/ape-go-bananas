@@ -249,7 +249,15 @@ pub struct Paths {
 /// the app executable; engine, npm and method files are resources.
 fn bundled(resource_dir: Option<&PathBuf>) -> (Option<PathBuf>, Option<PathBuf>, Option<PathBuf>) {
     let exe_dir = std::env::current_exe().ok().and_then(|p| p.parent().map(|d| d.to_path_buf()));
-    let node = exe_dir.map(|d| d.join(if cfg!(windows) { "node.exe" } else { "node" })).filter(|p| p.exists());
+    let node = exe_dir.as_ref().map(|d| d.join(if cfg!(windows) { "node.exe" } else { "node" })).filter(|p| p.exists());
+    // Tauri's resource_dir() canonicalizes `<exe dir>/../Resources` and has
+    // been seen to fail for a bundle copied out of a zip; the layout is fixed
+    // (tauri-packaging.md §2), so derive it from the executable as a fallback.
+    let derived = exe_dir.as_ref().map(|d| {
+        if cfg!(target_os = "macos") { d.join("..").join("Resources") } else { d.clone() }
+    });
+    let resource_dir = resource_dir.cloned().filter(|p| p.is_dir()).or(derived.filter(|p| p.is_dir()));
+    let resource_dir = resource_dir.as_ref();
     let script = resource_dir.map(|r| r.join("engine").join("sidecar").join("index.js")).filter(|p| p.exists());
     let npm = resource_dir.map(|r| r.join("npm").join("bin").join("npm-cli.js")).filter(|p| p.exists());
     (node, script, npm)
@@ -262,7 +270,13 @@ pub fn resolve_paths(resource_dir: Option<PathBuf>) -> Result<Paths, String> {
         None => match bundled_script {
             Some(p) => p,
             None if cfg!(debug_assertions) => PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../dist/sidecar/index.js"),
-            None => return Err("no bundled engine (resources/engine/sidecar/index.js) and APE_SIDECAR is not set".into()),
+            None => {
+                return Err(format!(
+                    "no bundled engine (looked for engine/sidecar/index.js under {}; exe {}) and APE_SIDECAR is not set",
+                    resource_dir.as_ref().map(|p| p.display().to_string()).unwrap_or_else(|| "<no resource dir>".into()),
+                    std::env::current_exe().map(|p| p.display().to_string()).unwrap_or_default()
+                ))
+            }
         },
     };
     let script = script.canonicalize().map_err(|e| format!("engine script {}: {e} (run `npm run build` in the engine repo)", script.display()))?;
