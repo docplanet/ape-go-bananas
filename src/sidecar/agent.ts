@@ -166,6 +166,7 @@ export class AgentBridge {
       },
       'agent/connect': (raw) => this.connect(asParams(raw)),
       'agent/login': (raw) => this.login(asParams(raw)),
+      'agent/newSession': (raw) => this.newSession(asParams(raw)),
       'agent/status': (raw) => this.status(asParams(raw)),
       'agent/prompt': (raw) => this.prompt(asParams(raw)),
       'agent/cancel': (raw) => {
@@ -456,6 +457,18 @@ export class AgentBridge {
       };
       tick();
     });
+  }
+
+  /** A second session that shares the process but none of the conversation: the adjudicator's seat. */
+  private async newSession(p: Params) {
+    const conn = this.connection(str(p, 'connectionId'));
+    if (conn.kind === 'api') {
+      const state = this.openApiSession(conn);
+      return { session: { sessionId: state.sessionId, modes: state.modes, configOptions: state.configOptions, commands: [] as AvailableCommand[] } };
+    }
+    const state = await this.openAcpSession(conn);
+    if (state === null) throw new Error('the agent requires sign-in before a session can be opened');
+    return { session: this.connectResult(conn, state).session };
   }
 
   private status(p: Params) {

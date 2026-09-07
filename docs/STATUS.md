@@ -545,3 +545,38 @@ under `~/Library/Application Support/dev.docplanet.ape/`. Clicks through the
 picker, sign-in, and chat in the running window are **not** verified from
 this session (no screen capture); every call they make is verified at the
 sidecar level above.
+
+## The pipeline as screens (`app/src/pipeline.ts`, sidecar `method/*`, `course/*`)
+
+**Works, oracle-tested for the file methods, verified live for stage 1.**
+`docs/research/course-protocol.md` adds four read-only methods so the
+webview never touches the filesystem: `method/list`, `method/read` (the
+bundled method files, from `APE_METHOD_DIR` which the app sets to the
+`method/` resource, or the method repo in dev), `course/list` and
+`course/read`. `test/sidecar/course.test.ts` (9 cases, blind): 9 pass on
+the first run. `agent/newSession` (the adjudicator's seat) has no blind
+oracle — self-authored wiring over the tested `openAcpSession`/
+`openApiSession` paths; noted.
+
+A stage's prompt is: the method file as the `ape://system` block, one
+app-side sentence naming the folder, the deck name and the artifact to
+write, the materials listing, and every PDF/image/text file as a
+`resource_link`. The review gates read the artifact back and show it. Audit
+sends the flags, the deck and method 3 to a **fresh session**, asks for one
+verdict per flag written to `verdicts.md`, and the writer session then
+applies them verbatim — the standing rule, as wiring.
+
+Live, `extract` on a two-file synthetic course (a one-page text PDF and a
+short transcript) through the installed Claude agent, using exactly the
+blocks `stageBlocks` builds: `end_turn` in 118 s; five tool calls (two
+Terminal, two Read File, one Write) with two permission requests relayed and
+answered; `inventory.md` written (8.5 KB) in the method's own shape — files
+read back, `## Facts` with entity/source/quote/signal per fact, a
+`## Carried to handover` section. The run also found a gap in the app's
+ask: the method refuses to infer the deck name, and the app had not asked
+for one. It now does.
+
+**Not verified:** organize, cards, audit and apply-verdicts live (the same
+mechanism, untested end to end); any stage through the OpenRouter tier live
+(the embedded loop's attachments are oracle-tested against the fake only);
+every click in the window.

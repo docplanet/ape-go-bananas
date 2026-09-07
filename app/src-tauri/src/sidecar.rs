@@ -97,11 +97,14 @@ impl Sidecar {
     /// the first stdout line must be `sidecar/ready` (§2.1), forwarded to the
     /// webview like every other notification.
     pub fn start(&self, app: AppHandle, paths: Paths) -> Result<(), String> {
-        let Paths { node, script, npm_cli } = paths;
+        let Paths { node, script, npm_cli, method_dir } = paths;
         let mut cmd = Command::new(&node);
         cmd.arg(&script);
         if let Some(npm) = npm_cli {
             cmd.env("APE_NPM_CLI", npm);
+        }
+        if let Some(dir) = method_dir {
+            cmd.env("APE_METHOD_DIR", dir);
         }
         let mut child = cmd
             .stdin(Stdio::piped())
@@ -236,6 +239,10 @@ pub struct Paths {
     /// npm's entry point, handed to the sidecar as `APE_NPM_CLI` so agent
     /// installs use the bundled npm (agent-protocol.md §1).
     pub npm_cli: Option<PathBuf>,
+    /// The method files, handed to the sidecar as `APE_METHOD_DIR`
+    /// (course-protocol.md §1): the bundle's `method/` resource, else the
+    /// method repo's `method/` beside this checkout in dev.
+    pub method_dir: Option<PathBuf>,
 }
 
 /// Bundled layout (tauri-packaging.md §9): the node externalBin sits beside
@@ -265,6 +272,13 @@ pub fn resolve_paths(resource_dir: Option<PathBuf>) -> Result<Paths, String> {
         .or(bundled_node)
         .unwrap_or_else(|| PathBuf::from("node"));
     let npm_cli = std::env::var_os("APE_NPM_CLI").map(PathBuf::from).or(bundled_npm);
+    let method_dir = std::env::var_os("APE_METHOD_DIR")
+        .map(PathBuf::from)
+        .or_else(|| resource_dir.as_ref().map(|r| r.join("method")).filter(|p| p.join("1-extract.md").exists()))
+        .or_else(|| {
+            let dev = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../Anki/method");
+            if cfg!(debug_assertions) && dev.is_dir() { dev.canonicalize().ok() } else { None }
+        });
     let out = std::process::Command::new(&node)
         .arg("--version")
         .output()
@@ -274,5 +288,5 @@ pub fn resolve_paths(resource_dir: Option<PathBuf>) -> Result<Paths, String> {
     if major < 24 {
         return Err(format!("{} is Node {version}; the engine needs >= 24 (node:sqlite). Set APE_NODE.", node.display()));
     }
-    Ok(Paths { node, script, npm_cli })
+    Ok(Paths { node, script, npm_cli, method_dir })
 }

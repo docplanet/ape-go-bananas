@@ -21,6 +21,7 @@ import {
   type RequestId,
 } from '../acp/framing.js';
 import { AgentBridge } from './agent.js';
+import { courseMethods } from './course.js';
 import { InvalidParams, buildMethods, type MethodHandler, type SidecarInfo } from './methods.js';
 
 function packageVersion(): string {
@@ -75,7 +76,7 @@ const appLink = {
 };
 const bridge = new AgentBridge(appLink);
 
-const methods: Record<string, MethodHandler> = { ...buildMethods(info, () => exitAfterFlush(0)), ...bridge.methods() };
+const methods: Record<string, MethodHandler> = { ...buildMethods(info, () => exitAfterFlush(0)), ...courseMethods(), ...bridge.methods() };
 
 function respondError(id: RequestId, code: number, message: string, data?: unknown): void {
   send(encodeErrorResponse(id, data === undefined ? { code, message } : { code, message, data }));

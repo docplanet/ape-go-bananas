@@ -1,0 +1,216 @@
+// Course-protocol §3 (docs/research/course-protocol.md): method/list,
+// method/read, course/list, course/read. Written from that page and
+// sidecar-protocol.md §1-§3 only -- see helpers.ts's header; src/sidecar/
+// was never opened. The sidecar reads APE_METHOD_DIR from its environment,
+// which spawnSidecar copies from process.env, so each spawn below sets or
+// deletes it on process.env for the duration of the spawn call.
+import assert from 'node:assert/strict';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { basename, dirname, join } from 'node:path';
+import test, { after } from 'node:test';
+
+import { TIMEOUT, makeTmpDir, spawnSidecar, sweepSidecars, writeTmpFile, type RpcMessage, type Sidecar } from './helpers.ts';
+
+after(sweepSidecars);
+
+const METHOD_DIR_MSG = 'APE_METHOD_DIR is not set or not a directory';
+const bytesOf = (s: string | Buffer) => Buffer.byteLength(s);
+
+function spawnWithMethodDir(dir: string | undefined): Sidecar {
+  const saved = process.env.APE_METHOD_DIR;
+  if (dir === undefined) delete process.env.APE_METHOD_DIR; else process.env.APE_METHOD_DIR = dir;
+  try { return spawnSidecar(); } finally {
+    if (saved === undefined) delete process.env.APE_METHOD_DIR; else process.env.APE_METHOD_DIR = saved;
+  }
+}
+
+function expectError(res: RpcMessage, code: number, label: string): { message: string; data?: unknown } {
+  assert.ok(res.error, `${label}: expected an error response, got ${JSON.stringify(res)}`);
+  assert.ok(!('result' in res), `${label}: an error response carries no result`);
+  assert.equal(res.error.code, code, `${label}: ${res.error.message}`);
+  assert.ok(res.error.message.length > 0, `${label}: message must be human-readable`);
+  return res.error;
+}
+/** Protocol §3: -32602's message names the offending field. */
+function expectParamError(res: RpcMessage, field: string, label: string): void {
+  const err = expectError(res, -32602, label);
+  assert.match(err.message, new RegExp(`\\b${field}\\b`), `${label}: must name \`${field}\`: ${err.message}`);
+}
+
+// --- §1 method files -------------------------------------------------------
+
+// Sorted order is a-, b-, c-; each title comes from a different rule.
+const METHOD_FILES: Record<string, string> = {
+  'a-heading.md': 'Intro prose before the heading.\n\n# Extract facts\n\nBody.\n',
+  'b-frontmatter.md': '---\nname: Organize plan\ndescription: no heading anywhere below\n---\n\nBody without a heading.\n',
+  'c-bare.md': 'Just prose: no heading, no frontmatter.\n',
+};
+function makeMethodDir(): string {
+  const dir = makeTmpDir('ape-method-');
+  for (const [name, text] of Object.entries(METHOD_FILES).reverse()) writeTmpFile(dir, name, text);
+  writeTmpFile(dir, 'README.txt', 'not markdown\n'); // not *.md -> not listed
+  mkdirSync(join(dir, 'nested'));
+  writeTmpFile(join(dir, 'nested'), 'deep.md', '# Not directly in the directory\n'); // not listed either
+  return dir;
+}
+
+test('method/list: every *.md directly in APE_METHOD_DIR, sorted, titled by heading / frontmatter / file name (§1, §3)', { timeout: TIMEOUT }, async () => {
+  const dir = makeMethodDir();
+  const s = spawnWithMethodDir(dir);
+  await s.ready;
+  const res = await s.request(1, 'method/list');
+  assert.equal(res.error, undefined, JSON.stringify(res.error));
+  assert.deepStrictEqual(res.result, {
+    dir,
+    files: [
+      { name: 'a-heading.md', title: 'Extract facts', bytes: bytesOf(METHOD_FILES['a-heading.md']) },
+      { name: 'b-frontmatter.md', title: 'Organize plan', bytes: bytesOf(METHOD_FILES['b-frontmatter.md']) },
+      { name: 'c-bare.md', title: 'c-bare', bytes: bytesOf(METHOD_FILES['c-bare.md']) },
+    ],
+  });
+  assert.equal(await s.end(), 0);
+});
+
+test('method/read returns the exact text of each listed file (§1, §3)', { timeout: TIMEOUT }, async () => {
+  const s = spawnWithMethodDir(makeMethodDir());
+  await s.ready;
+  let id = 0;
+  for (const [name, text] of Object.entries(METHOD_FILES)) {
+    const res = await s.request(++id, 'method/read', { name });
+    assert.deepStrictEqual(res, { jsonrpc: '2.0', id, result: { name, text } });
+  }
+  assert.equal(await s.end(), 0);
+});
+
+test('method/read refuses ../x.md, a/b.md, an unknown name and a bad `name` param with -32602 (§1, §3)', { timeout: TIMEOUT }, async () => {
+  const s = spawnWithMethodDir(makeMethodDir());
+  await s.ready;
+  // "bare file name that method/list would return (no `/`, no `..`); otherwise -32602 naming `name`"
+  for (const [id, name] of [[1, '../x.md'], [2, 'a/b.md'], [3, 'nested/deep.md'], [4, '..']] as const) {
+    expectParamError(await s.request(id, 'method/read', { name }), 'name', name);
+  }
+  expectParamError(await s.request(5, 'method/read', {}), 'name', 'name absent');
+  expectParamError(await s.request(6, 'method/read', { name: 7 }), 'name', 'name not a string');
+  // "A name not present -> -32602" (the message text is not pinned by the spec).
+  expectError(await s.request(7, 'method/read', { name: 'unknown.md' }), -32602, 'unknown name');
+  expectError(await s.request(8, 'method/read', { name: 'README.txt' }), -32602, 'present on disk but never listed');
+  // §2 lifecycle: the process survives every refusal.
+  assert.deepStrictEqual((await s.request(9, 'method/read', { name: 'c-bare.md' })).result, { name: 'c-bare.md', text: METHOD_FILES['c-bare.md'] });
+  assert.equal(await s.end(), 0);
+});
+
+test('APE_METHOD_DIR unset or not a directory -> -32000 with the fixed message on both methods (§1, §3)', { timeout: TIMEOUT }, async () => {
+  const unset = spawnWithMethodDir(undefined);
+  const notDir = spawnWithMethodDir(writeTmpFile(makeTmpDir(), 'method-file.md', '# a file, not a directory\n'));
+  await Promise.all([unset.ready, notDir.ready]);
+  for (const [s, label] of [[unset, 'unset'], [notDir, 'a file']] as const) {
+    assert.equal(expectError(await s.request(1, 'method/list'), -32000, `${label}: list`).message, METHOD_DIR_MSG);
+    assert.equal(expectError(await s.request(2, 'method/read', { name: 'a.md' }), -32000, `${label}: read`).message, METHOD_DIR_MSG);
+    assert.equal(((await s.request(3, 'sidecar/ping')).result as { engine: string }).engine, 'ape', `${label}: still alive`);
+    assert.equal(await s.end(), 0);
+  }
+});
+
+// --- §2 the course folder --------------------------------------------------
+
+const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+const ZIP = Buffer.from('PK', 'latin1');
+/** [relPath, content, kind, mimeType], already in the order `course/list` must return. */
+const COURSE_FILES: Array<[string, string | Buffer, string, string]> = [
+  // "audio/mp4" is the usual (RFC 4337) registration for .m4a.
+  ['audio/lecture.m4a', Buffer.from('\0\0\0\x1cftypM4A ', 'latin1'), 'audio', 'audio/mp4'],
+  ['data.json', '{"k": 1}\n', 'text', 'application/json'],
+  ['deck.pptx', ZIP, 'slides', 'application/vnd.openxmlformats-officedocument.presentationml.presentation'],
+  ['handout.docx', ZIP, 'doc', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'],
+  ['lecture.pdf', '%PDF-1.4\n', 'pdf', 'application/pdf'],
+  ['notes.md', '# Notes\n\nUTF-8 text — with a real dash.\n', 'text', 'text/markdown'],
+  ['slide.png', PNG, 'image', 'image/png'],
+  ['slides/01.png', PNG, 'image', 'image/png'],
+  // Strict reading of "`kind` by extension": the extension is matched
+  // case-insensitively, so an uppercase .JPG is still an image / image/jpeg.
+  ['slides/02.JPG', Buffer.from([0xff, 0xd8, 0xff, 0xe0]), 'image', 'image/jpeg'],
+  ['sub/a.txt', 'nested text\n', 'text', 'text/plain'],
+  ['transcript.vtt', 'WEBVTT\n\n00:00.000 --> 00:01.000\nhi\n', 'text', 'text/vtt'],
+  ['video/clip.mp4', Buffer.from('\0\0\0\x1cftypisom', 'latin1'), 'video', 'video/mp4'],
+  ['weird.xyz', 'unknown extension\n', 'other', 'application/octet-stream'],
+];
+const SKIPPED = ['.DS_Store', '.hidden/secret.md', 'node_modules/x/index.js'];
+const ARTIFACTS = ['inventory.md', 'plan.md', 'deck.json', 'flags.json', 'review.html', 'out.apkg'];
+const NO_ARTIFACTS = { inventory: false, plan: false, deck: false, flags: false, review: false };
+const EXPECTED_FILES = COURSE_FILES.map(([relPath, content, kind, mimeType]) => ({ name: basename(relPath), relPath, bytes: bytesOf(content), kind, mimeType }));
+
+/** `<root>/course` holding COURSE_FILES (written in reverse order), the skipped entries, `artifacts`; plus `<root>/outside.md`. */
+function makeCourseTree(artifacts: string[] = []): { root: string; dir: string } {
+  const root = makeTmpDir('ape-course-');
+  const dir = join(root, 'course');
+  const put = (rel: string, content: string | Buffer) => {
+    mkdirSync(join(dir, dirname(rel)), { recursive: true });
+    writeFileSync(join(dir, rel), content);
+  };
+  for (const [rel, content] of [...COURSE_FILES].reverse()) put(rel, content);
+  for (const rel of SKIPPED) put(rel, 'skipped\n');
+  for (const rel of artifacts) put(rel, '{}\n');
+  writeFileSync(join(root, 'outside.md'), 'outside the course folder\n');
+  return { root, dir };
+}
+
+test('course/list: every regular file recursively, sorted by relPath, dotfiles and node_modules skipped, kinds and mime types by extension (§2, §3)', { timeout: TIMEOUT }, async () => {
+  const { dir } = makeCourseTree();
+  const s = spawnSidecar();
+  await s.ready;
+  const res = await s.request(1, 'course/list', { path: dir });
+  assert.equal(res.error, undefined, JSON.stringify(res.error));
+  assert.deepStrictEqual(res.result, { path: dir, files: EXPECTED_FILES, artifacts: NO_ARTIFACTS });
+  assert.equal(await s.end(), 0);
+});
+
+test('course/list: artifacts are reported, never listed as files; *.apkg is skipped (§2, §3)', { timeout: TIMEOUT }, async () => {
+  const all = makeCourseTree(ARTIFACTS);
+  const planOnly = makeCourseTree(['plan.md']);
+  const s = spawnSidecar();
+  await s.ready;
+  const full = await s.request(1, 'course/list', { path: all.dir });
+  assert.equal(full.error, undefined, JSON.stringify(full.error));
+  assert.deepStrictEqual(full.result, { path: all.dir, files: EXPECTED_FILES, artifacts: { inventory: true, plan: true, deck: true, flags: true, review: true } });
+  assert.deepStrictEqual((await s.request(2, 'course/list', { path: planOnly.dir })).result, { path: planOnly.dir, files: EXPECTED_FILES, artifacts: { ...NO_ARTIFACTS, plan: true } });
+  assert.equal(await s.end(), 0);
+});
+
+test('course/list: a path that is not a directory -> -32000; a bad `path` param -> -32602 (§2, §3)', { timeout: TIMEOUT }, async () => {
+  const { dir } = makeCourseTree();
+  const s = spawnSidecar();
+  await s.ready;
+  expectError(await s.request(1, 'course/list', { path: join(dir, 'notes.md') }), -32000, 'a file');
+  expectError(await s.request(2, 'course/list', { path: join(dir, 'no-such-dir') }), -32000, 'nonexistent');
+  expectParamError(await s.request(3, 'course/list', {}), 'path', 'path absent');
+  expectParamError(await s.request(4, 'course/list', { path: 3 }), 'path', 'path not a string');
+  assert.equal(((await s.request(5, 'course/list', { path: dir })).result as { files: unknown[] }).files.length, EXPECTED_FILES.length, 'still alive');
+  assert.equal(await s.end(), 0);
+});
+
+test('course/read returns exact UTF-8 text and byte count for notes.md and nested sub/a.txt (§2, §3)', { timeout: TIMEOUT }, async () => {
+  const { dir } = makeCourseTree();
+  const s = spawnSidecar();
+  await s.ready;
+  for (const [id, name] of [[1, 'notes.md'], [2, 'sub/a.txt']] as const) {
+    const text = COURSE_FILES.find(([rel]) => rel === name)![1] as string;
+    assert.deepStrictEqual(await s.request(id, 'course/read', { path: dir, name }), { jsonrpc: '2.0', id, result: { name, text, bytes: bytesOf(text) } });
+  }
+  assert.equal(await s.end(), 0);
+});
+
+test('course/read refuses an escaping name, a non-text kind, a non-file, and bad params with -32602 (§2, §3)', { timeout: TIMEOUT }, async () => {
+  const { root, dir } = makeCourseTree();
+  const s = spawnSidecar();
+  await s.ready;
+  expectParamError(await s.request(1, 'course/read', { path: dir, name: '../outside.md' }), 'name', 'escapes path (exists, still refused)');
+  expectParamError(await s.request(2, 'course/read', { path: dir, name: join(root, 'outside.md') }), 'name', 'absolute name escapes path');
+  const png = expectError(await s.request(3, 'course/read', { path: dir, name: 'slide.png' }), -32602, 'slide.png');
+  assert.match(png.message, /is not a text file/, png.message);
+  expectError(await s.request(4, 'course/read', { path: dir, name: 'sub' }), -32602, 'a directory is not a regular file');
+  expectError(await s.request(5, 'course/read', { path: dir, name: 'missing.txt' }), -32602, 'a missing file is not a regular file');
+  expectParamError(await s.request(6, 'course/read', { path: dir }), 'name', 'name absent');
+  expectParamError(await s.request(7, 'course/read', { name: 'notes.md' }), 'path', 'path absent');
+  assert.equal(((await s.request(8, 'course/read', { path: dir, name: 'sub/a.txt' })).result as { bytes: number }).bytes, bytesOf('nested text\n'), 'still alive');
+  assert.equal(await s.end(), 0);
+});

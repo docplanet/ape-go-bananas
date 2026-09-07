@@ -108,6 +108,14 @@ export type ContentBlock =
 
 export type SessionUpdate = { sessionUpdate: string } & Record<string, unknown>;
 
+export interface CourseFile {
+  name: string;
+  relPath: string;
+  bytes: number;
+  kind: 'pdf' | 'image' | 'audio' | 'video' | 'text' | 'slides' | 'doc' | 'other';
+  mimeType: string;
+}
+
 export interface PermissionRequest {
   id: number;
   method: 'agent/requestPermission';
@@ -173,6 +181,12 @@ export const sidecar = {
   connect: (params: { provider: string; dataDir: string; cwd: string; apiKey?: string }) => call<ConnectResult>('agent/connect', params),
   login: (connectionId: string, methodId: string) =>
     call<{ methodId: string; exitCode: number | null; authenticated: boolean } & Partial<ConnectResult>>('agent/login', { connectionId, methodId }),
+  newSession: (connectionId: string) => call<{ session: SessionInfo }>('agent/newSession', { connectionId }),
+  listMethod: () => call<{ dir: string; files: { name: string; title: string; bytes: number }[] }>('method/list'),
+  readMethod: (name: string) => call<{ name: string; text: string }>('method/read', { name }),
+  listCourse: (path: string) =>
+    call<{ path: string; files: CourseFile[]; artifacts: { inventory: boolean; plan: boolean; deck: boolean; flags: boolean; review: boolean } }>('course/list', { path }),
+  readCourse: (path: string, name: string) => call<{ name: string; text: string; bytes: number }>('course/read', { path, name }),
   prompt: (sessionId: string, blocks: ContentBlock[]) => call<{ stopReason: string }>('agent/prompt', { sessionId, blocks }),
   cancel: (sessionId: string) => call<Record<string, never>>('agent/cancel', { sessionId }),
   setMode: (sessionId: string, modeId: string) => call<{ modes: ModeState }>('agent/setMode', { sessionId, modeId }),

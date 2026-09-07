@@ -141,6 +141,13 @@ params `{ connectionId, methodId }` → `{ methodId, exitCode: number | null, au
   `authenticated: true` if it resolved.
 - api providers → `-32602`.
 
+### `agent/newSession`
+params `{ connectionId }` → the same `session` object `agent/connect` returns,
+for a second, independent session on the same connection — the adjudicator
+that APP.md requires to have written none of the cards. ACP: `session/new`
+again (mode pinned as on connect); api: a fresh embedded session with the
+connection's models, default model and effort.
+
 ### `agent/status`
 params `{ connectionId }` → `{ connectionId, provider, kind, authStatus, authMethods, sessions: string[] }`
 

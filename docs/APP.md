@@ -97,7 +97,7 @@ inside `agent/connect`, and are never written by it.
 | Rust sidecar owner, `sidecar_call` / `sidecar_status` | real |
 | deck preview, checks pane, flag loop, `.apkg` export | real, against the engine |
 | layout, styling, copy | **placeholder** — the shape from APP.md drawn plainly; replaced by Claude Design output |
-| stage rail | cosmetic: only `deck preview` and `deliver` do anything; the stage prompts are the next slice |
+| stage rail | real: extract / organize / cards run the method file on the folder; the review gates show the artifact; audit adjudicates flags in a fresh session and the writer applies verdicts; deliver exports |
 | provider picker, install, sign-in, chat, selectors, permission prompt | real, against the engine; clicks unverified from a session, calls verified at the sidecar |
 | icon | a generated teal square (`app/app-icon.png`); regenerate with `npx tauri icon <png> -o src-tauri/icons` |
 
