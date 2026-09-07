@@ -36,7 +36,7 @@ name starts with `.`, `node_modules`, and the artifacts themselves
 `*.apkg`). `kind` by extension: `pdf`; `image` (png jpg jpeg gif webp);
 `audio` (mp3 m4a wav aac ogg flac); `video` (mp4 mov webm mkv); `text` (md
 txt vtt srt csv json html); `slides` (pptx ppt key odp); `doc` (docx doc
-pages); else `other`. `mimeType` is the usual one for the extension,
+pages rtf); else `other`. `mimeType` is the usual one for the extension,
 `application/octet-stream` when unknown. `artifacts` reports which of
 `inventory.md`, `plan.md`, `deck.json`, `flags.json`, `review.html` exist
 directly in `path`. A `path` that is not a directory → `-32000`.

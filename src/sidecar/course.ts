@@ -38,6 +38,7 @@ const KINDS: Record<string, { kind: string; mime: string }> = {
   docx: { kind: 'doc', mime: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' },
   doc: { kind: 'doc', mime: 'application/msword' },
   pages: { kind: 'doc', mime: 'application/vnd.apple.pages' },
+  rtf: { kind: 'doc', mime: 'application/rtf' },
 };
 
 function classify(name: string): { kind: string; mimeType: string } {
