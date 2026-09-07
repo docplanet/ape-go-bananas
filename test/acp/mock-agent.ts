@@ -177,6 +177,8 @@ function handleRequest(
       return handleInitialize(id, scenario);
     case 'session/new':
       return handleSessionNew(id, params, scenario);
+    case 'session/set_config_option':
+      return handleSetConfigOption(id, params);
     case 'session/set_mode':
       return handleSetMode(id, params);
     case 'authenticate':
@@ -313,6 +315,61 @@ const MODE_STATE = {
   ],
 };
 
+/**
+ * #17.2 state, mutated in place by set_config_option so the "full state
+ * back, every time" contract has something real to return.
+ */
+const CONFIG_STATE: Array<Record<string, unknown>> = [
+  {
+    id: 'mode',
+    name: 'Mode',
+    description: 'Session permission mode',
+    category: 'mode',
+    type: 'select',
+    currentValue: 'auto',
+    options: [
+      { value: 'default', name: 'Manual' },
+      { value: 'auto', name: 'Auto' },
+      { value: 'plan', name: 'Plan' },
+    ],
+  },
+  {
+    id: 'model',
+    name: 'Model',
+    category: 'model',
+    type: 'select',
+    currentValue: 'sonnet',
+    options: [
+      { value: 'sonnet', name: 'Sonnet' },
+      { value: 'opus', name: 'Opus' },
+    ],
+  },
+];
+
+/**
+ * #17.2. Returns the WHOLE option list, not the one that changed, and uses
+ * that freedom the way the spec describes: selecting `plan` also forces
+ * `model` to `opus`, a dependent change the client can only learn about by
+ * taking the response wholesale.
+ */
+function handleSetConfigOption(id: number | string | null, params: Record<string, unknown>): void {
+  const option = CONFIG_STATE.find((o) => o.id === params.configId);
+  if (!option) {
+    respondError(id, -32602, `mock-agent: unknown configId: ${String(params.configId)}`);
+    return;
+  }
+  const choices = option.options as Array<{ value: string }>;
+  if (!choices.some((c) => c.value === params.value)) {
+    respondError(id, -32602, `mock-agent: value not offered for ${String(params.configId)}: ${String(params.value)}`);
+    return;
+  }
+  option.currentValue = params.value;
+  if (params.configId === 'mode' && params.value === 'plan') {
+    CONFIG_STATE[1].currentValue = 'opus';
+  }
+  respondResult(id, { configOptions: CONFIG_STATE });
+}
+
 /** #17.1: answer `{}`, then report the change with the #8 spelling. */
 function handleSetMode(id: number | string | null, params: Record<string, unknown>): void {
   const sessionId = params.sessionId as string;
@@ -341,6 +398,11 @@ function handleSessionNew(id: number | string | null, params: Record<string, unk
     respondResult(id, { sessionId, modes: MODE_STATE });
     return;
   }
+  if (scenario === SCENARIOS.CONFIG_OPTIONS) {
+    // Both mechanisms at once, as a mid-transition agent does (#17.2).
+    respondResult(id, { sessionId, modes: MODE_STATE, configOptions: CONFIG_STATE });
+    return;
+  }
   respondResult(id, { sessionId });
 }
 
@@ -350,6 +412,14 @@ function handleSessionPrompt(id: number | string | null, params: Record<string, 
   const sessionId = params.sessionId as string;
   const promptBlocks = (params.prompt ?? []) as Array<{ type: string; text?: string }>;
   const text = promptBlocks.find((b) => b.type === 'text')?.text ?? '';
+
+  if (scenario === SCENARIOS.CONFIG_OPTIONS) {
+    // Agent-initiated full-state replacement (#8, #17.2).
+    CONFIG_STATE[1].currentValue = 'opus';
+    notify('session/update', { sessionId, update: { sessionUpdate: 'config_option_update', configOptions: CONFIG_STATE } });
+    respondResult(id, { stopReason: 'end_turn' });
+    return;
+  }
 
   if (scenario === SCENARIOS.SESSION_MODES) {
     // #17.1: "the agent may instead change its own mode unilaterally" --

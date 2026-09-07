@@ -87,6 +87,7 @@ import {
   type RequestPermissionOutcome,
   type RequestPermissionParams,
   type SessionId,
+  type SessionConfigOption,
   type SessionMode,
   type SessionModeState,
   type SessionUpdate,
@@ -206,6 +207,37 @@ export interface AcpSession {
    * advertised -- both are caller bugs detectable locally.
    */
   setMode(modeId: string): Promise<void>;
+  /**
+   * Session Config Options (#17.2), or undefined if the agent reported
+   * none. Kept current across both ways the agent can change it: the full
+   * state returned by setConfigOption(), and the `config_option_update`
+   * notification.
+   *
+   * PRECEDENCE (#17.2): when an agent reports both this and `modes`, the
+   * spec says a client supporting config options "SHOULD use configOptions
+   * exclusively and ignore modes" -- modes is the fallback for agents that
+   * have not migrated. Both are surfaced here rather than one being hidden,
+   * because a caller may still need the fallback; `supportsConfigOptions`
+   * says which one to trust.
+   */
+  readonly configOptions: SessionConfigOption[] | undefined;
+  /** True when the agent reported `configOptions`, i.e. when #17.2 supersedes `modes` for this session. */
+  readonly supportsConfigOptions: boolean;
+  /**
+   * Sets one config option (#17.2) and adopts the agent's response.
+   *
+   * That response carries the WHOLE option list, not just the option that
+   * changed -- the spec's stated reason being that changing one option may
+   * change others ("if changing the model affects available reasoning
+   * options"). This replaces local state from it wholesale rather than
+   * patching the single field, since a patch would silently desync on
+   * every dependent change.
+   *
+   * Rejects without sending anything if the agent reported no config
+   * options, if `configId` names none of them, or if a select option was
+   * given a value it does not offer.
+   */
+  setConfigOption(configId: string, value: string | boolean): Promise<void>;
 }
 
 export interface AcpClient {
@@ -368,6 +400,26 @@ function buildInitializeParams(clientInfo: Implementation | undefined): { protoc
 }
 
 /**
+ * Reads #17.2's optional `configOptions` list. Validated rather than cast,
+ * for the same reason parseModeState is: a half-formed entry would surface
+ * as a SessionConfigOption whose `options` array is undefined, and every
+ * caller iterates it. Entries are passed through whole so an agent's extra
+ * spec-legal fields (`_meta`, #3) survive -- claude-agent-acp 0.75.1 puts
+ * `_meta.kind` on each choice.
+ */
+function parseConfigOptions(raw: unknown): SessionConfigOption[] | undefined {
+  if (!Array.isArray(raw)) return undefined;
+  const parsed = raw.filter((o): o is SessionConfigOption => {
+    if (typeof o !== 'object' || o === null) return false;
+    const opt = o as SessionConfigOption;
+    if (typeof opt.id !== 'string') return false;
+    if (opt.type === 'select') return Array.isArray(opt.options);
+    return opt.type === 'boolean';
+  });
+  return parsed;
+}
+
+/**
  * Reads #17.1's optional `modes` block off a session/new result. Validated
  * rather than cast: `modes` is optional-or-null on the wire, and a
  * half-formed block would otherwise surface as a SessionModeState whose
@@ -507,18 +559,60 @@ class AcpSessionImpl implements AcpSession {
   private updateListener: ((update: SessionUpdate) => void) | undefined;
   readonly modes: SessionModeState | undefined;
   currentModeId: string | undefined;
+  configOptions: SessionConfigOption[] | undefined;
+
+  get supportsConfigOptions(): boolean {
+    return this.configOptions !== undefined;
+  }
 
   constructor(
     sessionId: SessionId,
     transport: AcpTransport,
     promptCapabilities: AgentCapabilities['promptCapabilities'],
     modes: SessionModeState | undefined,
+    configOptions: SessionConfigOption[] | undefined,
   ) {
     this.sessionId = sessionId;
     this.transport = transport;
     this.promptCapabilities = promptCapabilities;
     this.modes = modes;
     this.currentModeId = modes?.currentModeId;
+    this.configOptions = configOptions;
+  }
+
+  /** #17.2; see the AcpSession interface for why the whole response is adopted. */
+  async setConfigOption(configId: string, value: string | boolean): Promise<void> {
+    const options = this.configOptions;
+    if (!options) {
+      throw new Error('setConfigOption: the agent reported no config options for this session (acp-protocol.md #17.2)');
+    }
+    const option = options.find((o) => o.id === configId);
+    if (!option) {
+      const known = options.map((o) => o.id).join(', ') || '<none>';
+      throw new Error(`setConfigOption: no config option with id "${configId}" (available: ${known}) (acp-protocol.md #17.2)`);
+    }
+    if (option.type === 'select' && !option.options.some((c) => c.value === value)) {
+      const offered = option.options.map((c) => c.value).join(', ');
+      throw new Error(`setConfigOption: "${String(value)}" is not one of the values "${configId}" offers (${offered}) (acp-protocol.md #17.2)`);
+    }
+    const params: { sessionId: SessionId; configId: string; value: string | boolean; type?: 'boolean' } = {
+      sessionId: this.sessionId,
+      configId,
+      value,
+    };
+    // #17.2's boolean variant sends `type` alongside the value. This client
+    // never advertises the capability that lets an agent offer one, so this
+    // only fires for a non-compliant agent -- kept correct rather than
+    // unreachable-by-assumption.
+    if (option.type === 'boolean') params.type = 'boolean';
+
+    const result = (await this.transport.request('session/set_config_option', params)) as { configOptions?: unknown };
+    const next = parseConfigOptions(result?.configOptions);
+    // Only replace on a well-formed full state. An agent that answers with
+    // something unparseable leaves the last known-good state in place --
+    // preferable to blanking it, since this is what callers read to decide
+    // whether the agent asks permission at all.
+    if (next) this.configOptions = next;
   }
 
   /** #17.1; see the AcpSession interface for why both refusals are local. */
@@ -598,6 +692,11 @@ class AcpSessionImpl implements AcpSession {
     // Tracked before routing, so the mode stays correct regardless of which
     // of the three destinations below this update takes -- a
     // current_mode_update is exactly the kind that arrives out of turn.
+    if (update.sessionUpdate === 'config_option_update') {
+      // Full replacement, never a merge (#8, #17.2).
+      const next = parseConfigOptions(update.configOptions);
+      if (next) this.configOptions = next;
+    }
     if (update.sessionUpdate === 'current_mode_update') {
       // Either spelling: the spec names this field two ways and neither is
       // marked as the error. See CurrentModeUpdate in protocol.ts.
@@ -780,6 +879,7 @@ class AcpClientImpl implements AcpClient {
       this.transport,
       this.agentCapabilities.promptCapabilities,
       parseModeState((result as { modes?: unknown }).modes),
+      parseConfigOptions((result as { configOptions?: unknown }).configOptions),
     );
     this.sessions.set(sessionId, session);
     // Flush anything that arrived for this exact sessionId before this

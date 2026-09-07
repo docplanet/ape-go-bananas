@@ -101,6 +101,21 @@ export const SCENARIOS = {
    * whether the agent asks permission before touching files at all.
    */
   SESSION_MODES: 'session-modes',
+  /**
+   * Session Config Options (#17.2), the mechanism the spec calls current
+   * and says will replace Session Modes. `session/new` reports BOTH
+   * `configOptions` and `modes` -- which is what a real adapter does
+   * during the transition -- so the precedence rule ("use configOptions
+   * exclusively and ignore modes") has something to be tested against.
+   *
+   * `session/set_config_option` answers with the FULL option state, not
+   * the single option that changed, and this mock uses that to make a
+   * dependent change: setting `mode` to `plan` also moves `model`. A
+   * client that patches only the field it just set will miss it, which is
+   * precisely the bug #17.2's "allows Agents to reflect dependent changes"
+   * sentence exists to prevent.
+   */
+  CONFIG_OPTIONS: 'config-options',
 } as const;
 
 export type ScenarioName = (typeof SCENARIOS)[keyof typeof SCENARIOS];
