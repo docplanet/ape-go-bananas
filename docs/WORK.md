@@ -63,7 +63,7 @@ once (see `git notes show 2d5d0f4`).
 | live smoke tests, mode matrix, doc corrections | `eafff8f` `9d38739` `4be0f7b` `da9f677` `be04242` |
 | §17.2 `configOptions`, `setConfigOption()`, `config_option_update` | `21f7f87` |
 | `!= null` read a literal `false` as supported — `isSupported()` + CAPS_LITERAL_FALSE | `25aa8aa` |
-| all four independent-review findings (cwd, three regexes, explicit `null`, `authMethods`) | `4a1e1c9` |
+| all four independent-review findings (cwd, three regexes, explicit `null`, `authMethods`) | `7236a4e` |
 
 Only the `cwd` omission changed behaviour on the wire. The regex finding was
 the most instructive: re-running the reviewer's mutation confirms the terminal
