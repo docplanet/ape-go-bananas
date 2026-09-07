@@ -59,6 +59,8 @@ export type {
   ResourceLinkContentBlock,
   SessionCapabilities,
   SessionConfigOption,
+  SessionMode,
+  SessionModeState,
   SessionId,
   SessionUpdate,
   SseMcpServer,

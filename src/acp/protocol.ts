@@ -452,19 +452,39 @@ export interface AvailableCommandsUpdate {
   sessionUpdate: 'available_commands_update';
   availableCommands: AvailableCommand[];
 }
+/** One selectable mode (#17.1). `_meta` is passed through untouched (#3). */
+export interface SessionMode {
+  id: string;
+  name: string;
+  description?: string | null;
+}
+
+/** The `modes` block on a session/new/load/resume result (#17.1). */
+export interface SessionModeState {
+  currentModeId: string;
+  availableModes: SessionMode[];
+}
+
 export interface CurrentModeUpdate {
   sessionUpdate: 'current_mode_update';
-  // UNVERIFIED (self-found, not one of acp-protocol.md's own six #23
-  // items): the #8 catalog table names this field `currentModeId`, but
-  // #17.1's own worked example renders it as `{"sessionUpdate":
-  // "current_mode_update", "modeId": "code"}` -- the doc disagrees with
-  // itself and neither excerpt is marked as the error. Session Modes are
-  // entirely out of this client's scope (nothing here sends
-  // `session/set_mode` or reads this field), so this is left for whoever
-  // implements #17 to resolve against a live agent rather than guessed at
-  // here. Modeled on the #8 catalog entry as the more precise,
-  // schema-derived source of the two.
-  currentModeId: string;
+  // STILL UNRESOLVED, now handled rather than deferred. #8's catalog table
+  // names this field `currentModeId`; #17.1's own worked example renders it
+  // `{"sessionUpdate": "current_mode_update", "modeId": "code"}`. The doc
+  // disagrees with itself and neither excerpt is marked as the error.
+  //
+  // A live capture could not settle it: claude-agent-acp 0.75.1 reports
+  // `modes.currentModeId` on the session/new *result* (confirmed on the
+  // wire), but was never observed emitting this notification at all, so the
+  // spelling it would use is still unknown. Guessing one and dropping the
+  // other is the expensive failure -- the mode decides whether the agent
+  // asks permission before touching files, so a client that stops tracking
+  // it silently believes it is in a mode it is not.
+  //
+  // Both are therefore optional here and session.ts reads whichever is
+  // present. Narrow this to a single required field only once a real agent
+  // has been seen sending one.
+  currentModeId?: string;
+  modeId?: string;
 }
 /** Full-replace of config-option state, never a merge (#8, #17.2). */
 export interface ConfigOptionUpdate {

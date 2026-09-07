@@ -87,6 +87,8 @@ import {
   type RequestPermissionOutcome,
   type RequestPermissionParams,
   type SessionId,
+  type SessionMode,
+  type SessionModeState,
   type SessionUpdate,
   type TerminalAuthLaunch,
 } from './protocol.js';
@@ -178,6 +180,32 @@ export interface AcpSession {
    * registered is delivered, in order, the moment one is.
    */
   onUpdate(listener: (update: SessionUpdate) => void): void;
+  /**
+   * The `modes` block the agent reported at session setup (#17.1), or
+   * undefined if it reported none. Read-only snapshot of what was
+   * advertised; `currentModeId` below is the live value.
+   */
+  readonly modes: SessionModeState | undefined;
+  /**
+   * The mode currently in effect, tracked across both ways it can change:
+   * a successful setMode(), and the agent switching unilaterally via
+   * `current_mode_update` (#17.1 permits both). Undefined when the agent
+   * reported no modes.
+   *
+   * Worth reading before trusting a permission callback. A real agent
+   * inherits this from its host's configuration, and in a mode like `auto`
+   * it decides permissions itself and never sends
+   * `session/request_permission` -- so an unread mode makes
+   * onPermissionRequest look like a control when it is not wired to
+   * anything.
+   */
+  readonly currentModeId: string | undefined;
+  /**
+   * Switches the session's mode (#17.1). Rejects without sending anything
+   * if the agent reported no modes, or if `modeId` is not one it
+   * advertised -- both are caller bugs detectable locally.
+   */
+  setMode(modeId: string): Promise<void>;
 }
 
 export interface AcpClient {
@@ -339,6 +367,27 @@ function buildInitializeParams(clientInfo: Implementation | undefined): { protoc
   };
 }
 
+/**
+ * Reads #17.1's optional `modes` block off a session/new result. Validated
+ * rather than cast: `modes` is optional-or-null on the wire, and a
+ * half-formed block would otherwise surface as a SessionModeState whose
+ * availableModes is undefined, which every caller would then iterate.
+ */
+function parseModeState(raw: unknown): SessionModeState | undefined {
+  if (raw === null || typeof raw !== 'object') return undefined;
+  const { currentModeId, availableModes } = raw as { currentModeId?: unknown; availableModes?: unknown };
+  if (typeof currentModeId !== 'string' || !Array.isArray(availableModes)) return undefined;
+  return {
+    currentModeId,
+    // Pass each entry through rather than rebuilding it, so an agent's
+    // extra spec-legal fields (`_meta`, #3) survive -- claude-agent-acp
+    // 0.75.1 puts a `_meta.kind` on every mode.
+    availableModes: availableModes.filter(
+      (m): m is SessionMode => typeof m === 'object' && m !== null && typeof (m as SessionMode).id === 'string',
+    ),
+  };
+}
+
 /** Applies every #4.4 default and flattens the wire's presence-typed fields to booleans (see protocol.ts's AgentCapabilities doc comment). */
 function normalizeAgentCapabilities(raw: InitializeResult['agentCapabilities']): AgentCapabilities {
   const sessionCaps = raw?.sessionCapabilities;
@@ -456,11 +505,39 @@ class AcpSessionImpl implements AcpSession {
   // and drained via prompt()'s generator instead, never through this path.
   private readonly outOfTurnUpdates: SessionUpdate[] = [];
   private updateListener: ((update: SessionUpdate) => void) | undefined;
+  readonly modes: SessionModeState | undefined;
+  currentModeId: string | undefined;
 
-  constructor(sessionId: SessionId, transport: AcpTransport, promptCapabilities: AgentCapabilities['promptCapabilities']) {
+  constructor(
+    sessionId: SessionId,
+    transport: AcpTransport,
+    promptCapabilities: AgentCapabilities['promptCapabilities'],
+    modes: SessionModeState | undefined,
+  ) {
     this.sessionId = sessionId;
     this.transport = transport;
     this.promptCapabilities = promptCapabilities;
+    this.modes = modes;
+    this.currentModeId = modes?.currentModeId;
+  }
+
+  /** #17.1; see the AcpSession interface for why both refusals are local. */
+  async setMode(modeId: string): Promise<void> {
+    if (!this.modes) {
+      throw new Error(
+        `setMode: the agent reported no modes for this session, so session/set_mode does not apply (acp-protocol.md #17.1)`,
+      );
+    }
+    if (!this.modes.availableModes.some((m) => m.id === modeId)) {
+      const known = this.modes.availableModes.map((m) => m.id).join(', ') || '<none>';
+      throw new Error(`setMode: "${modeId}" is not one of the modes this agent advertised (${known}) (acp-protocol.md #17.1)`);
+    }
+    await this.transport.request('session/set_mode', { sessionId: this.sessionId, modeId });
+    // The agent normally confirms with a current_mode_update too, but #17.1
+    // does not require it -- the empty result is the acknowledgement, so
+    // don't leave the tracked mode stale waiting for a notification that
+    // may never come. A later notification simply re-sets the same value.
+    this.currentModeId = modeId;
   }
 
   prompt(input: PromptInput): AsyncGenerator<SessionUpdate, PromptTurnResult, void> {
@@ -518,6 +595,15 @@ class AcpSessionImpl implements AcpSession {
    * eventually registered (file header, point 5) -- never silently dropped.
    */
   handleUpdate(update: SessionUpdate): void {
+    // Tracked before routing, so the mode stays correct regardless of which
+    // of the three destinations below this update takes -- a
+    // current_mode_update is exactly the kind that arrives out of turn.
+    if (update.sessionUpdate === 'current_mode_update') {
+      // Either spelling: the spec names this field two ways and neither is
+      // marked as the error. See CurrentModeUpdate in protocol.ts.
+      const next = update.currentModeId ?? update.modeId;
+      if (typeof next === 'string' && next.length > 0) this.currentModeId = next;
+    }
     if (this.activeTurn) {
       this.activeTurn.pushUpdate(update);
       return;
@@ -689,7 +775,12 @@ class AcpClientImpl implements AcpClient {
     if (typeof sessionId !== 'string' || sessionId.length === 0) {
       throw new Error(`session/new: expected a non-empty string "sessionId" in the result, got ${JSON.stringify(sessionId)} (acp-protocol.md #6.1)`);
     }
-    const session = new AcpSessionImpl(sessionId, this.transport, this.agentCapabilities.promptCapabilities);
+    const session = new AcpSessionImpl(
+      sessionId,
+      this.transport,
+      this.agentCapabilities.promptCapabilities,
+      parseModeState((result as { modes?: unknown }).modes),
+    );
     this.sessions.set(sessionId, session);
     // Flush anything that arrived for this exact sessionId before this
     // `await` returned -- see file header, point 5.

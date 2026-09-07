@@ -177,6 +177,8 @@ function handleRequest(
       return handleInitialize(id, scenario);
     case 'session/new':
       return handleSessionNew(id, params, scenario);
+    case 'session/set_mode':
+      return handleSetMode(id, params);
     case 'authenticate':
       return handleAuthenticate(id, params, scenario);
     case 'logout':
@@ -301,6 +303,28 @@ function handleLogout(id: number | string | null, scenario: ScenarioName): void 
   respondResult(id, {});
 }
 
+/** #17.1 shape, mirroring a real agent's: id/name/description per mode. */
+const MODE_STATE = {
+  currentModeId: 'auto',
+  availableModes: [
+    { id: 'default', name: 'Manual', description: 'Always ask before making changes' },
+    { id: 'auto', name: 'Auto', description: 'Claude handles permission decisions' },
+    { id: 'plan', name: 'Plan', description: 'Create a plan before making changes' },
+  ],
+};
+
+/** #17.1: answer `{}`, then report the change with the #8 spelling. */
+function handleSetMode(id: number | string | null, params: Record<string, unknown>): void {
+  const sessionId = params.sessionId as string;
+  const modeId = params.modeId;
+  if (!MODE_STATE.availableModes.some((m) => m.id === modeId)) {
+    respondError(id, -32602, `mock-agent: unknown modeId: ${String(modeId)}`);
+    return;
+  }
+  respondResult(id, {});
+  notify('session/update', { sessionId, update: { sessionUpdate: 'current_mode_update', currentModeId: modeId } });
+}
+
 function handleSessionNew(id: number | string | null, params: Record<string, unknown>, scenario: ScenarioName): void {
   const authGated = scenario === SCENARIOS.AUTH_AGENT || scenario === SCENARIOS.AUTH_TERMINAL;
   if (authGated && !authenticated) {
@@ -313,6 +337,10 @@ function handleSessionNew(id: number | string | null, params: Record<string, unk
   const sessionId = `sess_mock_${sessionCounter}`;
   sessionTurnCounts.set(sessionId, 0);
   void params; // logged verbatim via ACP_MOCK_LOG; tests assert on the log, not here
+  if (scenario === SCENARIOS.SESSION_MODES) {
+    respondResult(id, { sessionId, modes: MODE_STATE });
+    return;
+  }
   respondResult(id, { sessionId });
 }
 
@@ -322,6 +350,14 @@ function handleSessionPrompt(id: number | string | null, params: Record<string, 
   const sessionId = params.sessionId as string;
   const promptBlocks = (params.prompt ?? []) as Array<{ type: string; text?: string }>;
   const text = promptBlocks.find((b) => b.type === 'text')?.text ?? '';
+
+  if (scenario === SCENARIOS.SESSION_MODES) {
+    // #17.1: "the agent may instead change its own mode unilaterally" --
+    // announced here with the OTHER of the spec's two spellings.
+    notify('session/update', { sessionId, update: { sessionUpdate: 'current_mode_update', modeId: 'plan' } });
+    respondResult(id, { stopReason: 'end_turn' });
+    return;
+  }
 
   switch (scenario) {
     case SCENARIOS.HAPPY_PATH:

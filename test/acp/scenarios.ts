@@ -85,6 +85,22 @@ export const SCENARIOS = {
    * and still pass every other test in this directory.
    */
   CAPS_PRESENCE: 'caps-presence',
+  /**
+   * Session Modes (#17.1). `session/new` reports a `modes` block shaped
+   * like the one captured from claude-agent-acp 0.75.1, `session/set_mode`
+   * is answered `{}` and followed by a `current_mode_update`, and a prompt
+   * turn makes the agent switch mode UNILATERALLY, which #17.1 explicitly
+   * permits.
+   *
+   * The two notifications deliberately disagree on spelling, because the
+   * spec does: #8's catalog table names the field `currentModeId` while
+   * #17.1's own worked example renders it `modeId`, and neither excerpt is
+   * marked as the erroneous one. set_mode's follow-up uses `currentModeId`;
+   * the unilateral switch uses `modeId`. A client that reads only one of
+   * them silently stops tracking the mode -- and mode is what decides
+   * whether the agent asks permission before touching files at all.
+   */
+  SESSION_MODES: 'session-modes',
 } as const;
 
 export type ScenarioName = (typeof SCENARIOS)[keyof typeof SCENARIOS];
