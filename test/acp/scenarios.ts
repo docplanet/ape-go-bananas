@@ -72,6 +72,19 @@ export const SCENARIOS = {
    * the response.
    */
   AUTH_TERMINAL: 'auth-terminal',
+  /**
+   * initialize answers with the **presence-typed** `agentCapabilities`
+   * shape (#4.4): `sessionCapabilities.*` and `auth.logout` as empty
+   * objects rather than booleans, including the `fork` and `subagents`
+   * keys. This is not invented -- it is the shape captured verbatim off
+   * the wire from @agentclientprotocol/claude-agent-acp 0.75.1, which is
+   * the only reason anyone knew `{}` was the real representation.
+   *
+   * Exists because a normalizer that expected booleans would read every
+   * one of these as falsy, silently conclude the agent supports nothing,
+   * and still pass every other test in this directory.
+   */
+  CAPS_PRESENCE: 'caps-presence',
 } as const;
 
 export type ScenarioName = (typeof SCENARIOS)[keyof typeof SCENARIOS];

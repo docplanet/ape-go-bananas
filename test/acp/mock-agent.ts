@@ -218,6 +218,23 @@ function handleInitialize(id: number | string | null, scenario: ScenarioName): v
       // it is omitted entirely -- not set false -- when logout is
       // unsupported. AUTH_TERMINAL deliberately omits it.
       ...(scenario === SCENARIOS.AUTH_AGENT ? { auth: { logout: {} } } : {}),
+      // #4.4 presence-typed, verbatim from a real adapter's initialize
+      // response -- empty objects, and two keys beyond the five this
+      // client models.
+      ...(scenario === SCENARIOS.CAPS_PRESENCE
+        ? {
+            auth: { logout: {} },
+            sessionCapabilities: {
+              additionalDirectories: {},
+              close: {},
+              delete: {},
+              fork: {},
+              list: {},
+              resume: {},
+              subagents: {},
+            },
+          }
+        : {}),
     },
     agentInfo: { name: 'acp-mock-agent', version: '0.0.0-test' },
     authMethods: authMethodsFor(scenario),

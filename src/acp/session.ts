@@ -359,6 +359,8 @@ function normalizeAgentCapabilities(raw: InitializeResult['agentCapabilities']):
       delete: sessionCaps?.delete != null,
       list: sessionCaps?.list != null,
       additionalDirectories: sessionCaps?.additionalDirectories != null,
+      fork: sessionCaps?.fork != null,
+      subagents: sessionCaps?.subagents != null,
     },
     auth: { logout: raw?.auth?.logout != null },
   };

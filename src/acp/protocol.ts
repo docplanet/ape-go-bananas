@@ -73,13 +73,25 @@ export interface McpCapabilities {
   sse: boolean;
 }
 
-/** Normalized (boolean-flattened) form of the wire's five presence-typed `sessionCapabilities.*` fields. */
+/**
+ * Normalized (boolean-flattened) form of the wire's presence-typed
+ * `sessionCapabilities.*` fields.
+ *
+ * `fork` and `subagents` are here because a real agent advertises them:
+ * @agentclientprotocol/claude-agent-acp 0.75.1 sends all seven. They were
+ * previously dropped on the floor -- normalized away into a five-key object
+ * -- so a caller had no way to see capabilities the agent genuinely
+ * offered. Not covered by the read sections of the spec, so they are
+ * modeled from the observed wire rather than from #4.4's prose.
+ */
 export interface SessionCapabilities {
   resume: boolean;
   close: boolean;
   delete: boolean;
   list: boolean;
   additionalDirectories: boolean;
+  fork: boolean;
+  subagents: boolean;
 }
 
 /** Normalized `agentCapabilities` from the initialize response, with every documented default (#4.4) already applied. */
@@ -101,7 +113,9 @@ export interface InitializeResult {
     // Presence-typed on the wire (object-or-null): the *value*, when
     // present, is conventionally `{}` and carries no fields this client
     // reads -- only whether the key is there (and non-null) matters (#4.4).
-    sessionCapabilities?: Record<'resume' | 'close' | 'delete' | 'list' | 'additionalDirectories', unknown>;
+    sessionCapabilities?: Partial<
+      Record<'resume' | 'close' | 'delete' | 'list' | 'additionalDirectories' | 'fork' | 'subagents', unknown>
+    >;
     auth?: { logout?: unknown };
   };
   agentInfo?: Implementation | null;
