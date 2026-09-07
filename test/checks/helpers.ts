@@ -20,7 +20,7 @@ import { join, dirname } from 'node:path';
 // only evidence that the port is faithful -- down with it. Point at the main checkout,
 // and let APE_ENGINE_REPO override it for anyone whose clone lives elsewhere.
 export const ENGINE_REPO =
-  process.env.APE_ENGINE_REPO ?? '~/Dev/Anki';
+  process.env.APE_ENGINE_REPO ?? `${process.env.HOME ?? ''}/Dev/Anki`;
 export const CHECK_DECK_PY = join(ENGINE_REPO, 'tools', 'check_deck.py');
 export const RENDER_REVIEW_PY = join(ENGINE_REPO, 'tools', 'render_review.py');
 
