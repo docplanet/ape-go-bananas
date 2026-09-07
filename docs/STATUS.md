@@ -648,3 +648,33 @@ through the sidecar and answered.
 
 The app-side gap this run found (`.rtf` classed as unknown, so the
 objectives would have been left out of the materials list) is fixed.
+
+## The audit stage, live on the same deck
+
+The owner's first look at the Muscle deck found card 17 nonsensical: the
+subject split across the blank, a hint asking "which type?" of nothing, and
+a front that answered itself. Diagnosis: the writer broke the method; the
+structural check cannot see meaning by design; and the app's audit stage had
+only ever adjudicated the owner's flags, so no independent reader had seen
+the deck. The method's run-sheet already has that reader — `deck-auditor.md`
+— which the app had left out. It now ships as `4-audit.md` and the audit
+stage runs it first (`app/src/pipeline.ts` `audit()`), in a fresh session.
+
+Run on the 175-note deck, same connection, three fresh sessions:
+
+| step | time | result |
+| --- | --- | --- |
+| auditor (brief as system, step-3 method attached for the seven cards, deck attached) | 18.5 min, 47 tool calls | `audit.md` + `audit.json`: 61 findings on 51 cards — truth 16, fluency 19, coverage 5, style 21 |
+| adjudicator on all 61 | 14.6 min | `verdicts.md`: 54 fix, 3 approve, 0 cut |
+| writer applies verbatim | 6.2 min | `deck.json` rewritten, 175 notes |
+| re-check | — | one new PROBLEM (note 156, a possessive outside the subject, introduced by a fix) plus advisories; routed to a fourth fresh session as a check finding |
+
+Card 17's two findings (the front answers itself; the subject slot holds a
+description) both drew "fix" with the same rebuild:
+`{{c2::<b>Skeletal muscle</b>::which type?}} <b>fibers</b> are <u>unique</u> in having {{c1::<i>nuclei pushed peripherally against the sarcolemma</i>::which nuclei?}}`
+— the muscle is the entity, the nuclear position the value, each cloze
+number kept on the content it tests so the live Anki cards keep their
+history.
+
+The auditor read `inserted-note-ids.json` and noted, unprompted, that the
+notes were already live in Anki and repairs must keep cloze numbers stable.
