@@ -238,6 +238,27 @@ explicitly and must not assume a default.
    loads. That specific mechanism is plausible but was not separately
    tested here, and is not the basis for anything above.)
 
+   **Config is advisory; `set_mode` is authoritative.** The obvious next
+   inference from the table above — that the whole mode surface is
+   unreliable — is false, and the distinction is the useful part. A mode
+   that will not survive the trip through host config *is* adopted when set
+   at runtime. Confirmed behaviourally, since the agent never announces its
+   mode, by observing whether it asks and whether it writes:
+
+   | mode via `setMode()` | reports | asked permission | file written |
+   | --- | --- | --- | --- |
+   | `acceptEdits` | `acceptEdits` | no | **yes** |
+   | `plan` | `plan` | yes | no |
+   | `default` | `default` | yes | only when approved |
+
+   Three modes, three distinguishable behaviours, each matching what the
+   mode means. `acceptEdits` is the direct contrast: unusable through
+   config, adopted through `setMode`. So `setMode()` committing
+   `currentModeId` on set_mode's empty result is honest rather than
+   optimistic — the client reports a mode the agent is genuinely in. Scope:
+   one adapter, one run per mode; `bypassPermissions` untested, deliberately.
+
+
 **§17.1's field-name contradiction remains unresolved, deliberately.** §8
 says `currentModeId`, §17.1's own example says `modeId`. No real agent has
 been observed emitting the notification at all, so there is still no
