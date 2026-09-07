@@ -140,8 +140,11 @@ private key lives outside the repo (`~/.tauri/ape.key` on the build machine,
 build can ever be updated again. `.github/workflows/release.yml` builds
 Apple silicon, Intel Mac, Windows and Linux on a `v*` tag, runs the engine
 suite against a checkout of the method repo, stages the target's Node with
-`prepare-bundle`, and publishes the release with `latest.json`. v0.1.0 was
-built and signed by hand on this machine before that workflow existed.
+`prepare-bundle`, and publishes the release with `latest.json`. v0.1.0's Apple
+silicon assets were first built by hand on this machine; the workflow's
+first green run then added Intel Mac, Windows and Linux to the same release
+and regenerated `latest.json`. Releasing from here on: bump `version` in
+`tauri.conf.json`, tag `v<version>`, push the tag.
 
 ## Running it
 

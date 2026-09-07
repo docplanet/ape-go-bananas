@@ -580,3 +580,31 @@ for one. It now does.
 mechanism, untested end to end); any stage through the OpenRouter tier live
 (the embedded loop's attachments are oracle-tested against the fake only);
 every click in the window.
+
+## Releases and the updater
+
+**v0.1.0 is published**, with `latest.json` naming every platform.
+`.github/workflows/release.yml` run 34158334590: four jobs, all green —
+Apple silicon (which also runs the engine suite: 342 pass), Intel Mac
+(cross-compiled on the same runner), Windows (NSIS), Linux (AppImage + deb).
+Each job's log shows the target's official Node fetched from nodejs.org,
+its SHA-256 verified against `SHASUMS256.txt`, and node + npm + engine +
+method files staged before `tauri build`. Every URL in the published
+`latest.json` answers 200. The macOS arm64 build was additionally unzipped
+into a fresh folder and launched with an empty PATH: the bundled node ran
+the bundled sidecar.
+
+**Not verified:** the Windows installer and the Linux packages were never
+launched — no runner here can. Their layout follows Tauri's documented
+paths (`resource_dir` = the exe's directory on Windows,
+`/usr/lib/ape-app` or `$APPDIR/usr/lib/ape-app` on Linux), which
+`resolve_paths` reads through Tauri, with a derived-from-exe fallback that
+is correct on Windows and macOS only. The first Windows or Linux user is the
+first test. The in-app update path (check → download → verify → relaunch)
+is wired and typechecked but has had no second release to update to.
+
+**Harness debt the runners exposed:** the apkg and differential suites
+spawn `unzip` and `python3` as a Mac ships them; on Linux two zip cases
+fail and on Windows most differential cases do, on tooling rather than
+engine behaviour. The engine is therefore tested on one platform. Recorded
+in `docs/WORK.md`.
