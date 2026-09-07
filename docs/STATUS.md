@@ -608,3 +608,43 @@ spawn `unzip` and `python3` as a Mac ships them; on Linux two zip cases
 fail and on Windows most differential cases do, on tooling rather than
 engine behaviour. The engine is therefore tested on one platform. Recorded
 in `docs/WORK.md`.
+
+## The full pipeline, live, on a real lecture
+
+**Run 2026-09-07**, `ISF/Exam 3/Histology/Muscle` (an 89-slide deck as a
+33 MB PDF, a 32-page textbook chapter, the lecturer's objectives and
+summary as RTF, a 4,292-line transcript; never processed before), through the
+installed Claude agent on the operator's Claude Max login, with exactly the
+prompts `app/src/pipeline.ts` builds, every permission answered "allow" as
+a user clicking would:
+
+| stage | time | tool calls | result |
+| --- | --- | --- | --- |
+| extract | 14.4 min | 99 | `inventory.md`, 107 KB, 5 files read end to end, 7 handover items |
+| organize | 8.4 min | 3 | `plan.md`, 47 KB |
+| cards | 18.5 min | 28 | `deck.json`, 175 notes / 352 cards, every note tagged `fact::` |
+| `deck/check` with the transcript | — | — | **clean** |
+| flag → fresh adjudicator | 1.3 min | 2 | `verdicts.md`: approve, with the reference card it matches named |
+| writer applies verdicts | 18 s | — | re-check clean |
+| `deck/export` | — | — | `deck.apkg`, imported into a disposable real Anki collection: 175 notes, 352 cards, deck tree `ISF::Test 3::Histology::Muscle`, integrity clean |
+
+27 permission requests in the writing stages, 2 in adjudication, all relayed
+through the sidecar and answered.
+
+**Two findings, both about the method's prose, neither about the app:**
+
+1. **The inventory the method produces is not the inventory the check
+   parses.** Step 1 wrote facts as `A1…A6, B1…` under lettered sections;
+   `check_deck.py` (and the port) recognise only `| <number> |` rows, so
+   `--inventory` fails with "no numbered fact rows found" and the fact-tag
+   cross-check (rule 5a) cannot run. Step 3 says `fact::F12`; step 1 never
+   says how to number. The run's cards carry `fact::A1`-style tags that the
+   check would call unknown. Fix belongs in `1-extract.md`.
+2. **No tiering at 175 notes.** The method's own experience (a lecture deck
+   settles near 50 notes; larger decks get core/plus tiers) did not fire:
+   no tier tags, no core deck. Whether that is a prose gap in `3-cards.md`
+   or the right call for an 89-slide lecture is the owner's judgment; the
+   app only reports it.
+
+The app-side gap this run found (`.rtf` classed as unknown, so the
+objectives would have been left out of the materials list) is fixed.

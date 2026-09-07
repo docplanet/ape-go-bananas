@@ -43,7 +43,9 @@ once (see `git notes show b383e7a`).
 | item | why it is open |
 | --- | --- |
 | `session/load` / `session/resume` | both agents advertise `loadSession: true`; the client implements neither. Real gap, bigger surface than the claimed items. |
-| organize / cards / audit / apply live end to end, and any stage on the OpenRouter tier live | extract is proven live; the rest reuse the mechanism but are unrun |
+| any stage on the OpenRouter tier live | the ACP tier ran the whole pipeline on a real lecture (STATUS); the embedded loop's attachments are oracle-tested against the fake only |
+| method repo: `1-extract.md` must state the fact numbering the check parses (`\| <n> \|` rows → `fact::F<n>`) | the live run wrote `A1…` rows and the inventory cross-check could not run |
+| method repo: does `3-cards.md` say when a deck tiers? | 175 notes, no tiers, on the live run |
 | a portable test harness: the apkg and differential suites spawn `unzip` and `python3` as a Mac ships them, so the engine is tested only on the Apple silicon CI job | Windows and Linux runners fail 2 (Linux) and ~all differential (Windows) cases on tooling, not engine behaviour; replace `unzip -l` parsing with a Node zip reader and resolve `python3`/`python` |
 | a completed `agent/login` against a signed-out account | the launch line and headless behaviour are verified; the callback completion is not |
 | designed screens (Claude Design) over `app/src/{sidecar,preview,providers,chat,main}.ts` | the current layout is a placeholder by declaration (`docs/APP.md`) |
