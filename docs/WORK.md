@@ -36,8 +36,7 @@ once (see `git notes show 2d5d0f4`).
 
 | item | session | notes |
 | --- | --- | --- |
-| §17.2 `configOptions` — surface it, `session/set_config_option`, `config_option_update` | ACP session | not advertising `clientCapabilities.session.configOptions.boolean`; boolean options surfaced defensively, never requested |
-| `!= null` presence check reads a literal `false` as supported | ACP session | small fix + regression case |
+| _(nothing claimed)_ | | |
 
 ## Unclaimed
 
@@ -62,3 +61,23 @@ once (see `git notes show 2d5d0f4`).
 | `sessionCapabilities` fork/subagents, `Partial<Record>`, CAPS_PRESENCE (§4.4) | `160eabc` |
 | `modes`, `setMode()`, `current_mode_update` (§17.1) | `f870fe6` |
 | live smoke tests, mode matrix, doc corrections | `eafff8f` `9d38739` `4be0f7b` `da9f677` `be04242` |
+| §17.2 `configOptions`, `setConfigOption()`, `config_option_update` | `21f7f87` |
+| `!= null` read a literal `false` as supported — `isSupported()` + CAPS_LITERAL_FALSE | `25aa8aa` |
+
+Both verified live against claude-agent-acp 0.75.1 as well as the mock.
+`setConfigOption('mode','default')` returned the full five-option state, was
+adopted wholesale, and the pinned mode took effect behaviourally (one
+permission request, denied, no file written).
+
+`setMode` adoption, closing the matrix offered earlier: `acceptEdits` adopted
+(zero permission requests, file written); `plan` adopted (the request raised
+was `ExitPlanMode` / "Approve Plan", which exists only in plan mode);
+`default` adopted (already covered by both permission runs). So the tracked
+mode is honest for every mode tested, and `setMode`/`setConfigOption` are
+authoritative where host config is only advisory.
+
+One correction, recorded because it nearly became a false finding: the first
+`plan` probe reported "not adopted" on a heuristic — no permission request
+means adopted — that is only valid for `acceptEdits`. In `plan` the agent
+*should* ask. Re-running with the tool name captured showed `ExitPlanMode`
+and reversed the verdict.
