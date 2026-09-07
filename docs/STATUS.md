@@ -245,6 +245,26 @@ evidence either way. Both spellings are optional on `CurrentModeUpdate` and
 the handler reads whichever is present. Narrow it when an agent is actually
 seen sending one — not before.
 
+**Provenance of the verification — read this before trusting any green
+number above.** Not all of `src/acp/` is evidenced equally, and the
+difference is structural rather than a matter of care:
+
+| commit | what it added | who wrote the oracle | external check |
+| --- | --- | --- | --- |
+| (original five suites) | framing, lifecycle, cancellation, permissions, errors | an agent that never saw an implementation | strong: implementer could not edit the tests |
+| `5771058` | `authenticate` / `logout` / `terminalAuthLaunch` (§5) | the implementer | dedicated independent review |
+| `160eabc` | `sessionCapabilities` fork/subagents, `Partial<Record>`, CAPS_PRESENCE (§4.4) | the implementer | dedicated independent review |
+| `f870fe6` | `modes`, `setMode()`, `current_mode_update` (§17.1) | the implementer | independent live re-run from a second context, covering the approve branch the first run did not |
+
+Three consecutive commits had oracle and implementation authored by one
+context. Ordering was the mitigation — every assertion written from the spec
+and watched fail for the right reason before any `src/` existed — but that is
+weaker than an author who cannot see the implementation, and one assertion in
+`5771058` was admittedly edited afterwards (a regex that guessed the wrong
+wording; it is commented as such at the site). The context in question
+flagged this unprompted every time, which is the only reason it is visible
+here at all. Do not read "209 pass" as uniform evidence.
+
 **Still untested against a real agent:** `session/load` and `session/resume`;
 a completed `authenticate` sign-in (the adapter advertises `authMethods: []`,
 so there is nothing to authenticate against); and `configOptions`, which
