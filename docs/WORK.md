@@ -45,7 +45,6 @@ once (see `git notes show b383e7a`).
 | `session/load` / `session/resume` | both agents advertise `loadSession: true`; the client implements neither. Real gap, bigger surface than the claimed items. |
 | any stage on the OpenRouter tier live | the ACP tier ran the whole pipeline on a real lecture (STATUS); the embedded loop's attachments are oracle-tested against the fake only |
 | method repo: `1-extract.md` must state the fact numbering the check parses (`\| <n> \|` rows → `fact::F<n>`) | the live run wrote `A1…` rows and the inventory cross-check could not run |
-| method repo: does `3-cards.md` say when a deck tiers? | 175 notes, no tiers, on the live run |
 | a portable test harness: the apkg and differential suites spawn `unzip` and `python3` as a Mac ships them, so the engine is tested only on the Apple silicon CI job | Windows and Linux runners fail 2 (Linux) and ~all differential (Windows) cases on tooling, not engine behaviour; replace `unzip -l` parsing with a Node zip reader and resolve `python3`/`python` |
 | a completed `agent/login` against a signed-out account | the launch line and headless behaviour are verified; the callback completion is not |
 | designed screens (Claude Design) over `app/src/{sidecar,preview,providers,chat,main}.ts` | the current layout is a placeholder by declaration (`docs/APP.md`) |
@@ -75,7 +74,9 @@ once (see `git notes show b383e7a`).
 | Tauri shell `app/`: Rust-owned sidecar, typed frontend surface, review-page preview with flags, placeholder layout | `9ce375d` |
 | provider registry + install (`src/agents`), embedded OpenRouter agent (`src/agent`), sidecar `agent/*` bridge, `auth.terminal` + `onExtNotification` in `src/acp`, picker + chat + keychain in `app/` | `e1f6dba` |
 | bundled Node/npm/engine/method files, release path resolution | `5696513` |
-| `method/*`, `course/*`, `agent/newSession`; stages, review gates, audit → verdicts → apply, deliver in `app/` | _this commit_ |
+| `method/*`, `course/*`, `agent/newSession`; stages, review gates, audit → verdicts → apply, deliver in `app/` | `7f8cd32` |
+| whole-deck audit stage (`4-audit.md`), run live: 61 findings, 54 fixed | `5a00f04` |
+| tiering rule written into the method (no count; signal, then time) — method repo `548036d`; Muscle deck re-tiered 122 core / 53 plus | _method repo_ |
 
 Only the `cwd` omission changed behaviour on the wire. The regex finding was
 the most instructive: re-running the reviewer's mutation confirms the terminal
