@@ -142,6 +142,60 @@ export const SCENARIOS = {
    * and read `null` as supported. This pins the other half.
    */
   CAPS_EXPLICIT_NULL: 'caps-explicit-null',
+  // ---- added for the sidecar bridge oracle (test/sidecar/agent-*.test.ts,
+  // written from docs/research/agent-protocol.md §2/§3/§5). Handled in
+  // mock-agent.ts's handleSidecarScenario(); nothing above is touched.
+  /**
+   * `session/new` fails with the auth-required error agent-protocol.md §2
+   * describes: code -32000, message "Authentication required", and
+   * `data.reason: "auth_required"`. The `data.reason` field is INVENTED
+   * from the spec's own note ("`data.reason` or message matching /auth/i --
+   * record the exact shape the first time a real agent produces it"); no
+   * real agent has been observed sending it yet. initialize advertises one
+   * agent-type method (`agent-login`) so the bridge has something to
+   * report as `authMethods`, and a successful `authenticate` for it lifts
+   * the gate so an agent-type `agent/login` can be driven end to end.
+   */
+  AUTH_REQUIRED_SESSION: 'auth-required-session',
+  /**
+   * A prompt turn that streams exactly one update of each of the six kinds
+   * agent-protocol.md §2 lists for `agent/update` -- UPDATE_KINDS_SEQUENCE
+   * below, in that order -- then resolves end_turn. Exists so the bridge's
+   * relay can be checked kind by kind, deep-equal, in order.
+   */
+  UPDATE_KINDS: 'update-kinds',
+  /**
+   * Impersonates the Claude adapter's auth surface from
+   * docs/research/claude-adapter-auth.md §2-§3: initialize returns the two
+   * terminal-type methods (`claude-ai-login`, `console-login`, args
+   * verbatim, no `_meta` because only the spec capability is advertised),
+   * and is followed by `_auth/status_update { authStatus }` -- the status
+   * read from env ACP_MOCK_AUTH_STATUS (JSON) or, absent that,
+   * `{ kind: "none", label: "Not logged in" }`. `session/new` succeeds
+   * regardless of sign-in state (§3), with a session id that embeds the
+   * process pid so two connections never collide. A prompt echoes one
+   * message chunk and ends the turn.
+   */
+  CLAUDE_AUTH: 'claude-auth',
 } as const;
+
+/** The six §2 update kinds UPDATE_KINDS streams, in wire order (sessionId is added by the mock). */
+export const UPDATE_KINDS_SEQUENCE: ReadonlyArray<Record<string, unknown>> = [
+  { sessionUpdate: 'agent_message_chunk', messageId: 'msg_k1', content: { type: 'text', text: 'Reading the deck. ' } },
+  { sessionUpdate: 'agent_thought_chunk', content: { type: 'text', text: 'Seven notes, all cloze.' } },
+  { sessionUpdate: 'tool_call', toolCallId: 'call_k1', title: 'Reading deck.json', kind: 'read', status: 'pending', locations: [{ path: '/course/deck.json' }] },
+  { sessionUpdate: 'tool_call_update', toolCallId: 'call_k1', status: 'completed', content: [{ type: 'content', content: { type: 'text', text: '{"notes":[]}' } }] },
+  { sessionUpdate: 'usage_update', used: 1234, size: 200000 },
+  { sessionUpdate: 'available_commands_update', availableCommands: [{ name: 'review', description: 'Review the deck', input: null }] },
+];
+
+/** The `_auth/status_update` payload CLAUDE_AUTH sends when ACP_MOCK_AUTH_STATUS is unset (claude-adapter-auth.md §3, verbatim). */
+export const CLAUDE_AUTH_SIGNED_OUT = { kind: 'none', label: 'Not logged in' } as const;
+
+/** claude-adapter-auth.md §2's two methods, as they come back with the spec capability alone (no `_meta`). */
+export const CLAUDE_AUTH_METHODS: ReadonlyArray<Record<string, unknown>> = [
+  { id: 'claude-ai-login', name: 'Claude Subscription', description: 'Use Claude subscription ', type: 'terminal', args: ['--cli', 'auth', 'login', '--claudeai'] },
+  { id: 'console-login', name: 'Anthropic Console', description: 'Use Anthropic Console (API usage billing)', type: 'terminal', args: ['--cli', 'auth', 'login', '--console'] },
+];
 
 export type ScenarioName = (typeof SCENARIOS)[keyof typeof SCENARIOS];

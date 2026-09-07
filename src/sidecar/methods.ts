@@ -101,7 +101,7 @@ function parseFlags(value: unknown): Flag[] {
   });
 }
 
-export type MethodHandler = (params: unknown) => unknown;
+export type MethodHandler = (params: unknown) => unknown | Promise<unknown>;
 
 export function buildMethods(info: SidecarInfo, onShutdown: () => void): Record<string, MethodHandler> {
   return {

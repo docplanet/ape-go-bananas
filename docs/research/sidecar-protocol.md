@@ -121,13 +121,14 @@ timestamp. The sidecar validates the shape (`-32602`) and stores it; it does
 ### `sidecar/shutdown`
 params: none → `{}`, then exit `0`.
 
-## 5. Reserved
+## 5. Agents
 
-`agent/*` is reserved for the ACP bridge (`src/acp` behind the same stdio):
-`agent/connect`, `agent/newSession`, `agent/prompt` (streaming as
-`agent/update` notifications), `agent/setMode`, and reverse-direction
-`agent/requestPermission` requests from sidecar to app. Not in this document;
-specified when built.
+`agents/*` and `agent/*` — provider install, sessions, streamed updates and
+the reverse-direction `agent/requestPermission` request — are specified in
+`agent-protocol.md`, which extends this document. Two rules here change for
+those methods, and only those: handlers are asynchronous (a response leaves
+when the work is done, so `agent/cancel` can land mid-turn), and the sidecar
+may send requests of its own, answered by the app on stdin.
 
 ## 6. What the oracle must prove
 

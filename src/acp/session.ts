@@ -115,6 +115,21 @@ export interface ConnectOptions {
   /** Overrides DEFAULT_CLIENT_INFO if given; sent as `clientInfo` on `initialize` (#4.1). */
   clientInfo?: Implementation;
   /**
+   * The only capability a caller may switch on. `fs` and `terminal` stay
+   * `false` whatever is passed here -- this client implements neither -- and
+   * with the field omitted the `initialize` frame is byte-identical to what
+   * it always was (no `auth` key). See ClientCapabilities.auth.
+   */
+  clientCapabilities?: { auth?: { terminal?: boolean } };
+  /**
+   * Extension notifications (#19: method names beginning with `_`), which
+   * this client otherwise ignores. claude-agent-acp reports sign-in state
+   * as `_auth/status_update` (docs/research/claude-adapter-auth.md §3), and
+   * a host that offers a Sign-in button needs to see it. Called with the
+   * raw method and params; never awaited, exceptions swallowed.
+   */
+  onExtNotification?: (method: string, params: unknown) => void;
+  /**
    * Optional ceiling on how long connect() waits for the agent's `initialize`
    * response before giving up. `undefined` (the default) preserves the
    * original behavior of waiting indefinitely -- nothing here times out
@@ -309,6 +324,14 @@ export async function connect(options: ConnectOptions): Promise<AcpClient> {
   const pendingSessionUpdates = new Map<SessionId, SessionUpdate[]>();
 
   transport.onNotification((method, params) => {
+    if (method.startsWith('_') && options.onExtNotification !== undefined) {
+      try {
+        options.onExtNotification(method, params);
+      } catch {
+        /* a host listener must not break the router */
+      }
+      return;
+    }
     if (method !== 'session/update') return; // unrecognized notifications: ignore, per #19 ("implementations SHOULD ignore" unknown notifications -- unlike unknown requests, which get -32601 below)
     const payload = params as { sessionId?: unknown; update?: unknown };
     if (typeof payload.sessionId !== 'string' || typeof payload.update !== 'object' || payload.update === null) return;
@@ -353,7 +376,7 @@ export async function connect(options: ConnectOptions): Promise<AcpClient> {
 
   try {
     const raw = (await withOptionalTimeout(
-      transport.request('initialize', buildInitializeParams(options.clientInfo)),
+      transport.request('initialize', buildInitializeParams(options.clientInfo, options.clientCapabilities)),
       options.initializeTimeoutMs,
       () => new Error(`initialize did not respond within ${options.initializeTimeoutMs}ms`),
     )) as InitializeResult;
@@ -390,13 +413,21 @@ export async function connect(options: ConnectOptions): Promise<AcpClient> {
   }
 }
 
-function buildInitializeParams(clientInfo: Implementation | undefined): { protocolVersion: ProtocolVersion; clientCapabilities: ClientCapabilities; clientInfo: Implementation } {
+function buildInitializeParams(
+  clientInfo: Implementation | undefined,
+  requested: ConnectOptions['clientCapabilities'],
+): { protocolVersion: ProtocolVersion; clientCapabilities: ClientCapabilities; clientInfo: Implementation } {
+  // Explicit `false`s, not an omitted object: this client implements none
+  // of fs/*, terminal/*, and must not let the agent infer otherwise
+  // (lifecycle.test.ts asserts on exactly this). `auth` is added only when
+  // asked for, so the default frame is unchanged.
+  const clientCapabilities: ClientCapabilities = { fs: { readTextFile: false, writeTextFile: false }, terminal: false };
+  if (requested?.auth !== undefined && typeof requested.auth.terminal === 'boolean') {
+    clientCapabilities.auth = { terminal: requested.auth.terminal };
+  }
   return {
     protocolVersion: PROTOCOL_VERSION,
-    // Explicit `false`s, not an omitted object: this client implements none
-    // of fs/*, terminal/*, and must not let the agent infer otherwise
-    // (lifecycle.test.ts asserts on exactly this).
-    clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false },
+    clientCapabilities,
     clientInfo: clientInfo ?? DEFAULT_CLIENT_INFO,
   };
 }

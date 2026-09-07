@@ -15,11 +15,13 @@ import {
   FrameDecoder,
   encodeErrorResponse,
   encodeNotification,
+  encodeRequest,
   encodeSuccessResponse,
   type DecodedLine,
   type RequestId,
 } from '../acp/framing.js';
-import { InvalidParams, buildMethods, type SidecarInfo } from './methods.js';
+import { AgentBridge } from './agent.js';
+import { InvalidParams, buildMethods, type MethodHandler, type SidecarInfo } from './methods.js';
 
 function packageVersion(): string {
   const here = dirname(fileURLToPath(import.meta.url));
@@ -50,13 +52,42 @@ function exitAfterFlush(code: number): void {
   process.stdin.pause();
   // Deferred one tick so a handler that requested the exit (shutdown) gets
   // its own response queued first -- `outbound` is re-read then, not now.
-  setImmediate(() => void outbound.then(() => process.exit(code)));
+  // Agent processes are reaped before the flush (§2 agent/disconnect).
+  setImmediate(() => void bridge.closeAll().catch(() => undefined).then(() => outbound).then(() => process.exit(code)));
 }
 
-const methods = buildMethods(info, () => exitAfterFlush(0));
+// §3 of agent-protocol.md: requests the sidecar sends to the app (reverse
+// direction). Ids come from their own counter, numbers, and the app's
+// response on stdin resolves them here.
+let nextReverseId = 1;
+const pendingReverse = new Map<number, { resolve: (v: unknown) => void; reject: (e: Error) => void }>();
+const appLink = {
+  notify(method: string, params: unknown): void {
+    send(encodeNotification(method, params));
+  },
+  request(method: string, params: unknown): Promise<unknown> {
+    const id = nextReverseId++;
+    return new Promise((resolve, reject) => {
+      pendingReverse.set(id, { resolve, reject });
+      send(encodeRequest(id, method, params));
+    });
+  },
+};
+const bridge = new AgentBridge(appLink);
+
+const methods: Record<string, MethodHandler> = { ...buildMethods(info, () => exitAfterFlush(0)), ...bridge.methods() };
 
 function respondError(id: RequestId, code: number, message: string, data?: unknown): void {
   send(encodeErrorResponse(id, data === undefined ? { code, message } : { code, message, data }));
+}
+
+function respondFailure(id: RequestId, err: unknown): void {
+  if (err instanceof InvalidParams) {
+    respondError(id, err.code, err.message);
+  } else {
+    const error = err as Error;
+    respondError(id, -32000, error?.message ?? String(err), { name: error?.name ?? 'Error' });
+  }
 }
 
 function handle(decoded: DecodedLine): void {
@@ -73,16 +104,21 @@ function handle(decoded: DecodedLine): void {
         respondError(message.id, -32601, `method not found: ${message.method}`);
         return;
       }
+      // Engine handlers are synchronous, so their responses leave in
+      // arrival order (§2.2). Agent handlers return promises and answer
+      // when done, which is what lets `agent/cancel` land mid-turn.
       try {
         const result = handler(message.params);
-        send(encodeSuccessResponse(message.id, result));
-      } catch (err) {
-        if (err instanceof InvalidParams) {
-          respondError(message.id, err.code, err.message);
+        if (result instanceof Promise) {
+          result.then(
+            (value) => send(encodeSuccessResponse(message.id, value)),
+            (err: unknown) => respondFailure(message.id, err),
+          );
         } else {
-          const error = err as Error;
-          respondError(message.id, -32000, error?.message ?? String(err), { name: error?.name ?? 'Error' });
+          send(encodeSuccessResponse(message.id, result));
         }
+      } catch (err) {
+        respondFailure(message.id, err);
       }
       return;
     }
@@ -91,17 +127,27 @@ function handle(decoded: DecodedLine): void {
       const handler = methods[message.method];
       if (handler === undefined) return;
       try {
-        handler(message.params);
+        const r = handler(message.params);
+        if (r instanceof Promise) r.catch(() => undefined);
       } catch {
         /* ignored by contract */
       }
       return;
     }
-    default:
-      // A response addressed to us: the app is the client, we never send
-      // requests (until agent/requestPermission, §5), so there is nothing
-      // to correlate. Dropped, noted on stderr.
-      process.stderr.write(`sidecar: unexpected ${message.kind} on stdin, ignored\n`);
+    case 'response':
+    case 'error-response': {
+      // The app answering one of our reverse requests (agent-protocol.md §3).
+      const id = typeof message.id === 'number' ? message.id : Number(message.id);
+      const pending = pendingReverse.get(id);
+      if (pending === undefined) {
+        process.stderr.write(`sidecar: response for unknown reverse id ${String(message.id)}, ignored\n`);
+        return;
+      }
+      pendingReverse.delete(id);
+      if (message.kind === 'response') pending.resolve(message.result);
+      else pending.reject(new Error(message.error.message));
+      return;
+    }
   }
 }
 

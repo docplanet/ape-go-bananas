@@ -60,6 +60,13 @@ export interface FileSystemCapabilities {
 export interface ClientCapabilities {
   fs: FileSystemCapabilities;
   terminal: boolean;
+  /**
+   * #5.3: `auth.terminal: true` tells the agent this client can run a
+   * terminal-type auth flow, and is what makes claude-agent-acp advertise
+   * its `claude-ai-login` / `console-login` methods at all (docs/research/
+   * claude-adapter-auth.md §2). Omitted entirely unless a caller opts in.
+   */
+  auth?: { terminal?: boolean };
 }
 
 export interface PromptCapabilities {
@@ -147,6 +154,8 @@ export interface AgentAuthMethod {
   id: string;
   name: string;
   description?: string | null;
+  /** Spec-legal extension bag (#3), passed through from the wire untouched. */
+  _meta?: Record<string, unknown>;
 }
 
 /** `type: "terminal"` variant (#5.1, #5.3). Its `id` must never be sent to `authenticate`. */
@@ -157,6 +166,12 @@ export interface TerminalAuthMethod {
   description?: string | null;
   args?: string[];
   env?: Record<string, string>;
+  /**
+   * Passed through untouched. claude-agent-acp puts a ready-made launch
+   * line under `_meta["terminal-auth"]`; terminalAuthLaunch() ignores it
+   * and derives the launch from this connection's own command per #5.3.
+   */
+  _meta?: Record<string, unknown>;
 }
 
 export type AuthMethod = AgentAuthMethod | TerminalAuthMethod;

@@ -20,7 +20,7 @@
 
 import { appendFileSync, writeFileSync } from 'node:fs';
 
-import { SCENARIOS, SCENARIO_FLAG, type ScenarioName } from './scenarios.ts';
+import { CLAUDE_AUTH_METHODS, CLAUDE_AUTH_SIGNED_OUT, SCENARIOS, SCENARIO_FLAG, UPDATE_KINDS_SEQUENCE, type ScenarioName } from './scenarios.ts';
 
 const scenarioArg = process.argv[2];
 if (scenarioArg !== undefined && scenarioArg.startsWith(SCENARIO_FLAG)) {
@@ -172,6 +172,7 @@ function handleRequest(
   params: Record<string, unknown>,
   scenario: ScenarioName,
 ): void {
+  if (handleSidecarScenario(method, id, params, scenario)) return; // the sidecar-oracle scenarios, appended at the end of this file
   switch (method) {
     case 'initialize':
       return handleInitialize(id, scenario);
@@ -600,4 +601,107 @@ function runCancelHang(id: number | string | null, sessionId: string): void {
   // with the cancelled stop reason" once cancellation completes, and MAY
   // still send updates first ("the Client SHOULD still accept tool call
   // updates received after sending session/cancel").
+}
+
+// ---- sidecar bridge oracle scenarios ------------------------------------
+//
+// Appended for test/sidecar/agent-*.test.ts (docs/research/agent-protocol.md
+// §5, bullets 3-4). Everything above is untouched except the one dispatch
+// line at the top of handleRequest(); these scenarios own every method they
+// answer, and return false for anything they leave to the handlers above.
+
+let sidecarAuthenticated = false;
+let claudeSessionCounter = 0;
+
+function sendClaudeAuthStatus(): void {
+  const raw = process.env.ACP_MOCK_AUTH_STATUS;
+  let authStatus: unknown = CLAUDE_AUTH_SIGNED_OUT;
+  if (raw) {
+    try {
+      authStatus = JSON.parse(raw);
+    } catch {
+      process.stderr.write(`mock-agent: ACP_MOCK_AUTH_STATUS is not JSON: ${raw}\n`);
+    }
+  }
+  notify('_auth/status_update', { authStatus: authStatus as Record<string, unknown> });
+}
+
+function handleSidecarScenario(
+  method: string,
+  id: number | string | null,
+  params: Record<string, unknown>,
+  scenario: ScenarioName,
+): boolean {
+  if (scenario === SCENARIOS.AUTH_REQUIRED_SESSION) {
+    if (method === 'initialize') {
+      respondResult(id, {
+        protocolVersion: 1,
+        agentCapabilities: { loadSession: false, promptCapabilities: { image: false, audio: false, embeddedContext: false }, mcpCapabilities: { http: false, sse: false } },
+        agentInfo: { name: 'acp-mock-agent', version: '0.0.0-test' },
+        authMethods: [{ id: 'agent-login', name: 'Agent login', description: "Sign in using the agent's login flow" }],
+      });
+      return true;
+    }
+    if (method === 'authenticate') {
+      if (params.methodId !== 'agent-login') {
+        respondError(id, -32602, `mock-agent: unknown authenticate methodId: ${String(params.methodId)}`);
+        return true;
+      }
+      sidecarAuthenticated = true;
+      respondResult(id, {});
+      return true;
+    }
+    if (method === 'session/new' && !sidecarAuthenticated) {
+      // agent-protocol.md §2's auth-required shape; `data.reason` is an
+      // invention pending a capture from a real agent (see scenarios.ts).
+      respondError(id, -32000, 'Authentication required', { reason: 'auth_required' });
+      return true;
+    }
+    return false; // once authenticated, session/new and the rest fall through to the shared handlers
+  }
+
+  if (scenario === SCENARIOS.UPDATE_KINDS && method === 'session/prompt') {
+    void runUpdateKinds(id, params.sessionId as string);
+    return true;
+  }
+
+  if (scenario === SCENARIOS.CLAUDE_AUTH) {
+    if (method === 'initialize') {
+      respondResult(id, {
+        protocolVersion: 1,
+        agentCapabilities: { loadSession: false, promptCapabilities: { image: false, audio: false, embeddedContext: false }, mcpCapabilities: { http: false, sse: false } },
+        agentInfo: { name: 'acp-mock-claude', version: '0.75.1-test' },
+        authMethods: CLAUDE_AUTH_METHODS,
+      });
+      sendClaudeAuthStatus();
+      return true;
+    }
+    if (method === 'session/new') {
+      claudeSessionCounter += 1;
+      respondResult(id, { sessionId: `sess_claude_${process.pid}_${claudeSessionCounter}` });
+      return true;
+    }
+    if (method === 'session/prompt') {
+      const sessionId = params.sessionId as string;
+      notify('session/update', { sessionId, update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'Signed-in reply.' } } });
+      respondResult(id, { stopReason: 'end_turn' });
+      return true;
+    }
+    if (method === 'authenticate') {
+      respondError(id, -32602, 'mock-agent: authenticate must never be sent for a terminal-type method (#5.3)');
+      return true;
+    }
+    return false;
+  }
+
+  return false;
+}
+
+async function runUpdateKinds(id: number | string | null, sessionId: string): Promise<void> {
+  for (const update of UPDATE_KINDS_SEQUENCE) {
+    await delay(1);
+    notify('session/update', { sessionId, update });
+  }
+  await delay(1);
+  respondResult(id, { stopReason: 'end_turn' });
 }

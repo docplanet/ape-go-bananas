@@ -70,6 +70,25 @@ Flags persist as `flags.json` beside `deck.json` (`flags/read`,
 nothing in app or engine code interprets a flag. That is the adjudicator's
 job, over the agent bridge.
 
+## Agents: the picker is the registry, sign-in is a button
+
+Slice 2 copied Zed (`docs/research/agent-install-and-auth.md`): the app reads
+the public ACP registry, installs any `npx` entry with npm under its data
+directory using the same Node the sidecar runs on, and spawns it from there.
+The Claude entry's npm package includes the Claude Code binary, so nothing
+else is installed. Sign-in: the client advertises `auth.terminal`, the
+adapter offers Subscription and Console methods, and `agent/login` runs the
+method's launch line headless — it opens the browser itself and waits for
+the OAuth callback (`docs/research/claude-adapter-auth.md`). Gemini and
+Codex use ACP's own `authenticate`; Codex opens the browser from inside the
+agent.
+
+The API-key tier is OpenRouter, run by an agent loop inside the sidecar
+(`src/agent`) that emits the same update stream as an ACP agent, so the chat
+pane, selectors and permission prompt are one implementation. Keys go to
+the OS credential store through Rust (`keyring`), reach the sidecar only
+inside `agent/connect`, and are never written by it.
+
 ## What is placeholder, and what is real
 
 | piece | state |
@@ -78,8 +97,8 @@ job, over the agent bridge.
 | Rust sidecar owner, `sidecar_call` / `sidecar_status` | real |
 | deck preview, checks pane, flag loop, `.apkg` export | real, against the engine |
 | layout, styling, copy | **placeholder** — the shape from APP.md drawn plainly; replaced by Claude Design output |
-| stage rail | cosmetic: only `deck preview` and `deliver` do anything |
-| chat pane | empty: waits on the `agent/*` bridge |
+| stage rail | cosmetic: only `deck preview` and `deliver` do anything; the stage prompts are the next slice |
+| provider picker, install, sign-in, chat, selectors, permission prompt | real, against the engine; clicks unverified from a session, calls verified at the sidecar |
 | icon | a generated teal square (`app/app-icon.png`); regenerate with `npx tauri icon <png> -o src-tauri/icons` |
 
 ## Running it

@@ -36,6 +36,8 @@ pub struct Status {
     /// `APE_OPEN`: a deck.json to open as soon as the window is up. A CLI/dev
     /// affordance (and the hook a file association will use later).
     pub initial_deck: Option<String>,
+    /// Where installed agents and the registry cache live (agent-protocol.md §1).
+    pub data_dir: Option<String>,
 }
 
 type Pending = Arc<Mutex<HashMap<u64, oneshot::Sender<Result<Value, RpcError>>>>>;
@@ -62,12 +64,33 @@ impl Sidecar {
                 script: None,
                 error: None,
                 initial_deck: std::env::var("APE_OPEN").ok().filter(|s| !s.is_empty()),
+                data_dir: None,
             }),
         }
     }
 
     pub fn status(&self) -> Status {
         self.status.lock().unwrap().clone()
+    }
+
+    pub fn set_data_dir(&self, dir: PathBuf) {
+        self.status.lock().unwrap().data_dir = Some(dir.display().to_string());
+    }
+
+    /// Answers a reverse request the sidecar sent us (agent-protocol.md §3):
+    /// the webview decided, this writes the JSON-RPC response to the child.
+    pub async fn answer(&self, id: u64, result: Option<Value>, error: Option<RpcError>) -> Result<(), String> {
+        let stdin = {
+            let guard = self.inner.lock().unwrap();
+            guard.as_ref().ok_or("sidecar not running")?.stdin.clone()
+        };
+        let msg = match error {
+            Some(err) => json!({ "jsonrpc": "2.0", "id": id, "error": err }),
+            None => json!({ "jsonrpc": "2.0", "id": id, "result": result.unwrap_or(Value::Null) }),
+        };
+        let line = format!("{}\n", msg);
+        let mut guard = stdin.lock().await;
+        guard.write_all(line.as_bytes()).await.map_err(|e| format!("write to sidecar: {e}"))
     }
 
     /// Spawns the engine. `node` and `script` are resolved by `resolve_paths`;
@@ -123,10 +146,13 @@ impl Sidecar {
                             json!({ "method": method, "params": msg.get("params").cloned().unwrap_or(Value::Null) }),
                         );
                     }
-                    // reverse request (§5, future): forwarded as an event; no reply yet.
-                    (Some(_), Some(method)) => {
-                        let _ = app.emit("sidecar://request", msg.clone());
-                        eprintln!("sidecar: reverse request {method} not handled yet");
+                    // reverse request (agent-protocol.md §3): the webview
+                    // answers through the `sidecar_answer` command.
+                    (Some(id), Some(method)) => {
+                        let _ = app.emit(
+                            "sidecar://request",
+                            json!({ "id": id, "method": method, "params": msg.get("params").cloned().unwrap_or(Value::Null) }),
+                        );
                     }
                     _ => {}
                 }

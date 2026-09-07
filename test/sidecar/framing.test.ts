@@ -124,10 +124,14 @@ test('valid JSON that is not a JSON-RPC message shape gets -32700 with id null (
   assert.equal(await s.end(), 0);
 });
 
+// Implementer edit, 2026-09-07: this case used `agent/prompt` as its unknown
+// method while sidecar-protocol.md §5 reserved `agent/*`; agent-protocol.md
+// now defines it, so the probe name moved to one no spec claims. Recorded in
+// docs/STATUS.md.
 test('an unknown request method gets -32601 carrying the request id (§3)', { timeout: TIMEOUT }, async () => {
   const s = spawnSidecar();
   await s.ready;
-  for (const [id, method] of [['s1', 'nope'], [77, 'deck/nope'], ['s2', 'agent/prompt']] as const) {
+  for (const [id, method] of [['s1', 'nope'], [77, 'deck/nope'], ['s2', 'nothing/here']] as const) {
     const res = await s.request(id, method, {});
     assert.deepEqual(res.id, id);
     assert.equal(res.error?.code, -32601, `${method}: ${JSON.stringify(res)}`);

@@ -472,3 +472,76 @@ packaging is an open decision in `docs/APP.md`).
 **Next concrete step:** Claude Design screens over the same three seams
 (`sidecar.ts`, `preview.ts`, `main.ts`), then the `agent/*` bridge so the
 chat pane and the flag → adjudicator route exist.
+
+## `src/agents`, `src/agent`, and the sidecar's `agent/*`
+
+**Works, oracle-tested, and verified live against the real registry and a
+real Claude session.** Three modules, one method surface
+(`docs/research/agent-protocol.md`):
+
+- `src/agents` — the public ACP registry (Zed's mechanism, copied: `docs/
+  research/agent-install-and-auth.md`), cached per data directory, and
+  `npm install` of an entry into `<dataDir>/npx/<id>` with the sidecar's own
+  Node. `test/sidecar/agents-install.test.ts` (11 cases, written blind
+  against a local fake registry and a local fake npm registry with a real
+  tarball): 11 pass. One defect it caught before the code was run by hand:
+  `agents/install` carries no registry URL, and the cache was keyed on the
+  default CDN, so an install after a list against any other registry could
+  not find its entry. The cache now remembers its own source.
+- `src/agent` — the embedded OpenRouter loop (`docs/research/openrouter-api.md`),
+  implemented by one context and tested by another from the same page, with
+  neither reading the other. `test/sidecar/agent-openrouter*.test.ts` (26
+  cases over a local fake OpenRouter serving SSE, tool-call deltas, the
+  mid-stream error chunk, 402/429): **26 pass on the first run**. The oracle's
+  strict readings (tool `kind` mapping, `failed` on refused paths, exactly
+  one `current_mode_update` on allow-always) all held.
+- `src/sidecar/agent.ts` — the bridge. `test/sidecar/agent-acp.test.ts` and
+  `agent-login.test.ts` (14 cases over `test/acp/mock-agent.ts`, three
+  scenarios added): 14 pass, after three findings the oracle made against the
+  first build: in-turn updates were drained but never forwarded (the ACP
+  client hands them only to the prompt iterator); `modes.currentModeId` was
+  the session/new snapshot, not the pinned value; and session ids were the
+  agent's own, so two connections to one agent collided. Fixed, all three.
+- `src/acp` grew `ConnectOptions.clientCapabilities.auth.terminal` and
+  `onExtNotification` (for `_auth/status_update`). `test/acp/auth-terminal.test.ts`
+  (9 cases, blind, plus a mutation run against a build with the option
+  removed: 5 of 9 fail there, as they should): 9 pass. `onExtNotification`
+  has no unit oracle of its own — it is exercised only through
+  `agent-login.test.ts`'s `agent/authStatus` case. Self-authored, noted.
+
+**Live, through the sidecar** (`agents/list` → `agents/install` →
+`agent/connect` → `agent/prompt`, real network, the operator's real login):
+
+| step | observed |
+| --- | --- |
+| `agents/list` | 40 entries from `cdn.agentclientprotocol.com`, 22 `npx`-installable (claude-acp, gemini, codex-acp, github-copilot-cli, qwen-code, …) |
+| `agents/install claude-acp` | `@agentclientprotocol/claude-agent-acp` 0.75.1, 105 packages, 243 MB including the `claude` binary, 3 s (warm cache) |
+| `agent/connect` | `authStatus: account / Claude Max`; modes pinned to `default`; five config options (`mode`, `model` ×5, `effort` ×6, `fast`, `agent`); 53 commands |
+| `agent/prompt` "reply ready" | `end_turn` in 2.4 s; `agent_message_chunk` text `"ready"`; `usage_update` |
+| `agent/prompt` "create hello.txt" | reverse `agent/requestPermission` "Write hello.txt" relayed to the app, answered allow, file present |
+
+Sign-in was verified separately with an isolated `CLAUDE_CONFIG_DIR`
+(`docs/research/claude-adapter-auth.md`): the adapter advertises the
+Subscription and Console methods once `auth.terminal` is on, and its login
+command runs headless, opening the browser and waiting on a localhost
+callback. **Not exercised: a completed sign-in through `agent/login`** — that
+needs a real account to log in, and the operator's was already logged in.
+
+**One implementer edit to a blind test:** `test/sidecar/framing.test.ts`'s
+unknown-method case probed `agent/prompt`, which the first spec reserved and
+the second defines. The probe name moved; nothing else in that file changed.
+
+**Next concrete step:** the pipeline stages — build each stage's
+`ape://system` block from the bundled method file and turn the review gates
+into screens — and a completed `agent/login` against a signed-out account.
+
+## `app/` — slice 2
+
+The provider picker (`src/providers.ts`), chat pane (`src/chat.ts`), OS
+keychain for API keys (`secret_*` commands, `keyring` crate), and the reverse
+channel (`sidecar://request` event → `sidecar_answer` command). Verified by
+launching: the webview reached `agents/list` and the real registry was cached
+under `~/Library/Application Support/dev.docplanet.ape/`. Clicks through the
+picker, sign-in, and chat in the running window are **not** verified from
+this session (no screen capture); every call they make is verified at the
+sidecar level above.
