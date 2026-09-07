@@ -34,16 +34,9 @@ once (see `git notes show 2d5d0f4`).
 
 ## Claimed
 
-Assigned by the user: fix the four findings from the independent review of
-`5771058` / `160eabc`. Ordered by consequence — the `cwd` omission is the only
-one that changes behaviour on the wire.
-
 | item | session | notes |
 | --- | --- | --- |
-| `terminalAuthLaunch()` drops `cwd` | ACP session | §5.3 step 1 says the relaunch uses the same base launch configuration; `connect()` never carries `options.cwd` into `BaseLaunchConfig`, so a host cannot reproduce it. Minor today because `auth.terminal` is never advertised — **becomes major the moment §5.3 steps 3-4 land**. From the independent review. |
-| three non-discriminating regexes in `authenticate.test.ts` (:187, :283, :221) | ACP session | mutation testing proved `/terminal/i` and `/logout/i` pass against the *mock's own* error message when the guard under test is deleted. The zero-frame assertions are what actually catch it. Anchor them on `/MUST NOT/` and `/did not advertise/` so a failure names the right cause. From the independent review. |
-| explicit `null` in `sessionCapabilities` is untested | ACP session | §4.4 says "omitted or `null` means unsupported". The code is correct; no scenario ever sends a `null`-valued key, so half the rule is asserted nowhere. Mutation M3 survives. From the independent review. |
-| `authMethods` unvalidated and publicly mutable | ACP session | `session.ts:338` casts without validating (contrast `parseModeState` and the `sessionId` guard, both validated); the property is `readonly` but the array is not, and the §5.3 MUST-NOT guard resolves against it. Validate and copy in `connect()`. From the independent review. |
+| _(nothing claimed)_ | | |
 
 ## Unclaimed
 
@@ -70,6 +63,18 @@ one that changes behaviour on the wire.
 | live smoke tests, mode matrix, doc corrections | `eafff8f` `9d38739` `4be0f7b` `da9f677` `be04242` |
 | §17.2 `configOptions`, `setConfigOption()`, `config_option_update` | `21f7f87` |
 | `!= null` read a literal `false` as supported — `isSupported()` + CAPS_LITERAL_FALSE | `25aa8aa` |
+| all four independent-review findings (cwd, three regexes, explicit `null`, `authMethods`) | `4a1e1c9` |
+
+Only the `cwd` omission changed behaviour on the wire. The regex finding was
+the most instructive: re-running the reviewer's mutation confirms the terminal
+test now dies when the guard is deleted, where before only the zero-frame
+assertion caught it — an assertion that matches the error message of the peer
+you are testing against is not an assertion. `authMethods` is now validated
+and frozen, and typed `readonly AuthMethod[]` so the guarantee is visible.
+
+Recorded, not fixed: 160eabc's `Partial<Record<…>>` widening is unenforceable
+— reverting it passes both suite and typecheck. The type is more truthful, but
+that commit message overstated it as a fix. Not counted as tested.
 
 Both verified live against claude-agent-acp 0.75.1 as well as the mock.
 `setConfigOption('mode','default')` returned the full five-option state, was
