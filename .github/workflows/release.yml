@@ -22,8 +22,8 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { os: macos-latest,   triple: aarch64-apple-darwin,       args: '--target aarch64-apple-darwin --bundles app,dmg' }
-          - { os: macos-13,       triple: x86_64-apple-darwin,        args: '--target x86_64-apple-darwin --bundles app,dmg' }
+          - { os: macos-latest,   triple: aarch64-apple-darwin,       args: '--target aarch64-apple-darwin --bundles app,dmg', test: true }
+          - { os: macos-latest,   triple: x86_64-apple-darwin,        args: '--target x86_64-apple-darwin --bundles app,dmg' }
           - { os: windows-latest, triple: x86_64-pc-windows-msvc,     args: '--bundles nsis' }
           - { os: ubuntu-22.04,   triple: x86_64-unknown-linux-gnu,   args: '--bundles appimage,deb' }
     runs-on: ${{ matrix.os }}
@@ -51,14 +51,22 @@ jobs:
         with:
           workspaces: 'APE/app/src-tauri -> target'
 
-      - name: engine — build, typecheck, test
+      # The engine suite reopens .apkg files with the system `unzip` and spawns
+      # `python3` for the differential tests -- tooling the Windows and Linux
+      # runners lack or ship differently. The engine is pure Node and identical
+      # on every platform, so it is tested once, on the Apple silicon job;
+      # the others build and typecheck it.
+      - name: engine — build and typecheck
         working-directory: APE
-        env:
-          APE_ENGINE_REPO: ${{ github.workspace }}/Anki
         run: |
           npm ci
           npm run typecheck
-          npm test
+      - name: engine — test
+        if: matrix.test
+        working-directory: APE
+        env:
+          APE_ENGINE_REPO: ${{ github.workspace }}/Anki
+        run: npm test
 
       - name: app — stage the bundle inputs (node sidecar, npm, engine, method files)
         working-directory: APE/app
