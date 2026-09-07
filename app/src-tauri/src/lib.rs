@@ -65,8 +65,9 @@ pub fn run() {
             // tokio's Command::spawn needs the runtime's reactor; setup()
             // runs on the main thread outside it, so hop in for the spawn.
             let handle = app.handle().clone();
-            let started = sidecar::resolve_paths()
-                .and_then(|(node, script)| tauri::async_runtime::block_on(async { sidecar.start(handle, node, script) }));
+            let resource_dir = app.path().resource_dir().ok();
+            let started = sidecar::resolve_paths(resource_dir)
+                .and_then(|paths| tauri::async_runtime::block_on(async { sidecar.start(handle, paths) }));
             match started {
                 Ok(()) => {}
                 Err(e) => {

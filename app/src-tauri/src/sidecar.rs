@@ -96,9 +96,14 @@ impl Sidecar {
     /// Spawns the engine. `node` and `script` are resolved by `resolve_paths`;
     /// the first stdout line must be `sidecar/ready` (§2.1), forwarded to the
     /// webview like every other notification.
-    pub fn start(&self, app: AppHandle, node: PathBuf, script: PathBuf) -> Result<(), String> {
-        let mut child = Command::new(&node)
-            .arg(&script)
+    pub fn start(&self, app: AppHandle, paths: Paths) -> Result<(), String> {
+        let Paths { node, script, npm_cli } = paths;
+        let mut cmd = Command::new(&node);
+        cmd.arg(&script);
+        if let Some(npm) = npm_cli {
+            cmd.env("APE_NPM_CLI", npm);
+        }
+        let mut child = cmd
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::inherit())
@@ -225,20 +230,41 @@ impl Sidecar {
 /// in a debug build the script defaults to the engine checkout this app lives
 /// in; `node` falls back to PATH. A wrong Node is the first thing a dev hits,
 /// so the version is checked here and the message names the fix.
-pub fn resolve_paths() -> Result<(PathBuf, PathBuf), String> {
+pub struct Paths {
+    pub node: PathBuf,
+    pub script: PathBuf,
+    /// npm's entry point, handed to the sidecar as `APE_NPM_CLI` so agent
+    /// installs use the bundled npm (agent-protocol.md §1).
+    pub npm_cli: Option<PathBuf>,
+}
+
+/// Bundled layout (tauri-packaging.md §9): the node externalBin sits beside
+/// the app executable; engine, npm and method files are resources.
+fn bundled(resource_dir: Option<&PathBuf>) -> (Option<PathBuf>, Option<PathBuf>, Option<PathBuf>) {
+    let exe_dir = std::env::current_exe().ok().and_then(|p| p.parent().map(|d| d.to_path_buf()));
+    let node = exe_dir.map(|d| d.join(if cfg!(windows) { "node.exe" } else { "node" })).filter(|p| p.exists());
+    let script = resource_dir.map(|r| r.join("engine").join("sidecar").join("index.js")).filter(|p| p.exists());
+    let npm = resource_dir.map(|r| r.join("npm").join("bin").join("npm-cli.js")).filter(|p| p.exists());
+    (node, script, npm)
+}
+
+pub fn resolve_paths(resource_dir: Option<PathBuf>) -> Result<Paths, String> {
+    let (bundled_node, bundled_script, bundled_npm) = bundled(resource_dir.as_ref());
     let script = match std::env::var_os("APE_SIDECAR") {
         Some(p) => PathBuf::from(p),
-        None => {
-            if cfg!(debug_assertions) {
-                PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../dist/sidecar/index.js")
-            } else {
-                return Err("APE_SIDECAR is not set and this is a release build: bundling the engine is not wired yet (docs/APP.md)".into());
-            }
-        }
+        None => match bundled_script {
+            Some(p) => p,
+            None if cfg!(debug_assertions) => PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../dist/sidecar/index.js"),
+            None => return Err("no bundled engine (resources/engine/sidecar/index.js) and APE_SIDECAR is not set".into()),
+        },
     };
     let script = script.canonicalize().map_err(|e| format!("engine script {}: {e} (run `npm run build` in the engine repo)", script.display()))?;
 
-    let node = std::env::var_os("APE_NODE").map(PathBuf::from).unwrap_or_else(|| PathBuf::from("node"));
+    let node = std::env::var_os("APE_NODE")
+        .map(PathBuf::from)
+        .or(bundled_node)
+        .unwrap_or_else(|| PathBuf::from("node"));
+    let npm_cli = std::env::var_os("APE_NPM_CLI").map(PathBuf::from).or(bundled_npm);
     let out = std::process::Command::new(&node)
         .arg("--version")
         .output()
@@ -248,5 +274,5 @@ pub fn resolve_paths() -> Result<(PathBuf, PathBuf), String> {
     if major < 24 {
         return Err(format!("{} is Node {version}; the engine needs >= 24 (node:sqlite). Set APE_NODE.", node.display()));
     }
-    Ok((node, script))
+    Ok(Paths { node, script, npm_cli })
 }

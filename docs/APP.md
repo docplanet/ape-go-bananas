@@ -101,6 +101,30 @@ inside `agent/connect`, and are never written by it.
 | provider picker, install, sign-in, chat, selectors, permission prompt | real, against the engine; clicks unverified from a session, calls verified at the sidecar |
 | icon | a generated teal square (`app/app-icon.png`); regenerate with `npx tauri icon <png> -o src-tauri/icons` |
 
+## Packaging: the download is the whole onboarding
+
+`app/scripts/prepare-bundle.mjs` (run by `tauri build` through
+`beforeBuildCommand`) stages four inputs (`docs/research/tauri-packaging.md`):
+
+| what | where in the bundle | why there |
+| --- | --- | --- |
+| the official nodejs.org `node` for the target, checksum-verified against `SHASUMS256.txt` | `externalBin` → `Contents/MacOS/node` | executables must be signed; `tauri build` re-signs every externalBin with the app's identity and `Entitlements.plist` (JIT entitlements kept for V8) |
+| npm from the same distribution | resource `npm/` | JS, no signing; `agents/install` runs it through `APE_NPM_CLI` |
+| the engine's `dist/` | resource `engine/` | the sidecar and everything it imports |
+| the method files | resource `method/` | prose, unmodified, read at run time |
+
+`resolve_paths` prefers the bundled node and engine when present, then env
+overrides, then the dev checkout. Nothing is downloaded at run time except
+agents the user chooses to install. Not shipped: SEA or pkg (Node 24's SEA
+is experimental and the binary is the same size either way).
+
+Still needed before a stranger can double-click it: an Apple Developer ID
+(signing + notarization, `APPLE_SIGNING_IDENTITY` / `APPLE_ID` /
+`APPLE_PASSWORD` / `APPLE_TEAM_ID` at build), a Windows build on a Windows
+runner, and the updater plugin with a GitHub Releases feed. An unsigned
+macOS build runs on the machine that built it and is blocked by Gatekeeper
+elsewhere.
+
 ## Running it
 
 ```sh
@@ -117,12 +141,8 @@ default to `../../dist/sidecar/index.js` relative to `src-tauri/`).
 
 ## Open, deliberately
 
-- **Packaging the runtime.** A release build has no engine: `resolve_paths`
-  refuses without `APE_SIDECAR`. The candidates are a Node single-executable
-  build of the sidecar as a Tauri `externalBin`, or requiring Node on the
-  user's machine (the Claude Code ACP adapter is an npm package, so the ACP
-  tier may need Node regardless). Decide when the agent bridge exists and
-  the real prerequisite list is known.
+- **Signing.** Decided in shape (above), blocked on an Apple Developer
+  account; Windows signing (Azure Trusted Signing) when budget allows.
 - **CSP.** `tauri.conf.json` sets an explicit policy; `script-src 'self'`
   means the review page's own inline script runs only because the iframe is
   sandboxed `srcdoc`. Re-check when the designed screens arrive.
