@@ -455,16 +455,33 @@ function normalizeAgentCapabilities(raw: InitializeResult['agentCapabilities']):
       sse: raw?.mcpCapabilities?.sse ?? false,
     },
     sessionCapabilities: {
-      resume: sessionCaps?.resume != null,
-      close: sessionCaps?.close != null,
-      delete: sessionCaps?.delete != null,
-      list: sessionCaps?.list != null,
-      additionalDirectories: sessionCaps?.additionalDirectories != null,
-      fork: sessionCaps?.fork != null,
-      subagents: sessionCaps?.subagents != null,
+      resume: isSupported(sessionCaps?.resume),
+      close: isSupported(sessionCaps?.close),
+      delete: isSupported(sessionCaps?.delete),
+      list: isSupported(sessionCaps?.list),
+      additionalDirectories: isSupported(sessionCaps?.additionalDirectories),
+      fork: isSupported(sessionCaps?.fork),
+      subagents: isSupported(sessionCaps?.subagents),
     },
-    auth: { logout: raw?.auth?.logout != null },
+    auth: { logout: isSupported(raw?.auth?.logout) },
   };
+}
+
+/**
+ * Reads one #4.4 presence-typed capability field.
+ *
+ * The convention is omit-or-null for unsupported and `{}` for supported, so
+ * a bare presence check is nearly right. It is wrong in one direction that
+ * matters: an agent spelling the field as a literal `false` -- off-spec, but
+ * the obvious thing to write, and cost-free to tolerate -- is PRESENT, and a
+ * `!= null` check therefore reports every capability it explicitly denied as
+ * supported. Inverted and silent, and no observed agent produces it, so
+ * nothing would have caught it in the field.
+ *
+ * `true` is accepted for the same reason, from the other side.
+ */
+function isSupported(value: unknown): boolean {
+  return value != null && value !== false;
 }
 
 // ---- turn bookkeeping -------------------------------------------------------

@@ -63,6 +63,26 @@ test('presence-typed `{}` capabilities flatten to true, not falsy (#4.4)', { tim
   await closeAndAssertExit(client, pidFile);
 });
 
+test('a literal `false` reads as UNSUPPORTED, not as "the key is present"', { timeout: TIMEOUT }, async () => {
+  const { client, pidFile } = await connectScenario(SCENARIOS.CAPS_LITERAL_FALSE);
+
+  // #4.4's convention is omit-or-`{}`, so an explicit `false` is
+  // off-spec -- but the only sane reading of it is "no", and a presence
+  // check written as `!= null` gets the opposite answer.
+  assert.deepEqual(client.agentCapabilities.sessionCapabilities, {
+    resume: false,
+    close: false,
+    delete: false,
+    list: false,
+    additionalDirectories: false,
+    fork: false,
+    subagents: false,
+  });
+  assert.equal(client.agentCapabilities.auth.logout, false, 'logout: false must not enable logout()');
+
+  await closeAndAssertExit(client, pidFile);
+});
+
 test('an omitted sessionCapabilities block defaults every field to false (#4.4)', { timeout: TIMEOUT }, async () => {
   const { client, pidFile } = await connectScenario(SCENARIOS.HAPPY_PATH);
 

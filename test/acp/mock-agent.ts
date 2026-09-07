@@ -222,6 +222,22 @@ function handleInitialize(id: number | string | null, scenario: ScenarioName): v
       // it is omitted entirely -- not set false -- when logout is
       // unsupported. AUTH_TERMINAL deliberately omits it.
       ...(scenario === SCENARIOS.AUTH_AGENT ? { auth: { logout: {} } } : {}),
+      // Not the spec's convention -- deliberately wrong-shaped, to pin how
+      // an explicit `false` is read. See CAPS_LITERAL_FALSE.
+      ...(scenario === SCENARIOS.CAPS_LITERAL_FALSE
+        ? {
+            auth: { logout: false },
+            sessionCapabilities: {
+              additionalDirectories: false,
+              close: false,
+              delete: false,
+              fork: false,
+              list: false,
+              resume: false,
+              subagents: false,
+            },
+          }
+        : {}),
       // #4.4 presence-typed, verbatim from a real adapter's initialize
       // response -- empty objects, and two keys beyond the five this
       // client models.

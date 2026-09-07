@@ -116,6 +116,18 @@ export const SCENARIOS = {
    * sentence exists to prevent.
    */
   CONFIG_OPTIONS: 'config-options',
+  /**
+   * An agent that spells its presence-typed capabilities as literal
+   * booleans -- `sessionCapabilities: {resume: false, ...}`, `auth:
+   * {logout: false}` -- instead of #4.4's omit-or-`{}` convention.
+   *
+   * No agent observed does this, which is exactly why it is worth pinning:
+   * a naive presence check (`!= null`) reads `false` as PRESENT, and the
+   * client concludes the agent supports everything it explicitly said it
+   * does not. The failure is silent and inverted, and there is no real
+   * agent today to catch it.
+   */
+  CAPS_LITERAL_FALSE: 'caps-literal-false',
 } as const;
 
 export type ScenarioName = (typeof SCENARIOS)[keyof typeof SCENARIOS];
