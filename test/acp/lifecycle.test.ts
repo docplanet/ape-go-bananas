@@ -39,11 +39,25 @@ interface LoggedLine {
   t: number;
 }
 
+/**
+ * The messages the CLIENT sent, in order.
+ *
+ * mock-agent.ts logs both directions through the same logLine() -- its own
+ * replies tagged 'send', what it received tagged 'recv' -- so without the
+ * direction filter this returned an interleaved transcript and every index
+ * here meant something other than what its call site assumed. Index 1 was
+ * the mock's `initialize` *response* (an object with no `.method`), not the
+ * client's `session/new` request, which sits at index 2. That is not a
+ * timing artifact: the spec requires a client to complete `initialize`
+ * before anything else, so the response is always logged in between.
+ */
 function readMockLog(logFile: string): Array<{ method?: string; params?: Record<string, unknown> }> {
   return readFileSync(logFile, 'utf8')
     .split('\n')
     .filter((line) => line.length > 0)
-    .map((line) => JSON.parse((JSON.parse(line) as LoggedLine).raw) as { method?: string; params?: Record<string, unknown> });
+    .map((line) => JSON.parse(line) as LoggedLine)
+    .filter((entry) => entry.dir === 'recv')
+    .map((entry) => JSON.parse(entry.raw) as { method?: string; params?: Record<string, unknown> });
 }
 
 function neverApprove(): never {

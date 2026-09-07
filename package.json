@@ -14,6 +14,8 @@
     "build": "tsc",
     "postbuild": "chmod +x dist/cli/index.js",
     "typecheck": "npm run build && tsc --noEmit -p tsconfig.test.json",
+    "check-node": "node -e \"const [maj]=process.versions.node.split('.').map(Number); if (maj < 24) { console.error('\\nape requires Node >= 24 (found '+process.versions.node+').\\nOn Node 20 the test runner does not discover .ts files, so the suite silently reports 0 tests and exits 0 -- a false green.\\nRun: nvm use\\n'); process.exit(1); }\"",
+    "pretest": "npm run check-node",
     "test": "npm run build && node --test"
   },
   "devDependencies": {
