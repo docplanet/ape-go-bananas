@@ -171,36 +171,67 @@ full smoke test ran against `@agentclientprotocol/claude-agent-acp` 0.75.1:
   MUST), with the turn's own iterator returning it rather than throwing;
 - `close()` reaps the subprocess, zero strays.
 
-**The permission path is still unexercised live, and the reason is a design
-problem, not a bug.** Across three turns including a file *write*, the agent
-issued **zero** `session/request_permission` calls — it wrote the file
-without asking, and the write landed. The client behaved correctly: it had
-nothing to route. The cause is that `session/new` returns
+**Permission requests work end to end, and the earlier conclusion here was
+wrong.** An earlier revision of this file said "no part of the app should
+present ACP permission requests as a safety guarantee." That was true of the
+client as it stood; it is not true now, and the correction matters more than
+the original claim.
 
-    "modes": {"currentModeId": "auto", "availableModes": [
-        {"id": "default", "name": "Manual", "description": "Always ask before making changes"},
-        {"id": "acceptEdits"}, {"id": "plan"}, {"id": "auto"}, {"id": "bypassPermissions"}]}
+What was actually happening: `session/new` returns a `modes` block whose
+`currentModeId` is inherited from the host's own agent configuration. When
+that is `auto`, the agent decides permissions itself and never asks — which
+is why an early smoke test saw a file written unprompted with zero
+`session/request_permission` calls. The client was behaving correctly; it had
+nothing to route. The mode was the variable, and the client neither read it
+nor could change it.
 
-and `currentModeId` is inherited from the host's own Claude Code config
-(`~/.claude/settings.json` had `"defaultMode": "auto"`). An agent in `auto`
-decides permissions itself and never consults the client.
+Both are now implemented. `session/set_mode` (§17.1) pins the mode, and
+`modes`/`currentModeId`/`availableModes` are surfaced off the session so a
+caller can see which mode it is in and observe `current_mode_update` if an
+agent switches unilaterally.
 
-**This matters for the app, not just the module.** APP.md's flag-and-approve
-model assumes the client mediates tool use. It does not, by default — that
-boundary silently disappears depending on a setting A.P.E. does not control
-and currently cannot see. `session/set_mode` (§17.1) is the lever, and
-**this client does not implement it**, so A.P.E. cannot presently force
-`default` ("Manual — always ask before making changes"). Until it can, no
-part of the app should present ACP permission requests as a safety
-guarantee.
+Verified live against `claude-agent-acp` 0.75.1, twice, by two contexts —
+once by the implementer, then independently re-run with a separate harness:
 
-**Next concrete step:** implement `session/set_mode` and surface
-`modes`/`currentModeId` from the `session/new` result, so a host can require
-Manual mode and observe when an agent switches away from it
-(`current_mode_update`). Then re-run this smoke test with the mode pinned to
-`default` and verify a real `session/request_permission` round trip,
-including the denial path — the only client-side surface still untested
-against a real agent.
+| step | observed |
+| --- | --- |
+| session opens | `currentModeId: "auto"` |
+| `setMode('default')` | mode becomes `default` ("Manual: always ask before making changes") |
+| prompt requesting a file write | real `session/request_permission` — `kind: "edit"`, options `allow-once` / `allow-with-updates` / `reject` |
+| callback **denies** | file **not** created, directory empty, turn still ends `end_turn` |
+| callback **approves** | file created, turn ends `end_turn` |
+
+So APP.md's flag-and-approve model is viable — conditional on pinning the
+mode, which A.P.E. can now do. Anything built on it must call `setMode`
+explicitly and must not assume a default.
+
+**Two things only the live run could settle:**
+
+1. **No `current_mode_update` follows `set_mode`.** Zero, in every capture.
+   The empty result *is* the entire acknowledgement, so `setMode()` updates
+   the tracked mode on that result. Awaiting a notification — the obvious
+   implementation — would have left the client silently believing it was
+   still in `auto` while actually in Manual. A mock would have happily sent
+   whatever notification its author expected.
+2. **The mode is environment-dependent, not "auto by default."** One capture
+   from the same adapter reported `currentModeId: "default"` where others
+   reported `"auto"`. Do not read any single capture as the default; read
+   the value.
+
+**§17.1's field-name contradiction remains unresolved, deliberately.** §8
+says `currentModeId`, §17.1's own example says `modeId`. No real agent has
+been observed emitting the notification at all, so there is still no
+evidence either way. Both spellings are optional on `CurrentModeUpdate` and
+the handler reads whichever is present. Narrow it when an agent is actually
+seen sending one — not before.
+
+**Still untested against a real agent:** `session/load` and `session/resume`;
+a completed `authenticate` sign-in (the adapter advertises `authMethods: []`,
+so there is nothing to authenticate against); and `configOptions`, which
+`session/new` also returns and this client still discards — §17.2 is the
+mechanism the spec calls current and says will replace modes, and adopting it
+needs its own scoping decision including the
+`clientCapabilities.session.configOptions.boolean` question.
 
 **Auth is out-of-band for Claude Code.** The adapter returns
 `authMethods: []` and reports state via an `_auth/status_update`

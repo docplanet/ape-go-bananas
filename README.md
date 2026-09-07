@@ -187,12 +187,15 @@ default-resolution fallback.
   `@agentclientprotocol/claude-agent-acp` 0.75.1, live: handshake, protocol
   negotiation, `session/new`, a completed turn (`end_turn`), streamed
   updates, real tool calls, and mid-turn cancellation (`cancelled`).
-- **Permission requests remain untested live, by design not accident.** The
-  agent issued none — including for a file write, which it performed
-  unasked — because its session mode is inherited from the host's Claude
-  Code config. `session/set_mode` is not implemented here, so A.P.E. cannot
-  yet force "always ask". Do not treat ACP permission requests as a safety
-  boundary until it can; see [docs/STATUS.md](docs/STATUS.md).
+- **Permission requests work, once the mode is pinned.** An agent inherits
+  its permission mode from the host's own config; in `auto` it decides for
+  itself and never asks. `setMode('default')` pins Manual, and a real
+  `session/request_permission` then routes to the caller's policy callback —
+  verified live in both directions: denial blocked a file write, approval
+  allowed it. Anything relying on this must call `setMode` explicitly rather
+  than assume a default. An earlier version of this file said permission
+  requests could not be treated as a safety boundary; that was true before
+  `session/set_mode` existed and is no longer.
 - **Sign-in is the agent CLI's job, not A.P.E.'s.** The Claude adapter
   returns `authMethods: []` and handles auth out-of-band, so ACP
   `authenticate` will not unblock Claude Code — log in with the `claude`
