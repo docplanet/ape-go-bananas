@@ -70,55 +70,73 @@ decide whether the AnkiConnect live tier is in scope for this repo at all.
 
 ## `src/acp`
 
-**Not implemented.** `src/acp/` contains only a `.gitkeep` placeholder — no
-`.ts` file exists there. This is a plain fact confirmed by directory
-listing and by `npm run build`, which produces no `dist/acp/` at all.
+**Implemented and green.** A JSON-RPC-over-stdio ACP v1 client in six files
+— `framing.ts`, `transport.ts`, `protocol.ts`, `session.ts`, `handlers.ts`,
+`index.ts` (~1,960 lines). Public API is `connect({command, args, env,
+onPermissionRequest})` → `newSession()` → `prompt()` returning an async
+iterator of streamed updates.
 
-**What already exists for it:** `docs/research/acp-protocol.md` (a 96KB
-implementer's-reference doc on the ACP v1 wire protocol) and a full
-`test/acp/` scaffold — `mock-agent.ts`, `raw-agent.ts`, `scenarios.ts`, and
-five `*.test.ts` files covering framing, lifecycle, cancellation,
-permissions, and error handling. Every one of those test files imports from
-`../../dist/acp/index.js`, i.e. they were written against an intended public
-API (`connect()`, an `AcpClient` type, etc.) that has not been built yet.
+- All five oracle suites pass: framing, lifecycle, cancellation,
+  permissions, errors. `npm test` reports 191 pass, 0 fail, 0 skipped, and
+  `npm run typecheck` exits 0.
+- The suite and its 356-line `mock-agent.ts` were written from the spec by
+  an agent that never saw an implementation, and the implementers were
+  barred from editing them. That independence is the only reason a green
+  ACP suite means anything.
+- Permission requests route through the caller's policy callback. There is
+  no auto-approve path; denial is a tested branch.
 
-**Effect on the repo as a whole, confirmed by running these exact commands:**
+**Green against the mock was never the claim worth making.** Review found
+four defects no passing suite could have surfaced, because each needs an
+agent the mock is not:
 
-- `npm run build` (bare `tsc`, root `tsconfig.json`, `include: src/**/*.ts`
-  only): clean. `src/acp/` has nothing in it to fail.
-- `npx tsc --noEmit` (same config): clean, for the same reason.
-- `npm run typecheck` (`tsc --noEmit -p tsconfig.test.json`, which adds
-  `test/**/*.ts` to the include list): **not** clean — 43 error lines, every
-  one of them in `test/acp/*.ts` (`Cannot find module
-  '../../dist/acp/index.js'`, plus cascading `implicitly has an 'any' type`
-  errors once that import fails to resolve a type). Zero errors anywhere
-  else.
-- `npm test` (`npm run build && node --test`): `test/acp/cancellation.test.ts`,
-  `errors.test.ts`, `framing.test.ts`, `lifecycle.test.ts`, and
-  `permissions.test.ts` each fail immediately with
-  `Error [ERR_MODULE_NOT_FOUND]: Cannot find module
-  '.../dist/acp/index.js'`. `helpers.ts`, `mock-agent.ts`, `raw-agent.ts`,
-  and `scenarios.ts` are reported as passing only because Node's test
-  runner discovers them as files under `test/` and they happen to contain
-  no failing `test()` calls of their own at the point where the import
-  error would occur inside a real test body — they are not evidence the
-  scaffold works, only that walking past the import doesn't currently
-  throw at file scope in those particular files.
+1. `withinMs()` attached no rejection handler to the child's exit promise,
+   so a spawn failure became an unhandled rejection that killed the host
+   process — and `close()` rejected, contradicting the "never rejects"
+   contract `session.ts` explicitly relies on.
+2. A response whose `id` came back as a string instead of a number was
+   dropped silently, hanging the request forever with no timeout and no
+   diagnostic. The mock echoes ids verbatim, so it cannot produce this.
+3. `session/new` results were cast, not validated: an agent answering with
+   a differently-named field yielded `sessionId: undefined` and put a
+   `session/prompt` frame on the wire with the required field absent.
+4. Every `session/update` arriving outside a prompt turn was discarded —
+   which is precisely how real agents announce their slash-command catalog
+   right after session creation. The mock only ever sends updates inside a
+   turn.
 
-**This is a pre-existing gap, found and reported by this integration pass,
-not one introduced or fixed by it.** Implementing an ACP client is a
-substantial, separate piece of work — a JSON-RPC-over-stdio wire client
-with session lifecycle, cancellation, and permission-request handling — and
-is out of scope for `src/cli/`, `test/integration/`, `package.json`, and
-`README.md`, the only paths this pass owns.
+All four are fixed, each reproduced against a hand-built fake agent before
+and after. Fixing (4) also surfaced a narrower race the finding had not
+named: an update can arrive in the same stdout chunk as the `session/new`
+response that mints its id, reaching the router before the session is
+registered. Out-of-turn updates are now buffered and flushed rather than
+dropped.
 
-**Next concrete step:** implement `src/acp/index.ts` (and whatever internal
-split it needs) against `docs/research/acp-protocol.md`, exporting at least
-`connect()` and the `AcpClient`/`SessionUpdate`/`PermissionRequestHandler`
-types `test/acp/helpers.ts` already imports, then run `npm test` again —
-the five currently-failing files are that module's own regression suite
-and should need no changes themselves if the implementation matches what
-they were written against.
+**One test was wrong, and it was the oracle.** `lifecycle.test.ts`'s
+`readMockLog()` mapped the mock's entire transcript — both directions —
+while its call site indexed as though it held only what the client sent, so
+index 1 was the `initialize` response rather than `session/new`. The
+implementer left it red and explained rather than editing it, which is the
+rule working as intended. Confirmed independently by dumping a real log
+(`[init-req, init-resp, session/new-req, session/new-resp]`) before changing
+anything; the fix is the direction filter the `LoggedLine` type already
+described.
+
+**Not verified: no real agent.** Every ACP claim here rests on the mock.
+No live handshake against `@agentclientprotocol/claude-agent-acp` or Gemini
+CLI has been performed — that needs interactive sign-in. The research doc's
+own §23 flags that its adapter invocations were read from published source,
+not captured from a running session.
+
+One known gap, deliberate: `handlers.ts` implements `fs/read_text_file`,
+`fs/write_text_file`, and `terminal/*`, but `session.ts` does not advertise
+them — `clientCapabilities` is hardcoded all-`false`, so a spec-compliant
+agent will not call them. Legal per §12/§13, and no oracle covers the wired
+path.
+
+**Next concrete step:** the live smoke test. Install the adapter, sign in,
+spawn it, and confirm a real `initialize` handshake matches §4. That is the
+one remaining question the mock structurally cannot answer.
 
 ## `src/cli`
 

@@ -1,8 +1,9 @@
 # A.P.E.
 
 Deck-pipeline structural checks, a `.apkg` (Anki package) writer, a CLI over
-both, and (planned; see [Status](#status)) an ACP (Agent Client Protocol)
-client, in TypeScript. Nobody has defined what the letters stand for — none
+both, and an ACP (Agent Client Protocol) client, in TypeScript. Every claim
+about what works here is backed by a command in [Status](#status) that was
+actually run. Nobody has defined what the letters stand for — none
 of this repo's code, comments, or docs do either.
 
 ## Requirements
@@ -115,8 +116,10 @@ file agree there too.
   Deliberately minimal — nothing module-specific lives here.
 - `src/checks/` — port of the Python deck checker's structural checks.
 - `src/apkg/` — `.apkg` writer.
-- `src/acp/` — Agent Client Protocol client. Not yet implemented — see
-  [Status](#status).
+- `src/acp/` — Agent Client Protocol client: JSON-RPC over stdio, session
+  lifecycle, streamed prompt turns, cancellation, and permission requests
+  routed through a caller-supplied policy. Tested against a mock agent only
+  — no live agent handshake yet, see [Status](#status).
 - `src/cli/` — the `ape` CLI: argv parsing and exit codes wired onto
   `src/checks` and `src/apkg` (see [CLI](#cli) above). Owns deck.json
   loading/validation (`deck-loader.ts`) and Anki-media-directory resolution
@@ -180,28 +183,19 @@ default-resolution fallback.
   every package this repo produced was rejected by Anki — see
   [docs/STATUS.md](docs/STATUS.md). It skips, loudly, where Anki is absent.
   **AnkiConnect sync is still unverified**, and no live tier is built.
-- **No ACP agent handshake — because there is no ACP client yet.**
-  `src/acp/` currently holds only a placeholder (`.gitkeep`); no
-  implementation exists there. `test/acp/*.test.ts` (mock-agent scaffolding
-  and framing/lifecycle/cancellation/permissions cases) already exist and
-  import from `dist/acp/index.js`, but that module has never been built, so
-  all five of those test files fail with `ERR_MODULE_NOT_FOUND` — confirmed
-  by running `npm test`, not inferred. This is a pre-existing gap this
-  integration pass found, not one it introduced or was able to fix: none of
-  it falls under `src/cli/`, `test/integration/`, `package.json`, or this
-  file, and building a full ACP client is not a small, in-scope fix.
-  Consequently:
-  - `npx tsc --noEmit` (the plain command, root `tsconfig.json`, `src/`
-    only) is clean, because `src/acp/` has no `.ts` files for it to
-    typecheck at all.
-  - `npm run typecheck` (which also typechecks `test/**/*.ts`, per
-    `tsconfig.test.json`) is **not** clean — every error it reports is
-    confined to `test/acp/*.ts`, none in `src/cli/`, `test/integration/`,
-    or anywhere this pass touched.
-  - `npm test` reports `168 pass, 5 fail` on this repo as it stands; the 5
-    failures are exactly those five `test/acp/*.test.ts` files.
-  - `npm run typecheck` exits 2 with 43 errors, every one of them in
-    `test/acp/*` and rooted in the missing `dist/acp/index.js`.
+- **No real ACP agent handshake.** The ACP client is implemented and all
+  five of its suites pass, but every one of them runs against
+  `test/acp/mock-agent.ts`. No live session against
+  `@agentclientprotocol/claude-agent-acp` or Gemini CLI has been attempted —
+  it needs interactive sign-in. Review found four defects that a green
+  mock-based suite could not have caught (see
+  [docs/STATUS.md](docs/STATUS.md)); a live smoke test is the only thing
+  that settles what remains.
+- **`npm test` used to lie here.** The script called bare `node`, and on
+  Node 20 the test runner does not discover `.ts` files — it reported
+  `0 tests, 0 fail` and exited 0. A `pretest` guard now refuses to run below
+  Node 24 and explains why. If you see a suspiciously fast green, check
+  `node --version` first.
 
 Given a `deck.json` shaped like `test/fixtures/reference-cards.json`, a user
 can check it, render a review page for it, and export an `.apkg` that real
