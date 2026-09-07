@@ -245,11 +245,18 @@ explicitly and must not assume a default.
    at runtime. Confirmed behaviourally, since the agent never announces its
    mode, by observing whether it asks and whether it writes:
 
-   | mode via `setMode()` | reports | asked permission | file written |
+   | mode via `setMode()` | reports | what it asked for | file written |
    | --- | --- | --- | --- |
-   | `acceptEdits` | `acceptEdits` | no | **yes** |
-   | `plan` | `plan` | yes | no |
-   | `default` | `default` | yes | only when approved |
+   | `acceptEdits` | `acceptEdits` | nothing | **yes** |
+   | `plan` | `plan` | `Approve Plan` (`kind: switch_mode`) | no |
+   | `default` | `default` | `Write <path>` (`kind: edit`) | only when approved |
+
+   The middle column is the correction. An earlier revision recorded `plan`
+   as "asked once, wrote nothing" — which is *identical* to `default` with a
+   denial, so it did not distinguish the two modes at all and the adoption
+   claim rested on nothing. Capturing the tool name separates them: only
+   plan mode raises `ExitPlanMode`/"Approve Plan". The verdict was right and
+   the evidence was not.
 
    Three modes, three distinguishable behaviours, each matching what the
    mode means. `acceptEdits` is the direct contrast: unusable through
@@ -266,6 +273,33 @@ evidence either way. Both spellings are optional on `CurrentModeUpdate` and
 the handler reads whichever is present. Narrow it when an agent is actually
 seen sending one — not before.
 
+**§17.2 `configOptions` is implemented, and it pins the mode too.**
+`session/new` also returns `configOptions` — the mechanism §17.2 calls
+current and says will replace Session Modes. It is now surfaced, with
+`setConfigOption()` and the `config_option_update` notification. Live, the
+adapter reports five `select` options (`mode`, `model`, `effort`, `fast`,
+`agent`); `setConfigOption('mode', 'default')` returns the **full five-option
+state** rather than the one field set, is adopted wholesale, and the pinned
+mode takes effect behaviourally — one permission request, denied, no file
+written. So the same adapter exposes both §17.1 and §17.2 and honours either.
+
+The client does not advertise `clientCapabilities.session.configOptions.boolean`,
+deliberately: §17.2 forbids an agent sending boolean options unless the client
+asks for them, so staying silent keeps us to `select`, which is what a mode
+selector is. Boolean options are surfaced defensively if a non-compliant agent
+sends them, never requested. Same reasoning as `auth.terminal`.
+
+**A parked finding turned out to be the most dangerous thing in the module,
+and parking it was the wrong call.** The `!= null` presence check was logged
+here as a latent nobody could trigger. It was not latent in scope: it
+inverted **all eight** capability fields at once, and both `logout()` and
+`newSession({additionalDirectories})` are gated on those fields — so the
+client would have sent an agent methods it had just been told were
+unsupported. "No real agent triggers it today" was the reason it would rot,
+not a reason to leave it. Fixed in `25aa8aa` with an explicit `isSupported()`
+(present, non-null, not literal `false`) and pinned by a CAPS_LITERAL_FALSE
+scenario.
+
 **Provenance of the verification — read this before trusting any green
 number above.** Not all of `src/acp/` is evidenced equally, and the
 difference is structural rather than a matter of care:
@@ -273,8 +307,10 @@ difference is structural rather than a matter of care:
 | commit | what it added | who wrote the oracle | external check |
 | --- | --- | --- | --- |
 | (original five suites) | framing, lifecycle, cancellation, permissions, errors | an agent that never saw an implementation | strong: implementer could not edit the tests |
-| `5771058` | `authenticate` / `logout` / `terminalAuthLaunch` (§5) | the implementer | dedicated independent review |
-| `160eabc` | `sessionCapabilities` fork/subagents, `Partial<Record>`, CAPS_PRESENCE (§4.4) | the implementer | dedicated independent review |
+| `5771058` | `authenticate` / `logout` / `terminalAuthLaunch` (§5) | the implementer | independent review, incl. 9 mutations — passed |
+| `160eabc` | `sessionCapabilities` fork/subagents, `Partial<Record>`, CAPS_PRESENCE (§4.4) | the implementer | independent review, incl. 9 mutations — passed |
+| `21f7f87` | §17.2 `configOptions`, `setConfigOption()` | the implementer | live behavioural verification only |
+| `25aa8aa` | `isSupported()` replacing `!= null` | the implementer | live behavioural verification only |
 | `f870fe6` | `modes`, `setMode()`, `current_mode_update` (§17.1) | the implementer | independent live re-run from a second context, covering the approve branch the first run did not |
 
 Three consecutive commits had oracle and implementation authored by one
