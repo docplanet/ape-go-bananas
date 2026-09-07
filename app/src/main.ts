@@ -10,6 +10,7 @@ import { mountPreview } from './preview';
 import { mountPicker } from './providers';
 import { mountChat } from './chat';
 import { WRITING_STAGES, makeRunner, type Runner, type StageId } from './pipeline';
+import { offerUpdate } from './updater';
 
 const STAGES = ['extract', 'inventory review', 'organize', 'plan review', 'cards', 'deck preview', 'audit', 'deliver'] as const;
 
@@ -306,6 +307,7 @@ void getCurrentWebview().onDragDropEvent((event) => {
       await openDeck(s.initial_deck);
     }
     showPicker();
+    void offerUpdate(document.querySelector('.main')!, say);
   } catch (err) {
     say(String(err), true);
   }

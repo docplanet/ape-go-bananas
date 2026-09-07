@@ -131,9 +131,17 @@ variables at build time (`APPLE_SIGNING_IDENTITY`, `APPLE_ID`,
 `APPLE_PASSWORD`, `APPLE_TEAM_ID`) and `Entitlements.plist` is already
 right for the re-signed node. Artifacts: a `.zip` of the app (`ditto -c -k --keepParent`) and a plain
 `.dmg` (`hdiutil create -format UDZO`); Tauri's own DMG step drives Finder
-through Apple events and cannot run headless. Still needed: a Windows
-build on a Windows runner, and the updater plugin with a GitHub Releases
-feed.
+through Apple events and cannot run headless. **Updates and releases.** `tauri-plugin-updater` checks
+`https://github.com/docplanet/ape-go-bananas/releases/latest/download/latest.json`
+on launch and offers a bar; the archive is verified against the minisign
+public key in `tauri.conf.json`, which is unrelated to Apple signing. The
+private key lives outside the repo (`~/.tauri/ape.key` on the build machine,
+`TAURI_SIGNING_PRIVATE_KEY` as a repository secret). Lose it and no shipped
+build can ever be updated again. `.github/workflows/release.yml` builds
+Apple silicon, Intel Mac, Windows and Linux on a `v*` tag, runs the engine
+suite against a checkout of the method repo, stages the target's Node with
+`prepare-bundle`, and publishes the release with `latest.json`. v0.1.0 was
+built and signed by hand on this machine before that workflow existed.
 
 ## Running it
 

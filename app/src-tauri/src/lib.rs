@@ -54,6 +54,8 @@ fn secret_delete(name: String) -> Result<(), String> {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .manage(Sidecar::new())
         .invoke_handler(tauri::generate_handler![sidecar_call, sidecar_status, sidecar_answer, secret_get, secret_set, secret_delete])
         .setup(|app| {

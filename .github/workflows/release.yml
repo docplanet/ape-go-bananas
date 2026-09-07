@@ -1,0 +1,83 @@
+# Builds the app for every platform and publishes a GitHub Release with the
+# updater feed (latest.json). Trigger: push a tag `v*`, or run by hand.
+#
+# What each job needs and why (docs/research/tauri-packaging.md §6):
+# - the method repo checked out beside this one: the method files are bundled
+#   as prose, and the engine's differential tests spawn its Python tools;
+# - Node 24 for the engine build and tests (node:sqlite), and the official
+#   node binary of the target as the app's sidecar (prepare-bundle stages it);
+# - TAURI_SIGNING_PRIVATE_KEY: the updater's minisign key. Not Apple signing;
+#   the app is deliberately unsigned for Gatekeeper (docs/APP.md).
+name: release
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+jobs:
+  build:
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: macos-latest,   triple: aarch64-apple-darwin,       args: '--target aarch64-apple-darwin --bundles app,dmg' }
+          - { os: macos-13,       triple: x86_64-apple-darwin,        args: '--target x86_64-apple-darwin --bundles app,dmg' }
+          - { os: windows-latest, triple: x86_64-pc-windows-msvc,     args: '--bundles nsis' }
+          - { os: ubuntu-22.04,   triple: x86_64-unknown-linux-gnu,   args: '--bundles appimage,deb' }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with: { path: APE }
+      - uses: actions/checkout@v4
+        with: { repository: docplanet/anki-process-engine-live, path: Anki }
+
+      - if: startsWith(matrix.os, 'ubuntu')
+        run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf xdg-utils
+      - uses: actions/setup-node@v4
+        with: { node-version: '24.12.0' }
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+      - uses: dtolnay/rust-toolchain@stable
+        with: { targets: ${{ matrix.triple }} }
+      - uses: swatinem/rust-cache@v2
+        with: { workspaces: 'APE/app/src-tauri -> target' }
+
+      - name: engine — build, typecheck, test
+        working-directory: APE
+        env:
+          APE_ENGINE_REPO: ${{ github.workspace }}/Anki
+        run: |
+          npm ci
+          npm run typecheck
+          npm test
+
+      - name: app — stage the bundle inputs (node sidecar, npm, engine, method files)
+        working-directory: APE/app
+        env:
+          APE_TARGET_TRIPLE: ${{ matrix.triple }}
+          APE_METHOD_DIR: ${{ github.workspace }}/Anki/method
+        run: |
+          npm ci
+          node scripts/prepare-bundle.mjs
+
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          APE_METHOD_DIR: ${{ github.workspace }}/Anki/method
+        with:
+          projectPath: APE/app
+          tagName: v__VERSION__
+          releaseName: 'A.P.E. v__VERSION__'
+          releaseBody: |
+            Download for your platform below. This is free software and the builds are
+            not notarized with Apple, so on macOS the first launch is: double-click →
+            "cannot be opened" → System Settings → Privacy & Security → **Open Anyway**,
+            once. Windows shows a SmartScreen warning: **More info → Run anyway**.
+          releaseDraft: false
+          prerelease: false
+          includeUpdaterJson: true
+          args: ${{ matrix.args }}
