@@ -83,6 +83,23 @@ test('a literal `false` reads as UNSUPPORTED, not as "the key is present"', { ti
   await closeAndAssertExit(client, pidFile);
 });
 
+test('an explicit `null` reads as unsupported, the half of #4.4 omission never covered', { timeout: TIMEOUT }, async () => {
+  const { client, pidFile } = await connectScenario(SCENARIOS.CAPS_EXPLICIT_NULL);
+
+  assert.deepEqual(client.agentCapabilities.sessionCapabilities, {
+    resume: false,
+    close: false,
+    delete: false,
+    list: false,
+    additionalDirectories: false,
+    fork: false,
+    subagents: false,
+  });
+  assert.equal(client.agentCapabilities.auth.logout, false, 'logout: null must not enable logout()');
+
+  await closeAndAssertExit(client, pidFile);
+});
+
 test('an omitted sessionCapabilities block defaults every field to false (#4.4)', { timeout: TIMEOUT }, async () => {
   const { client, pidFile } = await connectScenario(SCENARIOS.HAPPY_PATH);
 

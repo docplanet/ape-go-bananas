@@ -222,6 +222,21 @@ function handleInitialize(id: number | string | null, scenario: ScenarioName): v
       // it is omitted entirely -- not set false -- when logout is
       // unsupported. AUTH_TERMINAL deliberately omits it.
       ...(scenario === SCENARIOS.AUTH_AGENT ? { auth: { logout: {} } } : {}),
+      // #4.4's other half: explicit null, not omission.
+      ...(scenario === SCENARIOS.CAPS_EXPLICIT_NULL
+        ? {
+            auth: { logout: null },
+            sessionCapabilities: {
+              additionalDirectories: null,
+              close: null,
+              delete: null,
+              fork: null,
+              list: null,
+              resume: null,
+              subagents: null,
+            },
+          }
+        : {}),
       // Not the spec's convention -- deliberately wrong-shaped, to pin how
       // an explicit `false` is read. See CAPS_LITERAL_FALSE.
       ...(scenario === SCENARIOS.CAPS_LITERAL_FALSE
@@ -271,6 +286,14 @@ function authMethodsFor(scenario: ScenarioName): Array<Record<string, unknown>> 
     return [
       { id: AUTH_AGENT_METHOD_ID, name: 'Agent login', description: "Sign in using the agent's login flow" },
       { id: AUTH_SECOND_METHOD_ID, name: 'API key' },
+    ];
+  }
+  if (scenario === SCENARIOS.AUTH_MALFORMED) {
+    return [
+      { id: 'agent-login', name: 'Agent login' },
+      { id: 'no-name' },
+      { id: 42, name: 'Numeric id' },
+      null as unknown as Record<string, unknown>,
     ];
   }
   if (scenario === SCENARIOS.AUTH_TERMINAL) {

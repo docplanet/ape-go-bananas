@@ -73,6 +73,13 @@ export const SCENARIOS = {
    */
   AUTH_TERMINAL: 'auth-terminal',
   /**
+   * initialize advertises a well-formed auth method alongside entries that
+   * are not: a missing `name`, a non-string `id`, and a bare `null`. #5.1
+   * requires `id` and `name`, so a client that casts instead of validating
+   * hands callers half-formed objects and matches ids against junk.
+   */
+  AUTH_MALFORMED: 'auth-malformed',
+  /**
    * initialize answers with the **presence-typed** `agentCapabilities`
    * shape (#4.4): `sessionCapabilities.*` and `auth.logout` as empty
    * objects rather than booleans, including the `fork` and `subagents`
@@ -128,6 +135,13 @@ export const SCENARIOS = {
    * agent today to catch it.
    */
   CAPS_LITERAL_FALSE: 'caps-literal-false',
+  /**
+   * Capabilities spelled as explicit `null`. #4.4's rule is "omitted **or**
+   * `null` means unsupported" and only the omitted half was ever asserted;
+   * a presence check written `!== undefined` would pass every existing test
+   * and read `null` as supported. This pins the other half.
+   */
+  CAPS_EXPLICIT_NULL: 'caps-explicit-null',
 } as const;
 
 export type ScenarioName = (typeof SCENARIOS)[keyof typeof SCENARIOS];

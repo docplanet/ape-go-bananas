@@ -242,7 +242,8 @@ export interface AcpSession {
 
 export interface AcpClient {
   readonly protocolVersion: ProtocolVersion;
-  readonly authMethods: AuthMethod[];
+  /** Frozen: see parseAuthMethods. authenticate()'s #5.3 guard resolves ids against this, so it must not be editable from outside. */
+  readonly authMethods: readonly AuthMethod[];
   readonly agentInfo: Implementation | undefined;
   readonly agentCapabilities: AgentCapabilities;
   newSession(params: NewSessionParams): Promise<AcpSession>;
@@ -367,7 +368,7 @@ export async function connect(options: ConnectOptions): Promise<AcpClient> {
       pendingSessionUpdates,
       {
         protocolVersion: raw.protocolVersion,
-        authMethods: raw.authMethods ?? [],
+        authMethods: parseAuthMethods(raw.authMethods),
         agentInfo: raw.agentInfo ?? undefined,
         agentCapabilities: normalizeAgentCapabilities(raw.agentCapabilities),
       },
@@ -377,6 +378,7 @@ export async function connect(options: ConnectOptions): Promise<AcpClient> {
         // Same merge transport.ts spawns with, so a #5.3 relaunch
         // reproduces this connection rather than a bare subset of it.
         env: { ...(process.env as Record<string, string>), ...(options.env ?? {}) },
+        cwd: options.cwd,
       },
     );
   } catch (err) {
@@ -397,6 +399,33 @@ function buildInitializeParams(clientInfo: Implementation | undefined): { protoc
     clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false },
     clientInfo: clientInfo ?? DEFAULT_CLIENT_INFO,
   };
+}
+
+/**
+ * Validates the initialize response's `authMethods` (#5.1) instead of
+ * casting it, for the reason parseModeState and the sessionId guard exist:
+ * a cast hands callers half-formed objects, and here it is load-bearing --
+ * authenticate()'s #5.3 MUST-NOT guard decides whether a credential-bearing
+ * request goes out by matching an id against these entries, so junk in this
+ * array is junk in a security check. Entries lacking a string `id` or
+ * `name` are dropped rather than repaired: #5.1 requires both, and a method
+ * we cannot name is one no caller could sensibly select.
+ *
+ * Frozen, not merely copied. The property is `readonly`, which stops
+ * reassignment and nothing else -- the array itself stayed mutable, so a
+ * caller could retype a terminal method as an agent one and make the guard
+ * answer differently. Freezing costs a caller only the need to copy before
+ * sorting, and buys a guarantee the guard can rely on.
+ */
+function parseAuthMethods(raw: unknown): readonly AuthMethod[] {
+  if (!Array.isArray(raw)) return Object.freeze([] as AuthMethod[]);
+  const parsed = raw.filter((m): m is AuthMethod => {
+    if (typeof m !== 'object' || m === null) return false;
+    const method = m as AuthMethod;
+    return typeof method.id === 'string' && typeof method.name === 'string';
+  });
+  for (const method of parsed) Object.freeze(method);
+  return Object.freeze(parsed);
 }
 
 /**
@@ -772,7 +801,7 @@ class AcpSessionImpl implements AcpSession {
 
 interface NormalizedInitInfo {
   protocolVersion: ProtocolVersion;
-  authMethods: AuthMethod[];
+  authMethods: readonly AuthMethod[];
   agentInfo: Implementation | undefined;
   agentCapabilities: AgentCapabilities;
 }
@@ -787,11 +816,12 @@ interface BaseLaunchConfig {
   command: string;
   args: string[];
   env: Record<string, string>;
+  cwd: string | undefined;
 }
 
 class AcpClientImpl implements AcpClient {
   readonly protocolVersion: ProtocolVersion;
-  readonly authMethods: AuthMethod[];
+  readonly authMethods: readonly AuthMethod[];
   readonly agentInfo: Implementation | undefined;
   readonly agentCapabilities: AgentCapabilities;
   private readonly transport: AcpTransport;
@@ -863,6 +893,7 @@ class AcpClientImpl implements AcpClient {
       // whatever selects the agent program in the first place.
       args: [...this.launch.args, ...(method.args ?? [])],
       env: { ...this.launch.env, ...(method.env ?? {}) },
+      cwd: this.launch.cwd,
     };
   }
 

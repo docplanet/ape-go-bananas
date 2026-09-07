@@ -69,6 +69,9 @@ async function connectAuth(scenario: ScenarioName): Promise<{ client: AcpClient;
       command: process.execPath,
       args: [MOCK_AGENT_PATH, `--scenario=${scenario}`],
       env: { ACP_MOCK_LOG: logFile, ACP_TEST_PIDFILE: pidFile },
+      // set explicitly so terminalAuthLaunch() has a real cwd to carry
+      // through -- #5.3 step 1's base launch configuration includes it
+      cwd: process.cwd(),
       onPermissionRequest: neverApprove,
     }),
     TIMEOUT,
@@ -165,6 +168,44 @@ test('authenticate() with an id the agent never advertised is refused locally, w
   await closeAndAssertExit(client, pidFile);
 });
 
+test('authMethods is validated, and cannot be mutated out from under the #5.3 guard', { timeout: TIMEOUT }, async () => {
+  const { client, logFile, pidFile } = await connectAuth(SCENARIOS.AUTH_TERMINAL);
+
+  // The MUST-NOT guard resolves the id against this array. If a caller can
+  // edit it, the guard's answer is the caller's to choose -- so retyping the
+  // terminal method as an agent one must not make authenticate() send it.
+  const terminal = client.authMethods.find((m) => m.id === 'terminal-login');
+  assert.ok(terminal);
+  try {
+    (terminal as { type?: string }).type = undefined;
+    (client.authMethods as AuthMethod[]).push({ id: 'injected', name: 'Injected' });
+  } catch {
+    // a frozen structure throwing here is a pass, not a failure
+  }
+
+  await assert.rejects(client.authenticate('terminal-login'), /MUST NOT send an authenticate request/);
+  await assert.rejects(client.authenticate('injected'), /did not advertise/);
+  assert.equal(
+    clientSent(logFile).filter((m) => m.method === 'authenticate').length,
+    0,
+    'neither a retyped terminal method nor an injected one may reach the wire',
+  );
+
+  await closeAndAssertExit(client, pidFile);
+});
+
+test('an auth method missing required fields is dropped rather than carried as a half-formed entry', { timeout: TIMEOUT }, async () => {
+  const { client, pidFile } = await connectAuth(SCENARIOS.AUTH_MALFORMED);
+
+  assert.deepEqual(
+    client.authMethods.map((m) => m.id),
+    ['agent-login'],
+    'only the well-formed entry survives; #5.1 requires id and name',
+  );
+
+  await closeAndAssertExit(client, pidFile);
+});
+
 // ---- #5.3 the terminal prohibition --------------------------------------
 
 test('a terminal-type auth method is surfaced with its type, args and env intact', { timeout: TIMEOUT }, async () => {
@@ -184,7 +225,12 @@ test('authenticate() MUST NOT send a terminal-type id: it is refused locally and
 
   await assert.rejects(
     client.authenticate('terminal-login'),
-    /terminal/i,
+    // Anchored on this client's own wording, not the bare word "terminal".
+    // Mutation testing showed /terminal/i also matches the MOCK's rejection,
+    // so deleting the guard entirely still passed this assertion -- only the
+    // zero-frame check below caught it. A rejection must fail here for the
+    // right reason, not merely fail.
+    /MUST NOT send an authenticate request/,
     '#5.3: "the Client MUST NOT send an authenticate request for a terminal method"',
   );
   assert.equal(
@@ -214,10 +260,15 @@ test('terminalAuthLaunch() derives the command from the client\'s own config, ap
     'the method\'s args are APPENDED to the base launch configuration, not substituted for it',
   );
   assert.equal(launch.env.ACP_AUTH_MODE, 'terminal', 'the method env is applied');
+  assert.equal(
+    launch.cwd,
+    process.cwd(),
+    '#5.3 step 1 relaunches with the same base launch configuration -- cwd is part of it, and a host that cannot reproduce it cannot reproduce the connection',
+  );
 
   assert.throws(
     () => client.terminalAuthLaunch('agent-login'),
-    /terminal/i,
+    /is an agent-type auth method/,
     'an agent-type method has no terminal launch configuration',
   );
 
@@ -280,7 +331,9 @@ test('logout() is refused locally when the agent never advertised auth.logout', 
   assert.equal(client.agentCapabilities.auth.logout, false);
   await assert.rejects(
     client.logout(),
-    /logout/i,
+    // Not /logout/i: that matches the mock's own "logout not supported"
+    // reply, so it passed even with the capability guard deleted.
+    /did not advertise agentCapabilities\.auth\.logout/,
     '#5.4: "Only call this if agentCapabilities.auth.logout was present"',
   );
   assert.equal(

@@ -177,6 +177,15 @@ export interface TerminalAuthLaunch {
   command: string;
   args: string[];
   env: Record<string, string>;
+  /**
+   * The connection's own working directory, or undefined if none was set
+   * (the host process's cwd is then inherited, as it was for the
+   * connection). Part of #5.3 step 1's "same base launch configuration":
+   * omitting it means a host relaunching the agent cannot reproduce the
+   * connection it is re-authenticating, which matters most for an agent
+   * whose auth state is per-project.
+   */
+  cwd: string | undefined;
 }
 
 // ---- content blocks (#9) -- five variants, all pass-through -------------
