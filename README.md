@@ -183,14 +183,19 @@ default-resolution fallback.
   every package this repo produced was rejected by Anki — see
   [docs/STATUS.md](docs/STATUS.md). It skips, loudly, where Anki is absent.
   **AnkiConnect sync is still unverified**, and no live tier is built.
-- **No real ACP agent handshake.** The ACP client is implemented and all
-  five of its suites pass, but every one of them runs against
-  `test/acp/mock-agent.ts`. No live session against
-  `@agentclientprotocol/claude-agent-acp` or Gemini CLI has been attempted —
-  it needs interactive sign-in. Review found four defects that a green
-  mock-based suite could not have caught (see
-  [docs/STATUS.md](docs/STATUS.md)); a live smoke test is the only thing
-  that settles what remains.
+- **Real agents: handshake proven, prompt turn not.** Live smoke tests
+  against `@agentclientprotocol/claude-agent-acp` 0.75.1 and Gemini CLI
+  0.40.1 confirm `initialize`, protocol negotiation, `session/new`, streamed
+  updates and clean shutdown on the wire. No prompt turn has completed —
+  both credentials are currently expired — so `end_turn`, live tool calls,
+  live permission requests and cancellation remain mock-only. Live runs
+  surfaced three defects a mock structurally cannot produce; see
+  [docs/STATUS.md](docs/STATUS.md).
+- **Sign-in is the agent CLI's job, not A.P.E.'s.** The Claude adapter
+  returns `authMethods: []` and handles auth out-of-band, so ACP
+  `authenticate` will not unblock Claude Code — log in with the `claude`
+  CLI. Gemini CLI does advertise auth methods, which is where an
+  `authenticate` implementation matters.
 - **`npm test` used to lie here.** The script called bare `node`, and on
   Node 20 the test runner does not discover `.ts` files — it reported
   `0 tests, 0 fail` and exited 0. A `pretest` guard now refuses to run below

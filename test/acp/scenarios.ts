@@ -50,6 +50,28 @@ export const SCENARIOS = {
    * connection").
    */
   PROTOCOL_MISMATCH: 'protocol-mismatch',
+  /**
+   * Auth-gated, `agent`-type only (#5.1, #5.2). initialize advertises two
+   * default-variant auth methods (no `type` field) and
+   * `agentCapabilities.auth.logout`, so `logout` is legal here (#5.4).
+   * `session/new` fails with the -32000 "Authentication required" code
+   * (#15) until a successful `authenticate`, and `logout` re-arms that
+   * gate -- which is what lets one test prove authenticate() actually
+   * changed the agent's state rather than merely returning without error.
+   */
+  AUTH_AGENT: 'auth-agent',
+  /**
+   * Auth-gated, advertising one `type: "terminal"` method alongside one
+   * default `agent` method (#5.1, #5.3), and deliberately NOT advertising
+   * `agentCapabilities.auth.logout`. Two obligations are checked against
+   * this scenario: the client must never put the terminal method's id on
+   * the wire in an `authenticate` request, and it must refuse `logout`
+   * locally rather than sending an unsupported method. If an `authenticate`
+   * for the terminal id ever does arrive, the mock answers -32602 and
+   * records the frame, so the violation shows up in the log as well as in
+   * the response.
+   */
+  AUTH_TERMINAL: 'auth-terminal',
 } as const;
 
 export type ScenarioName = (typeof SCENARIOS)[keyof typeof SCENARIOS];

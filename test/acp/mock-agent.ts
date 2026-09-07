@@ -106,6 +106,16 @@ function delay(ms: number): Promise<void> {
 // ---- scenario state ------------------------------------------------------
 
 let sessionCounter = 0;
+/**
+ * Whether a successful `authenticate` (#5.2) has happened on this
+ * connection. Only the AUTH_* scenarios consult it; every other scenario
+ * leaves session/new ungated exactly as before.
+ */
+let authenticated = false;
+/** Ids the AUTH_* scenarios advertise, so handlers and tests agree on one spelling. */
+const AUTH_AGENT_METHOD_ID = 'agent-login';
+const AUTH_SECOND_METHOD_ID = 'api-key';
+const AUTH_TERMINAL_METHOD_ID = 'terminal-login';
 const sessionTurnCounts = new Map<string, number>();
 /** sessionId -> callback that finishes a CANCEL_HANG turn once session/cancel arrives. */
 const pendingCancel = new Map<string, () => void>();
@@ -166,7 +176,11 @@ function handleRequest(
     case 'initialize':
       return handleInitialize(id, scenario);
     case 'session/new':
-      return handleSessionNew(id, params);
+      return handleSessionNew(id, params, scenario);
+    case 'authenticate':
+      return handleAuthenticate(id, params, scenario);
+    case 'logout':
+      return handleLogout(id, scenario);
     case 'session/prompt':
       return handleSessionPrompt(id, params, scenario);
     default:
@@ -200,13 +214,84 @@ function handleInitialize(id: number | string | null, scenario: ScenarioName): v
       loadSession: false,
       promptCapabilities: { image: false, audio: false, embeddedContext: false },
       mcpCapabilities: { http: false, sse: false },
+      // Presence-typed per #4.4/#5.1: the key's presence is the signal, so
+      // it is omitted entirely -- not set false -- when logout is
+      // unsupported. AUTH_TERMINAL deliberately omits it.
+      ...(scenario === SCENARIOS.AUTH_AGENT ? { auth: { logout: {} } } : {}),
     },
     agentInfo: { name: 'acp-mock-agent', version: '0.0.0-test' },
-    authMethods: [],
+    authMethods: authMethodsFor(scenario),
   });
 }
 
-function handleSessionNew(id: number | string | null, params: Record<string, unknown>): void {
+/**
+ * #5.1's two variants. The `agent` entries carry no `type` field at all --
+ * that absence IS the discriminator, so writing `type: undefined` here
+ * would not model the wire faithfully.
+ */
+function authMethodsFor(scenario: ScenarioName): Array<Record<string, unknown>> {
+  if (scenario === SCENARIOS.AUTH_AGENT) {
+    return [
+      { id: AUTH_AGENT_METHOD_ID, name: 'Agent login', description: "Sign in using the agent's login flow" },
+      { id: AUTH_SECOND_METHOD_ID, name: 'API key' },
+    ];
+  }
+  if (scenario === SCENARIOS.AUTH_TERMINAL) {
+    return [
+      { id: AUTH_AGENT_METHOD_ID, name: 'Agent login' },
+      {
+        type: 'terminal',
+        id: AUTH_TERMINAL_METHOD_ID,
+        name: 'Terminal login',
+        description: 'Run the login flow in your terminal',
+        args: ['--login', '--interactive'],
+        env: { ACP_AUTH_MODE: 'terminal' },
+      },
+    ];
+  }
+  return [];
+}
+
+/**
+ * #5.2. Answers `{}` on success. A terminal-type id must never reach here
+ * at all (#5.3: "the Client MUST NOT send an authenticate request for a
+ * terminal method"), so it is answered -32602 rather than honored -- the
+ * request frame is in ACP_MOCK_LOG either way, which is what the
+ * corresponding test actually asserts on.
+ */
+function handleAuthenticate(id: number | string | null, params: Record<string, unknown>, scenario: ScenarioName): void {
+  const methodId = params.methodId;
+  if (methodId === AUTH_TERMINAL_METHOD_ID) {
+    respondError(id, -32602, 'mock-agent: authenticate must never be sent for a terminal-type method (#5.3)');
+    return;
+  }
+  const known = authMethodsFor(scenario).some((m) => m.id === methodId && m.type === undefined);
+  if (!known) {
+    respondError(id, -32602, `mock-agent: unknown authenticate methodId: ${String(methodId)}`);
+    return;
+  }
+  authenticated = true;
+  respondResult(id, {});
+}
+
+/** #5.4. Legal only where initialize advertised `auth.logout`; re-arms the session/new gate so a test can prove the state actually moved. */
+function handleLogout(id: number | string | null, scenario: ScenarioName): void {
+  if (scenario !== SCENARIOS.AUTH_AGENT) {
+    respondError(id, -32601, 'mock-agent: logout not supported by this agent');
+    return;
+  }
+  authenticated = false;
+  respondResult(id, {});
+}
+
+function handleSessionNew(id: number | string | null, params: Record<string, unknown>, scenario: ScenarioName): void {
+  const authGated = scenario === SCENARIOS.AUTH_AGENT || scenario === SCENARIOS.AUTH_TERMINAL;
+  if (authGated && !authenticated) {
+    // #15's -32000 "Authentication required", the code #5.2 says a
+    // pre-auth call to an auth-gated method yields.
+    respondError(id, -32000, 'Authentication required');
+    return;
+  }
   sessionCounter += 1;
   const sessionId = `sess_mock_${sessionCounter}`;
   sessionTurnCounts.set(sessionId, 0);

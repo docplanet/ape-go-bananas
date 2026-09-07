@@ -122,11 +122,63 @@ rule working as intended. Confirmed independently by dumping a real log
 anything; the fix is the direction filter the `LoggedLine` type already
 described.
 
-**Not verified: no real agent.** Every ACP claim here rests on the mock.
-No live handshake against `@agentclientprotocol/claude-agent-acp` or Gemini
-CLI has been performed — that needs interactive sign-in. The research doc's
-own §23 flags that its adapter invocations were read from published source,
-not captured from a running session.
+**Verified against real agents, up to the prompt turn.** Two live smoke
+tests were run with every stdio byte captured through a pass-through tee:
+`@agentclientprotocol/claude-agent-acp` 0.75.1 (via `npx`, no global
+install) and Gemini CLI 0.40.1 (`gemini --acp`, first-party ACP). Handshake
+PASS against both; `session/new` PASS against the Claude adapter with a real
+UUID. Confirmed on the wire: `initialize` matches §4 and negotiates
+protocolVersion 1; all-`false` `clientCapabilities` is accepted; real
+streamed `session/update` notifications flow (`available_commands_update`,
+`agent_message_chunk`, `usage_update`); JSON-RPC errors surface as
+rejections; an unmodelled `_auth/status_update` arriving *before* the
+`session/new` response did not derail the router; `close()` reaped both
+subprocesses.
+
+**The finding that justified the whole exercise:** §4.4's presence-typed
+convention was read correctly. The Claude adapter sends
+
+    "sessionCapabilities": {"close":{}, "delete":{}, "fork":{}, "list":{},
+                            "resume":{}, "subagents":{}, "additionalDirectories":{}}
+
+— empty objects, not booleans — and Gemini omits the block entirely.
+`normalizeAgentCapabilities()` flattens both correctly. Had it expected
+booleans, every capability would have read falsy, the client would have
+silently believed the agent supports nothing, and **every mock test would
+still have passed**. This is the class of defect a mock cannot produce.
+
+**Three findings from the live runs, none yet fixed:**
+
+1. `fork` and `subagents` are advertised by the shipping Claude adapter and
+   are silently dropped — they are absent from both the `SessionCapabilities`
+   interface (`protocol.ts:77`) and the wire `Record` (`protocol.ts:104`),
+   so a caller cannot see them at all. Confirmed on the wire, not inferred.
+2. Gemini violates §2 by writing a bare non-JSON line to **stdout**
+   (`Skipping project agents due to untrusted folder.`) with no trailing
+   newline before exit. The client did not crash; it reported `stream ended
+   mid-line`. Open decision: tolerate stdout noise, or keep erroring.
+3. Latent: the presence check is `!= null` (`session.ts:307-311`), so a
+   literal `false` on the wire would read as *supported*. Neither real agent
+   does this today.
+
+**Still unproven, and blocked on a human.** No prompt turn has completed, so
+a successful `end_turn`, live tool calls, live `session/request_permission`
+(zero were issued), and live cancellation remain untested. Both credentials
+are dead: the Claude OAuth token is expired — the standalone `claude -p` CLI
+fails identically, so this is not the ACP path — and Gemini Code Assist for
+individuals is discontinued server-side for that client version. Note the
+real failure shape, which differs from §5.2's description: `session/new`
+*succeeds*, and the failure arrives at `session/prompt` as `-32603 Internal
+error: Failed to authenticate: OAuth session expired` with
+`data.errorKind: "authentication_failed"`.
+
+**Auth is out-of-band for Claude Code.** The adapter returns
+`authMethods: []` and reports state via an `_auth/status_update`
+notification (`authStatus {kind:"none"}`) — sign-in belongs to the
+underlying CLI, not to ACP. So implementing ACP `authenticate` will not
+unblock Claude Code. Gemini CLI 0.40.1 *does* advertise four methods
+(`oauth-personal`, `gemini-api-key`, `vertex-ai`, `gateway`), which is where
+`authenticate` earns its place.
 
 One known gap, deliberate: `handlers.ts` implements `fs/read_text_file`,
 `fs/write_text_file`, and `terminal/*`, but `session.ts` does not advertise
@@ -134,9 +186,11 @@ them — `clientCapabilities` is hardcoded all-`false`, so a spec-compliant
 agent will not call them. Legal per §12/§13, and no oracle covers the wired
 path.
 
-**Next concrete step:** the live smoke test. Install the adapter, sign in,
-spawn it, and confirm a real `initialize` handshake matches §4. That is the
-one remaining question the mock structurally cannot answer.
+**Next concrete step:** re-login the `claude` CLI, then re-run the smoke
+test to close the prompt turn, tool calls, permissions and cancellation.
+That is the only remaining question a human unblocks; everything beneath it
+is now proven against real agents.
+
 
 ## `src/cli`
 
