@@ -30,7 +30,7 @@ messages.
 
 Stage explicit paths on every commit. `git add -A` in a two-writer repo
 sweeps the other session's uncommitted work into your commit — that happened
-once (see `git notes show 2d5d0f4`).
+once (see `git notes show b383e7a`).
 
 ## Claimed
 
@@ -60,18 +60,18 @@ once (see `git notes show 2d5d0f4`).
 
 | item | commit |
 | --- | --- |
-| ACP client — framing, transport, protocol, session, handlers | `9ae6874` |
-| `authenticate` / `logout` / `terminalAuthLaunch` (§5) | `5771058` |
-| `sessionCapabilities` fork/subagents, `Partial<Record>`, CAPS_PRESENCE (§4.4) | `160eabc` |
-| `modes`, `setMode()`, `current_mode_update` (§17.1) | `f870fe6` |
-| live smoke tests, mode matrix, doc corrections | `eafff8f` `9d38739` `4be0f7b` `da9f677` `be04242` |
-| §17.2 `configOptions`, `setConfigOption()`, `config_option_update` | `21f7f87` |
-| `!= null` read a literal `false` as supported — `isSupported()` + CAPS_LITERAL_FALSE | `25aa8aa` |
-| all four independent-review findings (cwd, three regexes, explicit `null`, `authMethods`) | `7236a4e` |
+| ACP client — framing, transport, protocol, session, handlers | `ff5dbd1` |
+| `authenticate` / `logout` / `terminalAuthLaunch` (§5) | `01c0745` |
+| `sessionCapabilities` fork/subagents, `Partial<Record>`, CAPS_PRESENCE (§4.4) | `2dc9ec9` |
+| `modes`, `setMode()`, `current_mode_update` (§17.1) | `06dbf46` |
+| live smoke tests, mode matrix, doc corrections | `9881765` `1766573` `8cda031` `eb899d7` `7facd8b` |
+| §17.2 `configOptions`, `setConfigOption()`, `config_option_update` | `234f903` |
+| `!= null` read a literal `false` as supported — `isSupported()` + CAPS_LITERAL_FALSE | `9f31d8e` |
+| all four independent-review findings (cwd, three regexes, explicit `null`, `authMethods`) | `d9eca7d` |
 | stdio sidecar (`src/sidecar`, protocol doc, 36-case oracle written blind) | _this commit_ |
-| Tauri shell `app/`: Rust-owned sidecar, typed frontend surface, review-page preview with flags, placeholder layout | `25a3cd7` |
-| provider registry + install (`src/agents`), embedded OpenRouter agent (`src/agent`), sidecar `agent/*` bridge, `auth.terminal` + `onExtNotification` in `src/acp`, picker + chat + keychain in `app/` | `17c2177` |
-| bundled Node/npm/engine/method files, release path resolution | `00fec91` |
+| Tauri shell `app/`: Rust-owned sidecar, typed frontend surface, review-page preview with flags, placeholder layout | `9ce375d` |
+| provider registry + install (`src/agents`), embedded OpenRouter agent (`src/agent`), sidecar `agent/*` bridge, `auth.terminal` + `onExtNotification` in `src/acp`, picker + chat + keychain in `app/` | `e1f6dba` |
+| bundled Node/npm/engine/method files, release path resolution | `5696513` |
 | `method/*`, `course/*`, `agent/newSession`; stages, review gates, audit → verdicts → apply, deliver in `app/` | _this commit_ |
 
 Only the `cwd` omission changed behaviour on the wire. The regex finding was
@@ -81,7 +81,7 @@ assertion caught it — an assertion that matches the error message of the peer
 you are testing against is not an assertion. `authMethods` is now validated
 and frozen, and typed `readonly AuthMethod[]` so the guarantee is visible.
 
-Recorded, not fixed: 160eabc's `Partial<Record<…>>` widening is unenforceable
+Recorded, not fixed: 2dc9ec9's `Partial<Record<…>>` widening is unenforceable
 — reverting it passes both suite and typecheck. The type is more truthful, but
 that commit message overstated it as a fix. Not counted as tested.
 

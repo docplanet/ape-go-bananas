@@ -138,7 +138,7 @@ only have a self-authored one. Keep that table honest as you add to it.
 sending a message — messages are delivered between turns and are stale on
 arrival. Stage explicit paths; `git add -A` in a two-writer repo sweeps the
 other session's uncommitted work into your commit (it happened once — see
-`git notes show 2d5d0f4`).
+`git notes show b383e7a`).
 
 With a single session, ignore all of that.
 

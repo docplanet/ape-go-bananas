@@ -296,7 +296,7 @@ inverted **all eight** capability fields at once, and both `logout()` and
 `newSession({additionalDirectories})` are gated on those fields — so the
 client would have sent an agent methods it had just been told were
 unsupported. "No real agent triggers it today" was the reason it would rot,
-not a reason to leave it. Fixed in `25aa8aa` with an explicit `isSupported()`
+not a reason to leave it. Fixed in `9f31d8e` with an explicit `isSupported()`
 (present, non-null, not literal `false`) and pinned by a CAPS_LITERAL_FALSE
 scenario.
 
@@ -307,17 +307,17 @@ difference is structural rather than a matter of care:
 | commit | what it added | who wrote the oracle | external check |
 | --- | --- | --- | --- |
 | (original five suites) | framing, lifecycle, cancellation, permissions, errors | an agent that never saw an implementation | strong: implementer could not edit the tests |
-| `5771058` | `authenticate` / `logout` / `terminalAuthLaunch` (§5) | the implementer | independent review, incl. 9 mutations — passed |
-| `160eabc` | `sessionCapabilities` fork/subagents, `Partial<Record>`, CAPS_PRESENCE (§4.4) | the implementer | independent review, incl. 9 mutations — passed |
-| `21f7f87` | §17.2 `configOptions`, `setConfigOption()` | the implementer | live behavioural verification only |
-| `25aa8aa` | `isSupported()` replacing `!= null` | the implementer | live behavioural verification only |
-| `f870fe6` | `modes`, `setMode()`, `current_mode_update` (§17.1) | the implementer | independent live re-run from a second context, covering the approve branch the first run did not |
+| `01c0745` | `authenticate` / `logout` / `terminalAuthLaunch` (§5) | the implementer | independent review, incl. 9 mutations — passed |
+| `2dc9ec9` | `sessionCapabilities` fork/subagents, `Partial<Record>`, CAPS_PRESENCE (§4.4) | the implementer | independent review, incl. 9 mutations — passed |
+| `234f903` | §17.2 `configOptions`, `setConfigOption()` | the implementer | live behavioural verification only |
+| `9f31d8e` | `isSupported()` replacing `!= null` | the implementer | live behavioural verification only |
+| `06dbf46` | `modes`, `setMode()`, `current_mode_update` (§17.1) | the implementer | independent live re-run from a second context, covering the approve branch the first run did not |
 
 Three consecutive commits had oracle and implementation authored by one
 context. Ordering was the mitigation — every assertion written from the spec
 and watched fail for the right reason before any `src/` existed — but that is
 weaker than an author who cannot see the implementation, and one assertion in
-`5771058` was admittedly edited afterwards (a regex that guessed the wrong
+`01c0745` was admittedly edited afterwards (a regex that guessed the wrong
 wording; it is commented as such at the site). The context in question
 flagged this unprompted every time, which is the only reason it is visible
 here at all. Do not read "209 pass" as uniform evidence.
@@ -328,7 +328,7 @@ neither — and a completed `authenticate` sign-in, which is not actionable:
 the Claude adapter advertises `authMethods: []`, so there is nothing to
 authenticate against, and Gemini's individual tier is discontinued
 server-side. (`configOptions` was on this list; it is implemented and live-
-verified as of `21f7f87`.)
+verified as of `234f903`.)
 
 **Auth is out-of-band for Claude Code.** The adapter returns
 `authMethods: []` and reports state via an `_auth/status_update`
