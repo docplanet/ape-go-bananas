@@ -213,10 +213,30 @@ explicitly and must not assume a default.
    implementation — would have left the client silently believing it was
    still in `auto` while actually in Manual. A mock would have happily sent
    whatever notification its author expected.
-2. **The mode is environment-dependent, not "auto by default."** One capture
-   from the same adapter reported `currentModeId: "default"` where others
-   reported `"auto"`. Do not read any single capture as the default; read
-   the value.
+2. **`currentModeId` comes from host config, and the mapping is not 1:1.**
+   An earlier revision of this file called it "environment-dependent," which
+   was wrong. A deliberate experiment, writing a project-level
+   `.claude/settings.json` into the session cwd rather than touching any
+   global config:
+
+   | host config | `currentModeId` returned |
+   | --- | --- |
+   | global `auto`, no project setting | `auto` |
+   | project `defaultMode: "plan"` | `plan` |
+   | project `defaultMode: "acceptEdits"` | **`default`** |
+
+   So project settings override global and the value is config-driven, not
+   environmental — but `acceptEdits` does **not** map through, landing on
+   `default` even though the adapter advertises `acceptEdits` in its own
+   `availableModes`. Two consequences: never infer the mode from the host's
+   configuration, because the agent may not have adopted the value you set;
+   and never assume a default. Read `currentModeId`, and call `setMode` if
+   you need a specific one.
+
+   (An early capture of `default` was taken against an *unauthenticated*
+   adapter, which is consistent with config being applied only once auth
+   loads. That specific mechanism is plausible but was not separately
+   tested here, and is not the basis for anything above.)
 
 **§17.1's field-name contradiction remains unresolved, deliberately.** §8
 says `currentModeId`, §17.1's own example says `modeId`. No real agent has
