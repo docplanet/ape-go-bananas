@@ -12,6 +12,12 @@
   }
 }
 * { box-sizing: border-box; }
+/* An author `display` beats the browser's own [hidden] { display: none }:
+   #rail is display:flex and starts hidden, and on the plain tool page (no
+   bridge, so no .with-rail grid) it rendered as an empty white panel the
+   height of the viewport, on top of everything. Two browsers showed a blank
+   page for it. The attribute means hidden. */
+[hidden] { display: none !important; }
 body {
   margin: 0; background: var(--bg); color: var(--fg);
   font: 16px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;

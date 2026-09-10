@@ -244,7 +244,14 @@ fetch silently — it blocks sites from reaching `127.0.0.1` unless the site
 is added under `brave://settings/content/localhostAccess` — and the page's
 error text now says so. (The desktop app's in-app browser pane refuses it
 too, `ERR_BLOCKED_BY_CLIENT`, which is that pane's policy and no evidence
-about any real browser.) The first extract on a 4.4 MB lecture PDF then put
+about any real browser.) Before any of that, the plain tool URL — no `#bridge=` fragment — came up
+blank in both Brave and Chrome, and the page's own DOM said why: `#rail`
+is `display: flex` in the stylesheet and starts with the `hidden`
+attribute, and an author `display` beats the browser's `[hidden]`, so
+outside the `.with-rail` grid it rendered as an empty white panel the
+height of the viewport with the content below the fold. A `[hidden] {
+display: none !important }` rule now means what the attribute says. The
+first extract on a 4.4 MB lecture PDF then put
 prompts in front of the user before the agent had read a page: "check
 available PDF tooling" (`python3 -c`), then "look for the pipeline
 SETUP.md" — a file `1-extract.md` names and the bridge had never fetched,
