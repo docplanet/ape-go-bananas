@@ -3,25 +3,46 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>A.P.E. — deck tool</title>
-<meta name="description" content="Check a deck.json, read every card, and export a real .apkg. Runs entirely in your browser — nothing is uploaded and nothing is installed.">
+<title>A.P.E.</title>
+<meta name="description" content="Lecture files in, an Anki deck out. The work runs on your own computer with an agent you already pay for; this page is the controls. Nothing is uploaded.">
 </head>
 <body>
 <div id="shell">
 <aside id="rail" hidden></aside>
 <main>
   <header class="top">
-    <h1>A.P.E. <span class="sep">·</span> <span class="what">deck tool</span></h1>
-    <p class="tag">Check a <code>deck.json</code>, read every card, export a real <code>.apkg</code>.
-       It runs in this tab — your deck is never uploaded.</p>
+    <h1>A.P.E.</h1>
+    <p class="tag">Lecture files in, an Anki deck out. The work runs on your own computer, with an agent
+       you already pay for; this page is the controls. Nothing is uploaded.</p>
   </header>
 
-  <section id="drop" class="drop">
-    <input type="file" id="file" accept=".json,application/json" hidden>
-    <input type="file" id="mediafile" accept="image/*,audio/*" multiple hidden>
-    <p class="dropline"><strong>Drop a deck.json here</strong>, or <button type="button" class="link" id="pick">choose a file</button>.</p>
-    <p class="small">Images the cards reference can be dropped in too — they go into the package and show up in the preview.</p>
+  <!-- The two steps to a working page, first. A page alone cannot read a
+       folder or start an agent; the bridge on the user's machine does, and
+       this page is what it opens. Everything below waits for that link. -->
+  <section id="start" class="steps">
+    <ol>
+      <li>
+        <h2>Start the bridge</h2>
+        <p>In a terminal — with <a href="https://nodejs.org/">Node.js</a> 20 or newer installed — run this, with your lecture folder in the quotes:</p>
+        <pre class="cmd"><code id="cmd">npx -p github:docplanet/ape-go-bananas ape-bridge "/path/to/lecture folder"</code><button type="button" id="copy" class="ghost">Copy</button></pre>
+        <p class="small">The first run builds the bridge, about a minute; after that it starts in a second. It listens on this computer only, and stops when you close the terminal.</p>
+      </li>
+      <li>
+        <h2>Open the link it prints</h2>
+        <p>That link is this page, attached to your bridge: the folder is filled in, you choose an agent — a Claude, Gemini or Codex subscription, or any model with an OpenRouter key — and run the steps in order: extract, organize, cards, audit, export. Each step's result is shown to you before the next.</p>
+      </li>
+    </ol>
   </section>
+
+  <details id="checker">
+    <summary>Already have a <code>deck.json</code>? Check it and export the <code>.apkg</code> here — nothing to install.</summary>
+    <section id="drop" class="drop">
+      <input type="file" id="file" accept=".json,application/json" hidden>
+      <input type="file" id="mediafile" accept="image/*,audio/*" multiple hidden>
+      <p class="dropline"><strong>Drop a deck.json here</strong>, or <button type="button" class="link" id="pick">choose a file</button>.</p>
+      <p class="small">Images the cards reference can be dropped in too — they go into the package and show up in the preview.</p>
+    </section>
+  </details>
 
   <section id="results" hidden>
     <div class="bar">

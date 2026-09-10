@@ -415,10 +415,24 @@ for (const event of ['dragleave', 'drop'] as const) {
   });
 }
 
+// The first thing a student did on the landing page was try to give it a
+// lecture PDF. The page cannot take one -- only the bridge can reach a
+// folder -- so say that, and point at the step, instead of ignoring the drop.
+function isMediaFile(file: File): boolean {
+  return file.type.startsWith('image/') || file.type.startsWith('audio/');
+}
+
 document.addEventListener('drop', (e) => {
   const files = [...(e.dataTransfer?.files ?? [])];
   const json = files.find(isDeckFile);
   const rest = files.filter((f) => !isDeckFile(f));
+  if (!json && rest.length > 0 && !rest.every(isMediaFile)) {
+    showError(
+      `This box takes a finished deck.json. To build a deck from lecture files (${rest.map((f) => f.name).join(', ')}), ` +
+        `put them in a folder and start the bridge on it — step 1 above; the page then works from that folder.`,
+    );
+    return;
+  }
   void (async () => {
     // Deck first, images second. addMedia reports its own errors and never
     // rejects, so a bad image cannot stop the deck loading -- and doing the
@@ -430,6 +444,16 @@ document.addEventListener('drop', (e) => {
 });
 
 $('pick').addEventListener('click', () => ($('file') as HTMLInputElement).click());
+$('copy').addEventListener('click', () => {
+  const button = $('copy') as HTMLButtonElement;
+  void navigator.clipboard.writeText($('cmd').textContent ?? '').then(
+    () => {
+      button.textContent = 'Copied';
+      setTimeout(() => (button.textContent = 'Copy'), 1500);
+    },
+    () => showError('Could not copy — select the command and copy it by hand.'),
+  );
+});
 $('file').addEventListener('change', (e) => {
   const file = (e.target as HTMLInputElement).files?.[0];
   if (file) void loadDeck(file);
@@ -448,6 +472,13 @@ $('export').addEventListener('click', () => void exportApkg());
 import { locateBridge } from './engine/bridge-transport.js';
 {
   const locator = locateBridge();
+  if (locator) {
+    // Attached: the steps are done, and the checker is the deck view.
+    $('start').hidden = true;
+    const checker = $('checker') as HTMLDetailsElement;
+    checker.open = true;
+    checker.querySelector('summary')!.hidden = true;
+  }
   if (locator) {
     void import('./agent/app.js').then((m) => m.mountAgentApp(locator)).catch((err: unknown) => showError(err instanceof Error ? err.message : String(err)));
   }
