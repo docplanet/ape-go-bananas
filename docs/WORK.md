@@ -76,7 +76,17 @@ once (see `git notes show b383e7a`).
 | bundled Node/npm/engine/method files, release path resolution | `5696513` |
 | `method/*`, `course/*`, `agent/newSession`; stages, review gates, audit → verdicts → apply, deliver in `app/` | `7f8cd32` |
 | whole-deck audit stage (`4-audit.md`), run live: 61 findings, 54 fixed | `5a00f04` |
+| engine made platform-neutral: SQLite/deflate/media/rule-2 injected, `buildApkg` and `parseDeckNotes` split out, `sha1`+`crc32` written and pinned against `node:crypto`/`node:zlib` | `b4a78de` |
+| `site/` browser tool: sql.js + fflate adapters, engine in a Worker, checks/review/`.apkg` with nothing installed; parity test vs the Node build | `e5e36df` |
+| CI on push and PR; Pages builds the site instead of copying it | `a31d001` |
 | tiering rule written into the method (no count; signal, then time) — method repo `548036d`; Muscle deck re-tiered 122 core / 53 plus | _method repo_ |
+
+`npm test` counted wrong until `b4a78de`. Bare `node --test` matched any
+file ending in `test.js` anywhere beneath the repo, including twelve from
+the npm bundled into `app/src-tauri/` build artifacts; scoping it to
+`test/**/*.ts` still ran thirteen helpers and child-process entry points as
+tests. It now names `*.test.ts` and reports 323, which is the number of
+tests. Any figure quoted from before that is inflated.
 
 Only the `cwd` omission changed behaviour on the wire. The regex finding was
 the most instructive: re-running the reviewer's mutation confirms the terminal
