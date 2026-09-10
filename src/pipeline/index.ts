@@ -78,7 +78,10 @@ function describe(files: CourseFileLike[]): string {
 /** The prompt for a writing stage: method as the system block, the ask, the listing, then the materials as links. */
 export async function stageBlocks(client: PipelineClient, stage: WritingStage, courseDir: string, deckName: string): Promise<ContentBlock[]> {
   const [method, course] = await Promise.all([client.readMethod(stage.method), client.listCourse(courseDir)]);
-  const extras = await Promise.all((stage.companions ?? []).map(async (name) => ({ name, text: (await client.readMethod(name)).text })));
+  // A bridge started before SETUP.md was fetched, or APE_METHOD_DIR pointing at a
+  // bare method/ checkout, has no companion to give: the stage runs without it
+  // rather than failing on a file the agent can live without.
+  const extras = (await Promise.all((stage.companions ?? []).map((name) => client.readMethod(name).then((r) => ({ name, text: r.text }), () => null)))).filter((e) => e !== null);
   const materials = course.files.filter((f) => f.kind !== 'other');
   // The method asks the user for the deck name and refuses to infer it
   // (a live run without one wrote "Deck: not supplied"); the app collects it.
