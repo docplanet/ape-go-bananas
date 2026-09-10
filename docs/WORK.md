@@ -46,6 +46,8 @@ once (see `git notes show b383e7a`).
 | any stage on the OpenRouter tier live | the ACP tier ran the whole pipeline on a real lecture (STATUS); the embedded loop's attachments are oracle-tested against the fake only |
 | method repo: `1-extract.md` must state the fact numbering the check parses (`\| <n> \|` rows → `fact::F<n>`) | the live run wrote `A1…` rows and the inventory cross-check could not run |
 | a portable test harness: the apkg and differential suites spawn `unzip` and `python3` as a Mac ships them, so the engine is tested only on the Apple silicon CI job | Windows and Linux runners fail 2 (Linux) and ~all differential (Windows) cases on tooling, not engine behaviour; replace `unzip -l` parsing with a Node zip reader and resolve `python3`/`python` |
+| PDF text + slide images extracted in the tab (pdf.js) and written beside the material via a new `course/write`, so extract never probes for `pdftotext`/`pypdf` | the first extract from the website opened with a "check available PDF tooling" prompt; a laptop with no PDF tooling has no extract stage |
+| picker order: subscription agents before marketplace entries; the duplicated Mode control in the chat bar | cosmetic, seen on the first website run |
 | a completed `agent/login` against a signed-out account | the launch line and headless behaviour are verified; the callback completion is not |
 | designed screens (Claude Design) over `app/src/{sidecar,preview,providers,chat,main}.ts` | the current layout is a placeholder by declaration (`docs/APP.md`) |
 | packaging the engine into a release build | `resolve_paths` refuses without `APE_SIDECAR`; Node SEA vs. require-Node is undecided |
@@ -81,6 +83,7 @@ once (see `git notes show b383e7a`).
 | CI on push and PR; Pages builds the site instead of copying it | `a31d001` |
 | sidecar core extracted (`dispatch.ts`), HTTP/SSE transport (`serve.ts`, 14 tests), `ape-bridge`, `src/pipeline` over an injected client, lazy `node:sqlite` so the bridge starts on Node 20 | `a85b01f` |
 | the page as the full app over the bridge: picker, sign-in, chat, eight stages, flags, audit → adjudicate → apply; run end to end live | `6d7628a` |
+| live from the published site in Chrome 152; Brave's localhost block named in the error; `SETUP.md` fetched and attached to extract; permission policy answers reads and in-folder edits (`permission-policy.ts`, 6 tests) | _this commit_ |
 | tiering rule written into the method (no count; signal, then time) — method repo `548036d`; Muscle deck re-tiered 122 core / 53 plus | _method repo_ |
 
 `npm test` counted wrong until `b4a78de`. Bare `node --test` matched any

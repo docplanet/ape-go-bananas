@@ -51,10 +51,11 @@ interface WritingStage {
   method: string; // method file name
   artifact: string; // what the stage writes beside the material
   ask: string; // the one app-side sentence: which folder, which artifact
+  companions?: string[]; // other method-repo files this step refers to by name; attached so the agent never searches for them
 }
 
 export const WRITING_STAGES: WritingStage[] = [
-  { id: 'extract', method: '1-extract.md', artifact: 'inventory.md', ask: 'Run this step on the course folder below and write inventory.md beside the material.' },
+  { id: 'extract', method: '1-extract.md', artifact: 'inventory.md', ask: 'Run this step on the course folder below and write inventory.md beside the material.', companions: ['SETUP.md'] },
   { id: 'organize', method: '2-organize.md', artifact: 'plan.md', ask: 'Run this step on the course folder below: inventory.md is already there; write plan.md beside it.' },
   {
     id: 'cards',
@@ -77,13 +78,16 @@ function describe(files: CourseFileLike[]): string {
 /** The prompt for a writing stage: method as the system block, the ask, the listing, then the materials as links. */
 export async function stageBlocks(client: PipelineClient, stage: WritingStage, courseDir: string, deckName: string): Promise<ContentBlock[]> {
   const [method, course] = await Promise.all([client.readMethod(stage.method), client.listCourse(courseDir)]);
+  const extras = await Promise.all((stage.companions ?? []).map(async (name) => ({ name, text: (await client.readMethod(name)).text })));
   const materials = course.files.filter((f) => f.kind !== 'other');
   // The method asks the user for the deck name and refuses to infer it
   // (a live run without one wrote "Deck: not supplied"); the app collects it.
   const deckLine = deckName ? `Deck: ${deckName}` : 'Deck: not supplied by the user';
+  const attached = extras.length > 0 ? `\n\n${extras.map((e) => e.name).join(', ')} from the method repository ${extras.length === 1 ? 'is' : 'are'} attached below; do not search the file system for ${extras.length === 1 ? 'it' : 'them'}.` : '';
   const blocks: ContentBlock[] = [
     { type: 'resource', resource: { uri: 'ape://system', text: method.text, mimeType: 'text/markdown' } },
-    { type: 'text', text: `${stage.ask}\n\n${deckLine}\nCourse folder: ${courseDir}\n\nMaterials:\n${describe(materials) || '(none)'}` },
+    { type: 'text', text: `${stage.ask}${attached}\n\n${deckLine}\nCourse folder: ${courseDir}\n\nMaterials:\n${describe(materials) || '(none)'}` },
+    ...extras.map((e): ContentBlock => ({ type: 'resource', resource: { uri: `ape://method/${e.name}`, text: e.text, mimeType: 'text/markdown' } })),
   ];
   for (const f of materials) {
     if ((f.kind === 'pdf' || f.kind === 'image' || f.kind === 'text') && f.bytes <= ATTACH_LIMIT) {

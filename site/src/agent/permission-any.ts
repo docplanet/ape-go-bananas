@@ -14,12 +14,13 @@
 
 import type { PermissionRequest, SidecarClient } from '../engine/bridge-client.js';
 import type { Bus } from './bus.js';
+import { decide } from './permission-policy.js';
 
 function esc(s: string): string {
   return s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
 }
 
-export function mountFallbackPermissions(host: HTMLElement, sidecar: SidecarClient, bus: Bus): () => void {
+export function mountFallbackPermissions(host: HTMLElement, sidecar: SidecarClient, bus: Bus, courseDir: () => string | null): () => void {
   const box = document.createElement('div');
   box.className = 'permission';
   box.hidden = true;
@@ -29,6 +30,11 @@ export function mountFallbackPermissions(host: HTMLElement, sidecar: SidecarClie
     (req) => {
       if (req.method !== 'agent/requestPermission') return false;
       const r = req as unknown as PermissionRequest;
+      const auto = decide(r, courseDir());
+      if (auto) {
+        void sidecar.answer(r.id, { outcome: { outcome: 'selected', optionId: auto.optionId } });
+        return true;
+      }
       const where = r.params.toolCall.locations?.map((l) => l.path).join(', ') ?? '';
       box.hidden = false;
       box.innerHTML = `<div class="ptitle">${esc(String(r.params.toolCall.title ?? 'The agent asks permission'))} <small class="muted">(${esc(r.params.sessionId.slice(0, 8))}… — a review session)</small></div>${where ? `<div class="muted">${esc(where)}</div>` : ''}

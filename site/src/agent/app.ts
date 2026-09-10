@@ -73,14 +73,12 @@ export async function mountAgentApp(locator: BridgeLocator): Promise<void> {
     say(err instanceof Error ? err.message : String(err), true);
     showError(
       `This page was opened by ape-bridge, but the bridge cannot be reached. ` +
-        `Is it still running in your terminal? If your browser asked to allow access to your local network, it needs a yes.`,
+        `Is it still running in your terminal? If your browser asked to allow access to your local network, it needs a yes. ` +
+        `Brave blocks websites from reaching this computer unless you add this site under brave://settings/content/localhostAccess.`,
     );
     return;
   }
   const bus = makeBus(sidecar);
-  // Prompts for sessions no chat pane owns -- the auditor's and the
-  // adjudicator's. Without this their write permissions went unanswered.
-  mountFallbackPermissions($('view-agent'), sidecar, bus);
 
   // ---- views -----------------------------------------------------------------
   const deckView = ['drop', 'results', 'exportnote'].map((id) => $(id));
@@ -108,6 +106,9 @@ export async function mountAgentApp(locator: BridgeLocator): Promise<void> {
     stages.setConnection(connection);
     void stages.refreshMarks();
   });
+  // Prompts for sessions no chat pane owns -- the auditor's and the
+  // adjudicator's. Without this their write permissions went unanswered.
+  mountFallbackPermissions($('view-agent'), sidecar, bus, () => courseDir);
 
   // ---- deck view over the bridge ---------------------------------------------
   let deckLoaded = false;
@@ -217,7 +218,7 @@ export async function mountAgentApp(locator: BridgeLocator): Promise<void> {
           return;
         }
         connection = result;
-        chat = mountChat($('agent-host'), sidecar, bus, result, say);
+        chat = mountChat($('agent-host'), sidecar, bus, result, say, () => courseDir);
         stages.setConnection(result);
         say(`${result.agent?.name ?? result.provider} ready — pick a stage on the left`);
         void stages.refreshMarks();

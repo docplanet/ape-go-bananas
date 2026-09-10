@@ -236,7 +236,36 @@ disk) → one owner flag → audit in a fresh session (16 findings, four angles)
 applies (19 notes) → deck reloads clean → export. The final `deck.json`,
 exported with `ape export`, imports into Anki 26.5: 19 notes, 38 cards.
 
-**Not done, deliberately or not yet.** The package is not on npm, so `npx
+**From the published site, same day.** The live page at
+`docplanet.github.io/ape-go-bananas/tool/` reached a bridge on the same Mac
+from Chrome 152 with no local-network prompt at all: `/health` 200, the
+event stream 200, RPCs 202, the picker rendered. Brave refused the same
+fetch silently — it blocks sites from reaching `127.0.0.1` unless the site
+is added under `brave://settings/content/localhostAccess` — and the page's
+error text now says so. (The desktop app's in-app browser pane refuses it
+too, `ERR_BLOCKED_BY_CLIENT`, which is that pane's policy and no evidence
+about any real browser.) The first extract on a 4.4 MB lecture PDF then put
+prompts in front of the user before the agent had read a page: "check
+available PDF tooling" (`python3 -c`), then "look for the pipeline
+SETUP.md" — a file `1-extract.md` names and the bridge had never fetched,
+so the agent searched `skills/` and `.claude/` for it. Two changes: the
+bridge fetches `SETUP.md` beside the step files and the extract prompt
+attaches it (`src/pipeline`, `companions`); and the page answers reads,
+searches and in-folder edits itself, asking only about commands, deletes and
+anything outside the course folder (`site/src/agent/permission-policy.ts`,
+six tests; both prompt panes consult it first, and an auto-answer is printed
+in the chat so it is never silent). The tooling probe stays a prompt until
+the page extracts PDF text and slide images itself — the next item below.
+
+**Not done, deliberately or not yet.** The page does not extract PDFs: the
+agent finds `pdftotext` or `pypdf` on the machine or asks to, and a laptop
+with neither has no extract stage. The fix is in the tab (pdf.js text with
+page markers plus one PNG per slide, written beside the material through a
+`course/write` the bridge does not yet have) so the prompt lists text and
+images and the agent never probes. The picker lists the registry in its own
+order, so a marketplace entry sits above Claude Agent; and the chat bar shows
+Mode twice, once as the ACP session mode and once as the adapter's config
+option of the same name. The package is not on npm, so `npx
 ape-bridge` needs a publish (`prepublishOnly` builds; `files` ships `dist`);
 `ape` is taken as a name. Only `npx`-distributed registry agents install —
 `binary` ones (Cursor, Devin, Amp) list but do not. A page reload does not

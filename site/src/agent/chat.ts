@@ -11,6 +11,7 @@
 
 import { BridgeError, type ConfigOption, type ConnectResult, type ModeState, type PermissionRequest, type SessionUpdate, type SidecarClient } from '../engine/bridge-client.js';
 import type { Bus } from './bus.js';
+import { decide } from './permission-policy.js';
 
 function esc(s: string): string {
   return s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
@@ -29,7 +30,7 @@ export interface Chat {
   applyConfigTo(sessionId: string): Promise<void>;
 }
 
-export function mountChat(host: HTMLElement, sidecar: SidecarClient, bus: Bus, conn: ConnectResult, say: (t: string, e?: boolean) => void): Chat {
+export function mountChat(host: HTMLElement, sidecar: SidecarClient, bus: Bus, conn: ConnectResult, say: (t: string, e?: boolean) => void, courseDir: () => string | null): Chat {
   const session = conn.session!;
   let busy = false;
   let cost = 0;
@@ -152,6 +153,12 @@ export function mountChat(host: HTMLElement, sidecar: SidecarClient, bus: Bus, c
     if (req.method !== 'agent/requestPermission') return false;
     const r = req as unknown as PermissionRequest;
     if (r.params.sessionId !== session.sessionId) return false; // another pane's
+    const auto = decide(r, courseDir());
+    if (auto) {
+      append('tool', `${String(r.params.toolCall.title ?? 'permission')} — ${auto.reason}`);
+      void sidecar.answer(r.id, { outcome: { outcome: 'selected', optionId: auto.optionId } });
+      return true;
+    }
     const where = r.params.toolCall.locations?.map((l) => l.path).join(', ') ?? '';
     permission.classList.remove('hidden');
     permission.innerHTML = `<div class="ptitle">${esc(String(r.params.toolCall.title ?? 'The agent asks permission'))}</div>${where ? `<div class="muted">${esc(where)}</div>` : ''}

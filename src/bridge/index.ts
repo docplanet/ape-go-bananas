@@ -28,8 +28,18 @@ const DEFAULT_SITE = 'https://docplanet.github.io/ape-go-bananas/tool/';
 // time, unmodified (docs/APP.md). The desktop app bundles a copy at build
 // time; a package installed with npx has no build step on the user's machine,
 // so the bridge fetches the same files once into its data directory.
-const METHOD_RAW = 'https://raw.githubusercontent.com/docplanet/anki-process-engine-live/main/method/';
-const METHOD_FILES = ['1-extract.md', '2-organize.md', '3-cards.md', '4-audit.md'];
+const METHOD_RAW = 'https://raw.githubusercontent.com/docplanet/anki-process-engine-live/main/';
+// SETUP.md sits at the repository root, not in method/, and 1-extract.md
+// sends the agent to it by name for the slide-conversion commands. Left out,
+// the first live run from the website watched the agent search skills/ and
+// .claude/ for it -- a permission prompt for a file we could have handed over.
+const METHOD_FILES: { name: string; from: string }[] = [
+  { name: '1-extract.md', from: 'method/1-extract.md' },
+  { name: '2-organize.md', from: 'method/2-organize.md' },
+  { name: '3-cards.md', from: 'method/3-cards.md' },
+  { name: '4-audit.md', from: 'method/4-audit.md' },
+  { name: 'SETUP.md', from: 'SETUP.md' },
+];
 
 interface Args {
   courseDir: string | null;
@@ -115,13 +125,13 @@ async function ensureMethodDir(base: string, refresh: boolean): Promise<string> 
   }
   const dir = join(base, 'method');
   mkdirSync(dir, { recursive: true });
-  const missing = METHOD_FILES.filter((f) => refresh || !existsSync(join(dir, f)));
+  const missing = METHOD_FILES.filter((f) => refresh || !existsSync(join(dir, f.name)));
   if (missing.length > 0) {
     process.stderr.write(`fetching the method files (${missing.length}) into ${dir}\n`);
     for (const f of missing) {
-      const res = await fetch(METHOD_RAW + f);
-      if (!res.ok) throw new Error(`could not fetch ${f}: HTTP ${res.status}`);
-      writeFileSync(join(dir, f), await res.text());
+      const res = await fetch(METHOD_RAW + f.from);
+      if (!res.ok) throw new Error(`could not fetch ${f.name}: HTTP ${res.status}`);
+      writeFileSync(join(dir, f.name), await res.text());
     }
   }
   return dir;
