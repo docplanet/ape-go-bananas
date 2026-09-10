@@ -47,7 +47,7 @@ once (see `git notes show b383e7a`).
 | method repo: `1-extract.md` must state the fact numbering the check parses (`\| <n> \|` rows → `fact::F<n>`) | the live run wrote `A1…` rows and the inventory cross-check could not run |
 | a portable test harness: the apkg and differential suites spawn `unzip` and `python3` as a Mac ships them, so the engine is tested only on the Apple silicon CI job | Windows and Linux runners fail 2 (Linux) and ~all differential (Windows) cases on tooling, not engine behaviour; replace `unzip -l` parsing with a Node zip reader and resolve `python3`/`python` |
 | picker order: subscription agents before marketplace entries; the duplicated Mode control in the chat bar | cosmetic, seen on the first website run |
-| uploading lecture files into the container's course folder, and wiring `installClaudeJs` + `claude setup-token` sign-in to the picker | the in-tab tier boots and lists agents but has no way to receive material or sign in yet |
+| a stage run end to end on the in-tab tier | sign-in was taken as far as the authorise URL and stopped there: completing it is the account holder's action |
 | a completed `agent/login` against a signed-out account | the launch line and headless behaviour are verified; the callback completion is not |
 | designed screens (Claude Design) over `app/src/{sidecar,preview,providers,chat,main}.ts` | the current layout is a placeholder by declaration (`docs/APP.md`) |
 | packaging the engine into a release build | `resolve_paths` refuses without `APE_SIDECAR`; Node SEA vs. require-Node is undecided |
@@ -85,7 +85,8 @@ once (see `git notes show b383e7a`).
 | the page as the full app over the bridge: picker, sign-in, chat, eight stages, flags, audit → adjudicate → apply; run end to end live | `6d7628a` |
 | live from the published site in Chrome 152; Brave's localhost block named in the error; `SETUP.md` fetched and attached to extract; permission policy answers reads and in-folder edits (`permission-policy.ts`, 6 tests) | `80f8e2c` `6f95273` |
 | PDFs read in the tab: pdf.js text + one JPEG per page under `_extracted/`, `course/write` and `course/list.extracted` (11 course tests), `describeExtracted` in the prompt (5 pipeline tests), deadlines on a dead worker; run live on a 41-page lecture | `819b765` |
-| the engine runs in the tab: the sidecar mounted into WebContainer, `EngineHost` over two transports, wrapper + base64 framing (8 tests), COOP/COEP service worker; cold page to a ready engine and a 41-provider picker in 2.7 s | _this commit_ |
+| the engine runs in the tab: the sidecar mounted into WebContainer, `EngineHost` over two transports, wrapper + base64 framing (8 tests), COOP/COEP service worker; cold page to a ready engine and a 41-provider picker in 2.7 s | `2dad160` |
+| upload into the container's course folder, pinned Claude Code 2.1.112 fetched on demand, `claude setup-token` relayed as a console; lecture uploaded and the OAuth URL reached in the tab | _this commit_ |
 | `[hidden]` means hidden (the plain tool page was blank in two browsers); the page leads with the two steps and `npx -p github:… ape-bridge` works from the repo (`prepare`), verified on Node 20 | `a39d67f` `258bcf3` |
 | tiering rule written into the method (no count; signal, then time) — method repo `548036d`; Muscle deck re-tiered 122 core / 53 plus | _method repo_ |
 

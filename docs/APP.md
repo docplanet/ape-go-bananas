@@ -365,13 +365,36 @@ WebContainer as a terminal, but documents nothing about the native cutover.
 commercial licence for production use in a for-profit setting; this repo is
 the former, and that is a decision to revisit if the site ever is not.
 
-**Not done, deliberately or not yet.** Uploading lecture files into the
-container's course folder is next -- the folder exists and is pre-filled in
-the rail, but nothing puts material in it yet. Claude sign-in
-(`claude setup-token`, which the pinned CLI offers) is not wired to the
-picker, and neither is `installClaudeJs`. The picker's copy still says
-subscription agents "install on this computer", which in this tier is the
-tab. The picker lists the registry in its
+**Material arrives by upload, and sign-in is the CLI's own flow.** In the
+tab the course folder is inside the sandbox, so the rail offers a drop zone
+instead of a path field and the bytes go straight to the container's
+filesystem rather than through JSON-RPC (`writeCourseFile`). `wc.fs`
+resolves against the workdir while the sidecar sees real absolute paths, and
+the first upload wrote to `/home/<wd>/home/<wd>/course/...` before that was
+understood; one `local()` helper now sits on every crossing.
+
+Sign-in is not a protocol method -- the adapters advertise `authMethods: []`
+and Claude's flow lives in the CLI -- so the page runs `claude setup-token`
+in the container and relays its console verbatim (`agent/signin.ts`): what
+it prints is shown, what the user types goes to its stdin, and nothing here
+models the flow, so a change at Anthropic's end does not break a
+reimplementation that never existed. Two things the terminal made necessary:
+the process is given a 400-column pty, because at the default width the
+OAuth URL was wrapped across lines and could not be a link; and
+cursor-forward sequences are turned into spaces rather than stripped, which
+is what turned "Paste code here if prompted" into one word.
+
+**Run end to end in the tab, 2026-09-10**: cold page to a ready engine in
+2.9 s, the 4.4 MB biochemistry lecture uploaded into the course folder,
+Claude Code 2.1.112 fetched into the container in ~8 s, and `setup-token`
+printing its authorise URL and waiting for the code. The token it writes
+lands in the container's HOME -- the sandbox -- and does not outlive the tab.
+
+**Not done, deliberately or not yet.** No stage has been run on the in-tab
+tier: sign-in was taken as far as the URL and deliberately not completed,
+because finishing it is the account holder's action, not this session's.
+The picker's copy still says subscription agents "install on this
+computer", which in this tier is the tab, and it lists the registry in its
 own order, so a marketplace entry sits above Claude Agent; and the chat bar
 shows Mode twice, once as the ACP session mode and once as the adapter's
 config option of the same name. Extraction runs only ahead of the extract

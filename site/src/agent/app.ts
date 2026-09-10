@@ -17,6 +17,7 @@ import { mountChat, type Chat } from './chat.js';
 import { mountFallbackPermissions } from './permission-any.js';
 import { extractMaterials } from './extract.js';
 import { mountPicker } from './picker.js';
+import { mountSignIn } from './signin.js';
 import { mountStages, type Stages } from './stages.js';
 
 /** Appended to the review page: a Flag button per card, and an outline on flagged ones. */
@@ -48,8 +49,19 @@ export async function mountAgentApp(host: EngineHost): Promise<void> {
   $('rail').innerHTML = `
     <h1>A.P.E.</h1>
     <div class="course">
-      <label class="muted" for="coursedir">Course folder</label>
-      <input id="coursedir" placeholder="/path/to/lecture-3" autocomplete="off" spellcheck="false">
+      ${
+        host.writeCourseFile
+          ? `<label class="muted">Lecture files</label>
+             <div id="uploadzone" class="uploadzone">
+               <input type="file" id="coursefiles" multiple hidden>
+               <button type="button" class="link" id="addcourse">Add files</button>
+               <span class="muted"> or drop them here</span>
+             </div>
+             <ul id="courselist" class="courselist"></ul>
+             <input id="coursedir" type="hidden">`
+          : `<label class="muted" for="coursedir">Course folder</label>
+             <input id="coursedir" placeholder="/path/to/lecture-3" autocomplete="off" spellcheck="false">`
+      }
       <label class="muted" for="deckname-in">Deck name</label>
       <input id="deckname-in" placeholder="Course::Lecture 3" autocomplete="off">
     </div>
@@ -93,6 +105,55 @@ export async function mountAgentApp(host: EngineHost): Promise<void> {
     stages.setConnection(connection);
     void stages.refreshMarks();
   });
+
+  // In the tab, the course folder is inside the sandbox: the user hands over
+  // files rather than naming a path, and the bytes go straight to the
+  // container's filesystem instead of through JSON-RPC.
+  if (host.writeCourseFile) {
+    courseInput.value = courseDir ?? '';
+    const list = $('courselist');
+    const refreshList = async (): Promise<void> => {
+      const names = (await host.listCourseFiles?.()) ?? [];
+      list.innerHTML = names.length === 0 ? '' : names.map((n) => `<li>${esc(n)}</li>`).join('');
+    };
+    const accept = async (files: File[]): Promise<void> => {
+      if (files.length === 0) return;
+      try {
+        for (const file of files) {
+          say(`adding ${file.name}…`);
+          await host.writeCourseFile!(file.name, new Uint8Array(await file.arrayBuffer()));
+        }
+        say(`${files.length} file${files.length === 1 ? '' : 's'} added — run extract when you are ready`);
+      } catch (err) {
+        say(err instanceof Error ? err.message : String(err), true);
+      }
+      await refreshList();
+      await stages.refreshMarks();
+    };
+    const picker = $<HTMLInputElement>('coursefiles');
+    $('addcourse').addEventListener('click', () => picker.click());
+    picker.addEventListener('change', () => {
+      void accept([...(picker.files ?? [])]);
+      picker.value = '';
+    });
+    const zone = $('uploadzone');
+    for (const type of ['dragenter', 'dragover'] as const) {
+      zone.addEventListener(type, (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        zone.classList.add('over');
+      });
+    }
+    for (const type of ['dragleave', 'drop'] as const) {
+      zone.addEventListener(type, (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        zone.classList.remove('over');
+        if (type === 'drop') void accept([...((e as DragEvent).dataTransfer?.files ?? [])]);
+      });
+    }
+    void refreshList();
+  }
   // Prompts for sessions no chat pane owns -- the auditor's and the
   // adjudicator's. Without this their write permissions went unanswered.
   mountFallbackPermissions($('view-agent'), sidecar, bus, () => courseDir);
@@ -168,6 +229,25 @@ export async function mountAgentApp(host: EngineHost): Promise<void> {
   // The runner gets a client whose newSession carries the chat pane's
   // selections over: the method's fresh auditor/adjudicator sessions must use
   // the model and mode the user picked, not the agent's defaults.
+  // In the tab, an agent has to be fetched before it can be installed or
+  // connected -- Claude Code's current release is a native binary, so the
+  // pinned JavaScript build is pulled into the container first. On the bridge
+  // the host has no prepareProvider and these pass straight through.
+  const prepare = async (providerId: string): Promise<void> => {
+    await host.prepareProvider?.(providerId, (step) => say(`${step}…`));
+  };
+  const pickerClient: SidecarClient = {
+    ...sidecar,
+    installProvider: async (dataDir, id) => {
+      await prepare(id);
+      return sidecar.installProvider(dataDir, id);
+    },
+    connect: async (params) => {
+      await prepare(params.provider);
+      return sidecar.connect(params);
+    },
+  };
+
   const runnerClient: SidecarClient = {
     ...sidecar,
     newSession: async (connectionId: string) => {
@@ -197,7 +277,7 @@ export async function mountAgentApp(host: EngineHost): Promise<void> {
     chat = null;
     connection = null;
     stages.setConnection(null);
-    mountPicker($('agent-host'), sidecar, bus, host.dataDir(), () => courseDir, {
+    mountPicker($('agent-host'), pickerClient, bus, host.dataDir(), () => courseDir, {
       say,
       onConnected(result) {
         if (!result.session || !courseDir) {
@@ -211,6 +291,31 @@ export async function mountAgentApp(host: EngineHost): Promise<void> {
         void stages.refreshMarks();
       },
     });
+  }
+
+  // Signing in is the CLI's own flow, so the page offers it as a console
+  // rather than a form (signin.ts). Only the in-tab host has one.
+  if (host.signIn) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.id = 'signin-open';
+    button.className = 'ghost';
+    button.textContent = 'Sign in to Claude';
+    button.addEventListener('click', () => {
+      button.disabled = true;
+      void (async () => {
+        try {
+          await prepare('claude');
+          mountSignIn($('view-agent'), host, say, () => {
+            button.disabled = false;
+          });
+        } catch (err) {
+          button.disabled = false;
+          say(err instanceof Error ? err.message : String(err), true);
+        }
+      })();
+    });
+    $('rail').querySelector('.views')!.after(button);
   }
 
   showView('agent');

@@ -211,10 +211,22 @@ export class ContainerHost implements EngineHost {
     this.requestHandler = handler;
   }
 
+  /**
+   * The sidecar sees real absolute paths inside the container, and that is
+   * what travels over JSON-RPC. `wc.fs` from the page resolves against the
+   * workdir instead, so an absolute path handed to it comes out doubled --
+   * the first upload wrote to `/home/<wd>/home/<wd>/course/...` and failed.
+   * Everything crossing `wc.fs` goes through here first.
+   */
+  private local(path: string): string {
+    const root = `${this.wc.workdir}/`;
+    return path.startsWith(root) ? path.slice(root.length) : path.replace(/^\//, '');
+  }
+
   async readFile(root: string, relPath: string): Promise<Uint8Array | null> {
     const path = relPath ? `${root.replace(/\/$/, '')}/${relPath}` : root;
     try {
-      return await this.wc.fs.readFile(path);
+      return await this.wc.fs.readFile(this.local(path));
     } catch {
       return null;
     }
@@ -222,18 +234,55 @@ export class ContainerHost implements EngineHost {
 
   /** Puts one uploaded file in the course folder. Bytes go straight to the container's filesystem, never through JSON-RPC. */
   async writeCourseFile(name: string, bytes: Uint8Array): Promise<void> {
+    const dir = this.local(this.courseRoot());
     const slash = name.lastIndexOf('/');
-    if (slash > 0) await this.wc.fs.mkdir(`${this.courseRoot()}/${name.slice(0, slash)}`, { recursive: true });
-    await this.wc.fs.writeFile(`${this.courseRoot()}/${name}`, bytes);
+    if (slash > 0) await this.wc.fs.mkdir(`${dir}/${name.slice(0, slash)}`, { recursive: true });
+    await this.wc.fs.writeFile(`${dir}/${name}`, bytes);
   }
 
   /** What is in the course folder now, for the page's own listing before any agent exists. */
   async listCourseFiles(): Promise<string[]> {
     try {
-      return (await this.wc.fs.readdir(this.courseRoot())).filter((n) => !n.startsWith('.'));
+      return (await this.wc.fs.readdir(this.local(this.courseRoot()))).filter((n) => !n.startsWith('.'));
     } catch {
       return [];
     }
+  }
+
+  /** EngineHost: only the Claude tier needs anything fetched before it can run. */
+  async prepareProvider(providerId: string, onProgress: Progress = () => {}): Promise<void> {
+    if (/claude/i.test(providerId)) await this.installClaudeJs(onProgress);
+  }
+
+  /**
+   * `claude setup-token`, as a process in the container, with its console
+   * relayed. It prints a URL to authorise on claude.ai and waits for the code
+   * that comes back; the page shows both sides rather than reimplementing a
+   * flow it does not own.
+   */
+  signIn(onOutput: (text: string) => void): { write(line: string): void; cancel(): void; done: Promise<number> } | null {
+    const cli = `${this.wc.workdir}/claude-js/node_modules/@anthropic-ai/claude-code/cli.js`;
+    let writer: WritableStreamDefaultWriter<string> | null = null;
+    let child: WebContainerProcess | null = null;
+    const queue: string[] = [];
+    const done = (async () => {
+      const proc = await this.wc.spawn('node', [cli, 'setup-token'], { env: { HOME: `${this.wc.workdir}/home` }, terminal: { cols: 400, rows: 40 } });
+      child = proc;
+      writer = proc.input.getWriter();
+      for (const line of queue.splice(0)) void writer.write(`${line}\n`);
+      void proc.output.pipeTo(new WritableStream({ write: (chunk: string) => onOutput(chunk) }));
+      return proc.exit;
+    })();
+    return {
+      write(line) {
+        if (writer) void writer.write(`${line}\n`);
+        else queue.push(line);
+      },
+      cancel() {
+        child?.kill();
+      },
+      done,
+    };
   }
 
   /**
@@ -243,7 +292,7 @@ export class ContainerHost implements EngineHost {
    */
   async installClaudeJs(onProgress: Progress = () => {}): Promise<void> {
     const cli = `${this.wc.workdir}/claude-js/node_modules/@anthropic-ai/claude-code/cli.js`;
-    if ((await this.readFile(cli, '')) !== null) return;
+    if ((await this.readFile(cli, '')) !== null) return; // already fetched into this container
     onProgress(`installing Claude Code ${CLAUDE_JS_VERSION} in this tab`);
     const proc = await this.wc.spawn('npm', ['install', '--prefix', 'claude-js', '--no-audit', '--no-fund', '--omit', 'optional', `@anthropic-ai/claude-code@${CLAUDE_JS_VERSION}`]);
     let tail = '';
