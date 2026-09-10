@@ -2,7 +2,6 @@
 // collapsed to control flow). Rule numbers in the comments below refer to contract §5.1;
 // the execution order here IS the order that table's rows are listed in, which is also
 // the order a differential test's per-note message ordering must match (contract §9).
-import { existsSync } from 'node:fs';
 import type { DeckNote } from '../types.js';
 import { clozes, flattenClozes, shapeOf } from './cloze.js';
 import { unbacked } from './inventory.js';
@@ -31,8 +30,14 @@ export interface CheckNoteOptions {
    *  rather than silently reporting a clean deck that was never actually checked. */
   checkMedia?: boolean;
   /** Joined via pyOsPathJoin (os.path.join semantics, NOT node:path.join - contract §11
-   *  hazard 4) and checked via fs.existsSync; only consulted when checkMedia is true. */
+   *  hazard 4) and handed to `mediaExists`; only consulted when checkMedia is true. */
   mediaDir?: string;
+  /** Rule 2's existence predicate, over the already-joined path. Injected rather than
+   *  imported so that this module stays free of node: -- Node callers pass
+   *  `nodeMediaExists` (media-exists-node.ts), a browser passes its own. Required when
+   *  checkMedia is true, for the same reason mediaDir is: a missing one would silently
+   *  report every deck clean. */
+  mediaExists?: (path: string) => boolean;
   /** undefined = the --transcript gate (rule 4) never runs, regardless of the Source field. */
   transcript?: string[];
   /** undefined = the --inventory gate (rules 5a/5b) never runs. */
@@ -60,6 +65,7 @@ export function checkNote(note: DeckNote, opts: CheckNoteOptions = {}): string[]
 
   const checkMedia = opts.checkMedia ?? false;
   const mediaDir = opts.mediaDir;
+  const mediaExists = opts.mediaExists;
   // A caller that asks for media checking but supplies no directory to check against would
   // otherwise have every image silently pass - "checked, all present" and "never checked at
   // all" render as the identical clean report, which is exactly the misconfiguration a
@@ -67,6 +73,9 @@ export function checkNote(note: DeckNote, opts: CheckNoteOptions = {}): string[]
   // result (no test in this suite ever sets checkMedia without also setting mediaDir).
   if (checkMedia && mediaDir === undefined) {
     throw new Error('checkMedia is true but mediaDir is undefined; media checking would silently no-op for every note');
+  }
+  if (checkMedia && mediaExists === undefined) {
+    throw new Error('checkMedia is true but mediaExists is undefined; media checking would silently no-op for every note');
   }
 
   // Rules 1-2: <img> src presence, then (gated on checkMedia only) media existence.
@@ -78,7 +87,7 @@ export function checkNote(note: DeckNote, opts: CheckNoteOptions = {}): string[]
         problems.push(`an <img> with no src in ${field}`);
         continue;
       }
-      if (checkMedia && mediaDir !== undefined && !existsSync(pyOsPathJoin(mediaDir, source[1]))) {
+      if (checkMedia && mediaDir !== undefined && mediaExists !== undefined && !mediaExists(pyOsPathJoin(mediaDir, source[1]))) {
         problems.push(`media missing from the collection: ${source[1]} (in ${field})`);
       }
     }

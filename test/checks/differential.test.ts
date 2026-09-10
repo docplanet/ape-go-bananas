@@ -26,6 +26,7 @@ import { fileURLToPath } from 'node:url';
 import type { DeckNote } from '../../dist/types.js';
 import { checkDeck, formatCheckReport, loadTranscript, loadInventory } from '../../dist/checks/index.js';
 import type { CheckDeckOptions } from '../../dist/checks/index.js';
+import { nodeMediaExists } from '../../dist/checks/media-exists-node.js';
 import { runCheckDeckPython, makeMediaDir } from './helpers.ts';
 
 function note(text: string, opts: { extra?: string; tags?: string[]; source?: string } = {}): DeckNote {
@@ -549,6 +550,10 @@ function toOptions(c: Case): CheckDeckOptions {
   return {
     checkMedia: !c.noMedia && c.mediaDir !== undefined,
     mediaDir: c.mediaDir,
+    // Rule 2's existence predicate is injected now (checks/note.ts); this is
+    // the same fs.existsSync the check used to import directly, so what these
+    // cases compare against Python is unchanged.
+    mediaExists: nodeMediaExists,
     transcript: c.transcripts ? c.transcripts.flatMap((raw) => loadTranscript(raw)) : undefined,
     inventory: c.inventoryText !== undefined ? loadInventory(c.inventoryText) : undefined,
   };

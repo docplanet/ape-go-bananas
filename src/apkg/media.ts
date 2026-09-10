@@ -21,27 +21,26 @@
 // here anyway -- collectMedia reports every such name back on `unresolved`
 // (see index.ts) instead of dropping it into a void.
 //
-// "Not found" is the ONLY failure this module tolerates. Anything else --
-// permission denied, the name turning out to be a directory, too many open
-// files -- means a file that check_deck.py's `os.path.exists` upstream
-// check would have already seen exists, but this exporter still can't read;
-// that upstream guarantee doesn't cover those cases, so treating them the
-// same as "not found" would silently ship a package with broken media and
-// no error anywhere. Those are rethrown instead.
-//
-// Field text driving all of this is LLM-authored, not a trusted source of
-// filesystem paths -- see isBareFilename below for why a name is validated
-// before it's ever joined onto mediaDir.
+// Reading is the caller's job (media-node.ts under Node, a directory handle
+// in a browser): this module decides *which* names a deck references and
+// what happens when one cannot be read, never how to read one.
 
-import { readFileSync, readdirSync } from 'node:fs';
-import { basename, join } from 'node:path';
 import type { DeckNote } from '../types.js';
 import { extractMediaFilenames } from './text.js';
+
+/**
+ * Supplies the bytes behind one referenced filename, or undefined when there
+ * is genuinely no such file. Anything else -- a file that exists but cannot
+ * be read, a name shaped like a path-traversal attempt -- must throw rather
+ * than return undefined; media-node.ts explains why that distinction is the
+ * whole contract.
+ */
+export type MediaReader = (filename: string) => Uint8Array | undefined;
 
 export interface MediaFile {
   /** The real filename Anki should use in collection.media on import. */
   filename: string;
-  bytes: Buffer;
+  bytes: Uint8Array;
 }
 
 export interface MediaCollectionResult {
@@ -51,7 +50,7 @@ export interface MediaCollectionResult {
   files: MediaFile[];
   /**
    * Filenames some note referenced but that had no readable file behind
-   * them in mediaDir (checked directly, then via the NFC/NFD fallback) --
+   * them (checked directly, then via the reader's own fallbacks) --
    * first-occurrence order, matching `files`' ordering convention. Empty
    * when every reference resolved. The caller (writeApkg, index.ts) puts
    * this on its own result rather than swallowing it.
@@ -59,80 +58,20 @@ export interface MediaCollectionResult {
   unresolved: string[];
 }
 
-// A media filename is always a bare name -- one path segment, no directory
-// component -- doc §3, and exactly what Anki's own importer enforces on the
-// way in (safe_normalized_file_name, cited there). `join(mediaDir, name)`
-// only neutralizes a *leading* "/" (it doesn't reset to root the way
-// `resolve` would); it does nothing at all against a "../" segment, which
-// resolves straight out of mediaDir. Since the note text naming this file
-// is LLM-authored rather than trusted, that check has to happen here, not
-// be assumed away: `basename(name) !== name` is true for any name carrying
-// a path separator, a leading "/", or a ".." segment, i.e. for anything
-// that isn't already a single bare component.
-function isBareFilename(filename: string): boolean {
-  return basename(filename) === filename;
-}
-
-function isNotFoundError(err: unknown): boolean {
-  return (err as NodeJS.ErrnoException)?.code === 'ENOENT';
-}
-
-/**
- * Returns undefined when `filename` genuinely doesn't exist under
- * `mediaDir` (ENOENT). Throws for a filename shaped like a path-traversal
- * attempt (see isBareFilename) and for any other read failure (permission
- * denied, a directory of the same name, ...) -- see the file header for why
- * only "not found" is this function's business to swallow.
- */
-function tryReadMediaBytes(mediaDir: string, filename: string): Buffer | undefined {
-  if (!isBareFilename(filename)) {
-    throw new Error(
-      `media reference is not a bare filename, refusing to read outside mediaDir: ${JSON.stringify(filename)}`,
-    );
-  }
-
-  try {
-    return readFileSync(join(mediaDir, filename));
-  } catch (err) {
-    if (!isNotFoundError(err)) throw err;
-    // doc §3: macOS hands back NFD-normalized names from a directory
-    // listing even when the field text (typically typed/pasted as NFC)
-    // doesn't match byte-for-byte. Fall back to a normalized scan of the
-    // directory before giving up -- untested by this suite (its one media
-    // fixture, slide.jpg, is plain ASCII and never exercises this branch),
-    // but cheap, documented insurance for a real accented filename.
-    let entries: string[];
-    try {
-      entries = readdirSync(mediaDir);
-    } catch (dirErr) {
-      if (!isNotFoundError(dirErr)) throw dirErr;
-      return undefined;
-    }
-    const match = entries.find((entry) => entry.normalize('NFC') === filename);
-    if (match === undefined) return undefined;
-    try {
-      return readFileSync(join(mediaDir, match));
-    } catch (matchErr) {
-      if (!isNotFoundError(matchErr)) throw matchErr;
-      return undefined;
-    }
-  }
-}
-
 /**
  * Distinct media filenames referenced across all notes' Text/Extra, in
  * first-occurrence order, then the numbered manifest plus each file's
- * bytes read from `mediaDir`. 0-based, contiguous numbering matches every
+ * bytes from `readMedia`. 0-based, contiguous numbering matches every
  * real sample (doc §3) -- the importer's own parser doesn't require
  * contiguity, but this is the tested, conventional shape. A referenced
  * filename with no readable file behind it is left out of both the
  * manifest and `files`, same as before, but is no longer dropped silently:
  * it's named on `unresolved` instead (see the file header). A filename
  * shaped like a path-traversal attempt is not caught here -- it throws,
- * out of tryReadMediaBytes -- so this loop only ever needs to handle the
+ * out of the reader -- so this loop only ever needs to handle the
  * "genuinely not found" outcome.
  */
-export function collectMedia(notes: DeckNote[], mediaDir: string): MediaCollectionResult {
+export function collectMedia(notes: DeckNote[], readMedia: MediaReader): MediaCollectionResult {
   const seen = new Set<string>();
   const order: string[] = [];
 
@@ -151,7 +90,7 @@ export function collectMedia(notes: DeckNote[], mediaDir: string): MediaCollecti
   const files: MediaFile[] = [];
   const unresolved: string[] = [];
   for (const filename of order) {
-    const bytes = tryReadMediaBytes(mediaDir, filename);
+    const bytes = readMedia(filename);
     if (bytes === undefined) {
       unresolved.push(filename);
       continue;

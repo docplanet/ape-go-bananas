@@ -1,16 +1,20 @@
-// Public API: writeApkg(notes, {deckName, outPath, mediaDir, clock}) --
-// assembles collection.anki21 (collection.ts), the media manifest and
-// numbered media members (media.ts), and packs them into a ZIP (zip.ts).
-// See docs/research/apkg-format.md §1 for why this writes exactly
-// collection.anki21 + media (+ numbered media files) and nothing else --
-// no `meta` member, no legacy collection.anki2 stub.
+// The Node entry point: buildApkg (build.ts) over node:sqlite, node:fs and
+// node:zlib, written to a file.
+//
+// Anything importing this module gets the Node halves with it, so a browser
+// build imports './build.js' directly instead -- that is the whole reason
+// the two are separate files.
 
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
-import type { DeckNote, NoteFields } from '../types.js';
-import { buildCollection } from './collection.js';
-import { collectMedia } from './media.js';
-import { buildZip, type ZipEntryInput } from './zip.js';
+import type { DeckNote } from '../types.js';
+import { buildApkg } from './build.js';
+import { nodeMediaReader } from './media-node.js';
+import { openNodeSqlite } from './sqlite-node.js';
+import { nodeZipCodec } from './zlib-node.js';
+
+export { buildApkg } from './build.js';
+export type { BuildApkgOptions, BuildApkgResult } from './build.js';
 
 export interface WriteApkgOptions {
   /** Every note passed to a given call is written into this one deck. */
@@ -42,59 +46,23 @@ export interface WriteApkgResult {
   unresolvedMedia: string[];
 }
 
-const NOTE_FIELD_NAMES: readonly (keyof NoteFields)[] = ['Text', 'Extra', 'Source'];
 
 /**
- * Writes a `.apkg` file containing exactly one deck's worth of notes and
- * cards: schema-11 SQLite (collection.anki21), a JSON media manifest, and
- * the referenced media files, deflate/store zipped per docs/research/apkg-format.md.
- *
- * A plain (non-`async`) function: every step here -- SQLite writes, media
- * reads, deflate, the final file write -- is synchronous, so an `async`
- * signature would only have claimed to yield the event loop without ever
- * doing so. `await writeApkg(...)` still works at every call site (`await`
- * on a non-Promise value resolves to that value immediately).
- *
- * Validates its own inputs before doing any work, rather than letting a
- * malformed note or a bad clock surface as a raw TypeError/RangeError from
- * deep inside collection.ts/ids.ts with no indication of which note or
- * option was at fault -- deck.json (the usual source of `notes`) is
- * LLM-authored, not a trusted, statically-typed value, so the declared
- * DeckNote[]/WriteApkgOptions types are a contract this function checks
- * rather than one it's entitled to assume.
+ * buildApkg over the Node platform primitives, written to `options.outPath`.
+ * Parent directories are created as needed.
  */
 export function writeApkg(notes: DeckNote[], options: WriteApkgOptions): WriteApkgResult {
-  const clock = options.clock ?? Date.now;
-  const clockMs = clock();
-  // Every id/guid this exporter writes derives from clockMs via BigInt()
-  // (ids.ts) -- a non-integer reaches that conversion as an unlabeled
-  // RangeError, so it's caught here instead, named to the actual option at
-  // fault.
-  if (!Number.isInteger(clockMs)) {
-    throw new RangeError(`options.clock() must return an integer epoch-ms value, got ${clockMs}`);
-  }
-  notes.forEach((note, index) => {
-    for (const field of NOTE_FIELD_NAMES) {
-      if (typeof note.fields?.[field] !== 'string') {
-        throw new TypeError(`notes[${index}].fields.${field} must be a string, got ${typeof note.fields?.[field]}`);
-      }
-    }
+  const { bytes, unresolvedMedia } = buildApkg(notes, {
+    deckName: options.deckName,
+    readMedia: nodeMediaReader(options.mediaDir),
+    openSqlite: openNodeSqlite,
+    zipCodec: nodeZipCodec,
+    clock: options.clock,
   });
 
-  const media = collectMedia(notes, options.mediaDir);
-  const dbBytes = buildCollection(notes, { deckName: options.deckName, clockMs });
-
-  const entries: ZipEntryInput[] = [
-    { name: 'collection.anki21', data: dbBytes, method: 'deflate' },
-    { name: 'media', data: Buffer.from(JSON.stringify(media.manifest), 'utf8'), method: 'deflate' },
-    // Stored, not deflated -- doc §2: these are already-compressed
-    // image/audio formats in every real sample, so deflating them again
-    // buys nothing.
-    ...media.files.map((file, index): ZipEntryInput => ({ name: String(index), data: file.bytes, method: 'store' })),
-  ];
-
   mkdirSync(dirname(options.outPath), { recursive: true });
-  writeFileSync(options.outPath, buildZip(entries));
+  writeFileSync(options.outPath, bytes);
 
-  return { unresolvedMedia: media.unresolved };
+  return { unresolvedMedia };
 }
+

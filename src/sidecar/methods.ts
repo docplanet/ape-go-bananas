@@ -15,6 +15,7 @@ import {
   renderReview,
   type CheckDeckOptions,
 } from '../checks/index.js';
+import { nodeMediaExists } from '../checks/media-exists-node.js';
 import { loadDeckNotes } from '../cli/deck-loader.js';
 import { isExistingDirectory, resolveMediaDir } from '../cli/media-dir.js';
 import { readFileOrThrow } from '../cli/read-file.js';
@@ -148,7 +149,7 @@ export function buildMethods(info: SidecarInfo, onShutdown: () => void): Record<
       const notes = loadDeckNotes(path);
       if (notes.length === 0) throw new Error(`${path} contains no notes`);
 
-      const opts: CheckDeckOptions = { checkMedia, mediaDir, transcript, inventory };
+      const opts: CheckDeckOptions = { checkMedia, mediaDir, mediaExists: nodeMediaExists, transcript, inventory };
       const result = checkDeck(notes, opts);
       return {
         result,

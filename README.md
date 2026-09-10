@@ -67,9 +67,28 @@ omitted.
 
 Test files live under `test/` as `.ts` and run directly — no `tsx`, no
 `ts-node`, no test framework. Node 24 strips TypeScript syntax from a `.ts`
-file with no flag needed, and bare `node --test` (no path argument)
-auto-discovers any file under a directory named `test/`, so `npm test` is
-just that plus a build first.
+file with no flag needed, and `node --test "test/**/*.test.ts"` runs every
+test file under that directory, so `npm test` is just that plus a build first.
+
+**The glob is load-bearing, and it took two corrections to get right.** Bare
+`node --test` matches any file whose name ends in `test.js` *anywhere*
+beneath the repo, which swept in twelve files from the npm bundled into
+`app/src-tauri/` build artifacts (`lib/commands/test.js`, `install-test.js`,
+`install-ci-test.js`, once per staged copy) — each contributing nothing but a
+passing tick. It also began matching `site/test/`, a separate npm project
+whose suite needs its own installed dependencies.
+
+Narrowing that to `test/**/*.ts` fixed both but was still too wide: it runs
+every `.ts` under `test/`, not just test files, so thirteen helper modules,
+fake servers and child-process entry points (`test/acp/mock-agent.ts`,
+`test/sidecar/fake-openrouter.ts`, the `helpers.ts` files) each registered as
+a passing test too. Requiring `.test.ts` is what makes the reported number
+the number of tests: **323**, not the 330 that glob reported or the 342 bare
+discovery did. Any of those entry points growing a blocking top-level side
+effect would otherwise hang `npm test` for reasons unrelated to any test.
+
+The site's own suite is `npm --prefix site test`. Note that `**` matches zero
+directories, so `test/scaffold.test.ts` is included without a second pattern.
 
 The one rule this depends on: **test files import runtime code from the
 compiled `dist/`, never from `src/` directly.** Source files import each

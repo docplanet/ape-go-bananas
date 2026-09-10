@@ -12,7 +12,7 @@
 // node:sqlite and reading them back reproduces this file's strings exactly,
 // including the multi-line comment inside CREATE TABLE notes).
 
-import type { DatabaseSync } from 'node:sqlite';
+import type { SqliteDatabase } from './sqlite.js';
 
 const CREATE_COL = "CREATE TABLE col (\n  id integer PRIMARY KEY,\n  crt integer NOT NULL,\n  mod integer NOT NULL,\n  scm integer NOT NULL,\n  ver integer NOT NULL,\n  dty integer NOT NULL,\n  usn integer NOT NULL,\n  ls integer NOT NULL,\n  conf text NOT NULL,\n  models text NOT NULL,\n  decks text NOT NULL,\n  dconf text NOT NULL,\n  tags text NOT NULL\n)";
 const CREATE_NOTES = "CREATE TABLE notes (\n  id integer PRIMARY KEY,\n  guid text NOT NULL,\n  mid integer NOT NULL,\n  mod integer NOT NULL,\n  usn integer NOT NULL,\n  tags text NOT NULL,\n  flds text NOT NULL,\n  -- The use of type integer for sfld is deliberate, because it means that integer values in this\n  -- field will sort numerically.\n  sfld integer NOT NULL,\n  csum integer NOT NULL,\n  flags integer NOT NULL,\n  data text NOT NULL\n)";
@@ -46,7 +46,7 @@ const STATEMENTS: readonly string[] = [
 // One db.exec() call per statement, not one semicolon-joined script --
 // keeps each CREATE's exact source text isolated with no risk of a stray
 // join character leaking into what sqlite_master.sql records.
-export function executeSchema(db: DatabaseSync): void {
+export function executeSchema(db: SqliteDatabase): void {
   for (const statement of STATEMENTS) {
     db.exec(statement);
   }

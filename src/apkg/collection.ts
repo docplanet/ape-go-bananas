@@ -1,15 +1,13 @@
 // Builds collection.anki21: schema-11 tables plus the one `col` row, every
 // `notes` row, and every `cards` row -- docs/research/apkg-format.md §4-§8.
-// Written to a scratch file (node:sqlite has no true in-memory-to-Buffer
-// path that also lets us read the final page-aligned bytes back out) and
-// read back as a Buffer for the caller to embed in the zip; the scratch
-// file and its directory are removed before returning, success or failure.
+// How those bytes are produced is the caller's choice (sqlite.ts): under
+// Node the database is a scratch file, because node:sqlite can only address
+// a path; in a browser it is in memory. Everything below -- the schema, the
+// rows, every value written -- is identical on both, which is what makes the
+// two outputs comparable byte-for-byte.
 
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { DatabaseSync } from 'node:sqlite';
 import type { DeckNote } from '../types.js';
+import type { OpenSqlite } from './sqlite.js';
 import { executeSchema } from './schema-sql.js';
 import { buildCustomClozeModel } from './notetype.js';
 import { CUSTOM_CLOZE_MODEL_NAME } from './notetype-source.js';
@@ -87,6 +85,8 @@ export interface BuildCollectionOptions {
   deckName: string;
   /** epoch ms, from the caller's clock -- the sole source of "now". */
   clockMs: number;
+  /** Where the SQLite database comes from -- sqlite.ts. */
+  openSqlite: OpenSqlite;
 }
 
 interface NoteRow {
@@ -131,7 +131,7 @@ interface CardRow {
  * module, which is what makes byte-identical output possible for two calls
  * given the same clock (determinism.test.ts).
  */
-export function buildCollection(notes: DeckNote[], options: BuildCollectionOptions): Buffer {
+export function buildCollection(notes: DeckNote[], options: BuildCollectionOptions): Uint8Array {
   const { deckName, clockMs } = options;
   const nowSeconds = Math.floor(clockMs / 1000); // doc §5: col.crt and every notes/cards `mod` are seconds
 
@@ -303,7 +303,7 @@ export function buildCollection(notes: DeckNote[], options: BuildCollectionOptio
     sortType: 'noteFld',
   };
 
-  return writeCollectionFile({ nowSeconds, clockMs, conf, models, decks, dconf, noteRows, cardRows });
+  return writeCollectionFile({ nowSeconds, clockMs, conf, models, decks, dconf, noteRows, cardRows }, options.openSqlite);
 }
 
 interface WriteArgs {
@@ -317,66 +317,65 @@ interface WriteArgs {
   cardRows: CardRow[];
 }
 
-function writeCollectionFile(args: WriteArgs): Buffer {
-  const tempDir = mkdtempSync(join(tmpdir(), 'ape-apkg-collection-'));
-  const dbPath = join(tempDir, 'collection.anki21');
+function writeCollectionFile(args: WriteArgs, openSqlite: OpenSqlite): Uint8Array {
+  const db = openSqlite();
+  let finished = false;
   try {
-    const db = new DatabaseSync(dbPath);
-    try {
-      executeSchema(db);
+    executeSchema(db);
 
-      db.prepare(
-        `INSERT INTO col (id, crt, mod, scm, ver, dty, usn, ls, conf, models, decks, dconf, tags)
-         VALUES (1, ?, ?, ?, 11, 0, 0, 0, ?, ?, ?, ?, '{}')`,
-      ).run(
-        args.nowSeconds,
-        args.clockMs, // col.mod: milliseconds (doc §5)
-        args.clockMs, // col.scm: milliseconds, "now" is safe (doc §5)
-        JSON.stringify(args.conf),
-        JSON.stringify(args.models),
-        JSON.stringify(args.decks),
-        JSON.stringify(args.dconf),
-      );
+    db.prepare(
+      `INSERT INTO col (id, crt, mod, scm, ver, dty, usn, ls, conf, models, decks, dconf, tags)
+       VALUES (1, ?, ?, ?, 11, 0, 0, 0, ?, ?, ?, ?, '{}')`,
+    ).run(
+      args.nowSeconds,
+      args.clockMs, // col.mod: milliseconds (doc §5)
+      args.clockMs, // col.scm: milliseconds, "now" is safe (doc §5)
+      JSON.stringify(args.conf),
+      JSON.stringify(args.models),
+      JSON.stringify(args.decks),
+      JSON.stringify(args.dconf),
+    );
 
-      const insertNote = db.prepare(
-        `INSERT INTO notes (id, guid, mid, mod, usn, tags, flds, sfld, csum, flags, data)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      );
-      for (const row of args.noteRows) {
-        insertNote.run(row.id, row.guid, row.mid, row.mod, row.usn, row.tags, row.flds, row.sfld, row.csum, row.flags, row.data);
-      }
-
-      const insertCard = db.prepare(
-        `INSERT INTO cards (id, nid, did, ord, mod, usn, type, queue, due, ivl, factor, reps, lapses, left, odue, odid, flags, data)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      );
-      for (const row of args.cardRows) {
-        insertCard.run(
-          row.id,
-          row.nid,
-          row.did,
-          row.ord,
-          row.mod,
-          row.usn,
-          row.type,
-          row.queue,
-          row.due,
-          row.ivl,
-          row.factor,
-          row.reps,
-          row.lapses,
-          row.left,
-          row.odue,
-          row.odid,
-          row.flags,
-          row.data,
-        );
-      }
-    } finally {
-      db.close();
+    const insertNote = db.prepare(
+      `INSERT INTO notes (id, guid, mid, mod, usn, tags, flds, sfld, csum, flags, data)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    );
+    for (const row of args.noteRows) {
+      insertNote.run(row.id, row.guid, row.mid, row.mod, row.usn, row.tags, row.flds, row.sfld, row.csum, row.flags, row.data);
     }
-    return readFileSync(dbPath);
+
+    const insertCard = db.prepare(
+      `INSERT INTO cards (id, nid, did, ord, mod, usn, type, queue, due, ivl, factor, reps, lapses, left, odue, odid, flags, data)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    );
+    for (const row of args.cardRows) {
+      insertCard.run(
+        row.id,
+        row.nid,
+        row.did,
+        row.ord,
+        row.mod,
+        row.usn,
+        row.type,
+        row.queue,
+        row.due,
+        row.ivl,
+        row.factor,
+        row.reps,
+        row.lapses,
+        row.left,
+        row.odue,
+        row.odid,
+        row.flags,
+        row.data,
+      );
+    }
+    const bytes = db.finish();
+    finished = true;
+    return bytes;
   } finally {
-    rmSync(tempDir, { recursive: true, force: true });
+    // finish() has already released everything on the success path; this is
+    // the throw path, where a scratch file would otherwise outlive the call.
+    if (!finished) db.dispose();
   }
 }

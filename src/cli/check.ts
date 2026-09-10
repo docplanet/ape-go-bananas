@@ -15,6 +15,7 @@
 // itself; this file's only job is reproducing check_deck.py's own argv
 // handling and exit-code contract around a call to them.
 import { checkDeck, formatCheckReport, loadInventory, loadTranscript, type CheckDeckOptions } from '../checks/index.js';
+import { nodeMediaExists } from '../checks/media-exists-node.js';
 import { requireOnePositional, takeBoolean, takeRepeatable, takeSingle } from './args.js';
 import { loadDeckNotes } from './deck-loader.js';
 import { isExistingDirectory, resolveMediaDir } from './media-dir.js';
@@ -62,7 +63,7 @@ export function runCheck(argv: string[]): number {
     return 2;
   }
 
-  const opts: CheckDeckOptions = { checkMedia, mediaDir, transcript, inventory };
+  const opts: CheckDeckOptions = { checkMedia, mediaDir, mediaExists: nodeMediaExists, transcript, inventory };
   const result = checkDeck(notes, opts);
   process.stdout.write(formatCheckReport(result));
   return result.findings.length > 0 ? 1 : 0;

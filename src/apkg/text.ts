@@ -8,7 +8,7 @@
 // a general HTML parser -- sufficient for this pipeline's authored HTML
 // (bold/italic/underline/br/img, occasional entities), not for arbitrary
 // third-party markup.
-import { createHash } from 'node:crypto';
+import { sha1 } from './sha1.js';
 
 // Matches one <img|audio|video|object|source ...> tag and captures whichever
 // of src="X" / src='X' / src=X (unquoted) / data="X" it carries. Anki's own
@@ -153,6 +153,8 @@ export function extractMediaFilenames(html: string): string[] {
 // eslint-disable-next-line no-control-regex
 const CONTROL_CHAR_RE = /[\x00-\x08\x0b-\x1f\x7f]/g;
 
+const UTF8 = new TextEncoder();
+
 export function normalizeFieldText(text: string): string {
   return text.replace(CONTROL_CHAR_RE, '');
 }
@@ -168,5 +170,6 @@ export function normalizeFieldText(text: string): string {
  * regardless of sortf, but the two coincide here).
  */
 export function fieldChecksum(strippedFieldText: string): number {
-  return createHash('sha1').update(strippedFieldText, 'utf8').digest().readUInt32BE(0);
+  const digest = sha1(UTF8.encode(strippedFieldText));
+  return new DataView(digest.buffer, digest.byteOffset, digest.byteLength).getUint32(0, false);
 }
