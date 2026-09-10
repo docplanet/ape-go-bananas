@@ -145,6 +145,26 @@ file agree there too.
   loading/validation (`deck-loader.ts`) and Anki-media-directory resolution
   (`media-dir.ts`) — neither `src/checks` nor `src/apkg` does this itself,
   since both treat `DeckNote[]` as already-validated input.
+- `src/pipeline/` — the method as prompts and a runner: each stage hands the
+  agent a method file and the course folder and asks for that stage's
+  artifact; the auditor and adjudicator run in fresh sessions. Over an
+  injected client, so the desktop app and the browser page run the same
+  stages. Lifted from `app/src/pipeline.ts`, which keeps its copy for now.
+- `src/sidecar/` — the JSON-RPC surface the shells drive. `dispatch.ts` is
+  the transport-neutral core (method table, reverse channel, ordering);
+  `index.ts` speaks it over stdio for the desktop app, `serve.ts` over HTTP
+  and Server-Sent Events on loopback for the browser page. `deck/export`
+  loads `node:sqlite` lazily so everything else runs on Node 20.
+- `src/bridge/` — `ape-bridge`: the sidecar as a local server, for the
+  browser page. Prints a URL with a per-run token in the fragment, opens it,
+  fetches the method files once, and binds 127.0.0.1 only. The one command
+  a subscriber runs; needs Node ≥ 20, which Claude Code needs too.
+- `site/` — the website, its own npm project like `app/`. `/` is the
+  download page; `/tool/` runs the engine in the tab (checks, review,
+  `.apkg` export, nothing installed, nothing uploaded) and, when opened by
+  `ape-bridge`, becomes the full app: agent picker, sign-in, chat, the eight
+  stages, flags, adjudication. Carries sql.js and fflate so the engine keeps
+  its zero-dependency rule.
 - `test/integration/` — drives the built CLI as a real child process
   (never `checkDeck`/`renderReview`/`writeApkg` called directly) through
   the full check → review → export pipeline on the seven reference cards,

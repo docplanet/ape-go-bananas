@@ -183,3 +183,64 @@ default to `../../dist/sidecar/index.js` relative to `src-tauri/`).
 - **Asset scope** `$HOME/**`, see above.
 - **`window.prompt` for the flag text** — a stand-in for a designed flag
   sheet.
+
+## Stage 3: the browser page drives a local agent through a bridge
+
+A tab cannot spawn Claude Code — that is the browser sandbox, not a gap. So
+the subscriber runs one command, `npx ape-bridge [course-folder]`, and the
+page does the rest. The bridge is `src/sidecar` — the same method table the
+Rust shell drove over stdio — listening on `127.0.0.1` (`src/sidecar/serve.ts`):
+one Server-Sent Events stream carries everything outbound in the order the
+sidecar said it, and requests arrive as newline-delimited JSON-RPC in POST
+bodies. The Rust shell, the bundled Node, signing and the updater are not
+needed for this path; the sidecar survived unchanged and gained a transport.
+
+**Node floor.** `ape-bridge` starts on Node 20 (verified on 20.18.1, which has
+no `node:sqlite` at all): `deck/export` defers its import to first use and the
+page exports `.apkg` itself, so nothing the bridge does at start needs 24.
+
+**The gate.** Loopback bind only, refused before listening otherwise. Every
+request carries a per-run token the bridge minted and put in the page URL's
+fragment — the one part of a URL never sent to the site hosting the page. Every
+request's `Origin` must be on the allowlist (the site's origin, plus
+`--allow-origin` for development); missing is refused like wrong. Preflights
+echo the exact origin and answer Chrome's local-network header. `test/sidecar/
+serve.test.ts` pins all of it, including a symlink that escapes the `/file`
+root.
+
+**What runs where.** The bridge spawns and owns the agent, reads and writes
+the course folder, and serves image bytes beneath a named root (`GET /file`).
+Checks, the card preview and the export run in the tab on the engine the tool
+page already carries — the bridge only supplies `deck.json`'s text, the images
+beside it, and `flags.json`. The preview mints one blob: URL per distinct image
+inside its sandboxed iframe rather than inlining base64 per reference
+(`site/src/tool.ts`, `withLocalImages`).
+
+**Sessions and prompts.** The chat pane answers permission requests for its
+own session only. The method's auditor and adjudicator run in fresh sessions
+that no pane owns, so their requests — "write audit.md", "write verdicts.md"
+— go to a fallback prompt (`site/src/agent/permission-any.ts`), registered at
+low priority behind the bus (`bus.ts`). Without it the first live audit never
+completed: its first request was refused and the session sat idle. Fresh
+sessions also inherit the chat pane's model, effort and mode
+(`Chat.applyConfigTo`); an audit the user started on Sonnet otherwise ran on
+the agent's defaults.
+
+**Run live, end to end, on 2026-09-10** from a browser tab against a bridge on
+Node 20.18.1, Claude Agent installed through the page (0.76.0), signed in on
+an existing claude.ai subscription, Sonnet 5: extract → inventory.md (20
+facts, verbatim quotes) → organize → plan.md → cards → deck.json (20 notes) →
+deck preview in the tab (two hint-length findings, same as `ape check` on
+disk) → one owner flag → audit in a fresh session (16 findings, four angles)
+→ adjudicate 16 flags in a fresh session (17 fix, 1 approve, 1 cut) → writer
+applies (19 notes) → deck reloads clean → export. The final `deck.json`,
+exported with `ape export`, imports into Anki 26.5: 19 notes, 38 cards.
+
+**Not done, deliberately or not yet.** The package is not on npm, so `npx
+ape-bridge` needs a publish (`prepublishOnly` builds; `files` ships `dist`);
+`ape` is taken as a name. Only `npx`-distributed registry agents install —
+`binary` ones (Cursor, Devin, Amp) list but do not. A page reload does not
+resume its agent connection; reconnecting spawns a fresh adapter while the
+old one lives until the bridge exits (`session/load` is the open item in
+WORK.md). The agent's stderr is drained and discarded by design (`src/acp/
+transport.ts`). Safari has not been tried against loopback from https.

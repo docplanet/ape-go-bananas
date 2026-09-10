@@ -79,6 +79,8 @@ once (see `git notes show b383e7a`).
 | engine made platform-neutral: SQLite/deflate/media/rule-2 injected, `buildApkg` and `parseDeckNotes` split out, `sha1`+`crc32` written and pinned against `node:crypto`/`node:zlib` | `b4a78de` |
 | `site/` browser tool: sql.js + fflate adapters, engine in a Worker, checks/review/`.apkg` with nothing installed; parity test vs the Node build | `e5e36df` |
 | CI on push and PR; Pages builds the site instead of copying it | `a31d001` |
+| sidecar core extracted (`dispatch.ts`), HTTP/SSE transport (`serve.ts`, 14 tests), `ape-bridge`, `src/pipeline` over an injected client, lazy `node:sqlite` so the bridge starts on Node 20 | `a85b01f` |
+| the page as the full app over the bridge: picker, sign-in, chat, eight stages, flags, audit → adjudicate → apply; run end to end live | `6d7628a` |
 | tiering rule written into the method (no count; signal, then time) — method repo `548036d`; Muscle deck re-tiered 122 core / 53 plus | _method repo_ |
 
 `npm test` counted wrong until `b4a78de`. Bare `node --test` matched any

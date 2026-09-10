@@ -678,3 +678,23 @@ history.
 
 The auditor read `inserted-note-ids.json` and noted, unprompted, that the
 notes were already live in Anki and repairs must keep cloze numbers stable.
+
+## `src/bridge`, `src/sidecar/serve.ts`, `site/` — the browser tier
+
+**Verified by running.** `npm test` (337, incl. `test/sidecar/serve.test.ts`,
+14 cases: loopback-only bind, token, origin, preflight headers, ready line per
+subscriber, ordering, self-contained POST bodies, `/file` containment through
+a symlink). `npm --prefix site test` (parity of the browser writer against the
+Node one: byte-identical collection apart from the SQLite version stamp).
+`ape-bridge` started on Node 20.18.1 (no `node:sqlite`): `/health` 200,
+`deck/check` works, `deck/export` fails as an RPC error and the bridge
+survives. A full method run from a browser tab is recorded in `docs/APP.md`,
+"Stage 3"; the final deck imported into Anki 26.5.
+
+**Not verified.** Any registry agent other than Claude Agent through the
+page. Gemini/Codex sign-in via ACP `authenticate` from the page. A `binary`-
+distributed agent (not installable). The deployed site — GitHub Pages is not
+enabled on the repository, so nothing has ever deployed; `pages.yml` builds
+`site/dist` and is ready. `https` page → `http://127.0.0.1` in Safari.
+`npx ape-bridge` from npm (not published). Reconnecting a page to an existing
+agent session.
