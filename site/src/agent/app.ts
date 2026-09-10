@@ -10,8 +10,8 @@
 // Node 20 (the bridge never touches node:sqlite) and keeps the preview that
 // was proven at 10 MB.
 
-import { Bridge, BridgeError, makeSidecarClient, type BridgeLocator, type ConnectResult, type Flag, type SidecarClient } from '../engine/bridge-client.js';
-import { addMediaBytes, exportApkg, loadDeckText, postToPreview, setPreviewExtras, showError } from '../tool.js';
+import { BridgeError, makeSidecarClient, type ConnectResult, type EngineHost, type Flag, type SidecarClient } from '../engine/bridge-client.js';
+import { addMediaBytes, exportApkg, loadDeckText, postToPreview, setPreviewExtras } from '../tool.js';
 import { makeBus } from './bus.js';
 import { mountChat, type Chat } from './chat.js';
 import { mountFallbackPermissions } from './permission-any.js';
@@ -41,7 +41,7 @@ function esc(s: string): string {
   return s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
 }
 
-export async function mountAgentApp(locator: BridgeLocator): Promise<void> {
+export async function mountAgentApp(host: EngineHost): Promise<void> {
   const $ = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T;
   document.body.classList.add('with-rail');
   $('rail').hidden = false;
@@ -62,23 +62,9 @@ export async function mountAgentApp(locator: BridgeLocator): Promise<void> {
     status.classList.toggle('error', isError);
   };
 
-  // ---- the bridge ------------------------------------------------------------
-  const bridge = new Bridge(locator);
-  let sidecar: SidecarClient;
-  try {
-    const info = await bridge.health();
-    await bridge.connect();
-    sidecar = makeSidecarClient(bridge);
-    say(`engine ${info.version} on node ${info.node}`);
-  } catch (err) {
-    say(err instanceof Error ? err.message : String(err), true);
-    showError(
-      `This page was opened by ape-bridge, but the bridge cannot be reached. ` +
-        `Is it still running in your terminal? If your browser asked to allow access to your local network, it needs a yes. ` +
-        `Brave blocks websites from reaching this computer unless you add this site under brave://settings/content/localhostAccess.`,
-    );
-    return;
-  }
+  // ---- the engine, wherever it is running -------------------------------------
+  const sidecar: SidecarClient = makeSidecarClient(host);
+  say(`engine ${host.info.version} on node ${host.info.node}${host.info.transport === 'container' ? ' — in this tab' : ''}`);
   const bus = makeBus(sidecar);
 
   // ---- views -----------------------------------------------------------------
@@ -100,7 +86,7 @@ export async function mountAgentApp(locator: BridgeLocator): Promise<void> {
   // ---- course folder + deck name --------------------------------------------
   const courseInput = $<HTMLInputElement>('coursedir');
   const deckNameInput = $<HTMLInputElement>('deckname-in');
-  let courseDir: string | null = locator.courseDir;
+  let courseDir: string | null = host.courseRoot();
   if (courseDir) courseInput.value = courseDir;
   courseInput.addEventListener('change', () => {
     courseDir = courseInput.value.trim() || null;
@@ -146,10 +132,7 @@ export async function mountAgentApp(locator: BridgeLocator): Promise<void> {
     },
   });
 
-  async function fetchFile(root: string, rel: string): Promise<Uint8Array | null> {
-    const res = await fetch(bridge.fileUrl(root, rel));
-    return res.ok ? new Uint8Array(await res.arrayBuffer()) : null;
-  }
+  const fetchFile = (root: string, rel: string): Promise<Uint8Array | null> => host.readFile(root, rel);
 
   async function openDeck(dir: string): Promise<void> {
     showView('deck');
@@ -205,7 +188,7 @@ export async function mountAgentApp(locator: BridgeLocator): Promise<void> {
       await exportApkg();
     },
     prepareMaterials: async (dir) => {
-      await extractMaterials(sidecar, bridge, dir, say);
+      await extractMaterials(sidecar, host, dir, say);
     },
     currentFlags: () => flags,
   });
@@ -214,7 +197,7 @@ export async function mountAgentApp(locator: BridgeLocator): Promise<void> {
     chat = null;
     connection = null;
     stages.setConnection(null);
-    mountPicker($('agent-host'), sidecar, bus, locator.dataDir, () => courseDir, {
+    mountPicker($('agent-host'), sidecar, bus, host.dataDir(), () => courseDir, {
       say,
       onConnected(result) {
         if (!result.session || !courseDir) {

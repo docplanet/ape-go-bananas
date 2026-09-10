@@ -94,11 +94,4 @@ export async function extractPdf(name: string, data: Uint8Array, sink: ExtractSi
   return { pages };
 }
 
-const CHUNK = 0x8000;
-
-/** Bytes to base64 without a string the size of the file in one call. */
-export function toBase64(bytes: Uint8Array): string {
-  let binary = '';
-  for (let i = 0; i < bytes.length; i += CHUNK) binary += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
-  return btoa(binary);
-}
+export { toBase64 } from './bytes.ts';

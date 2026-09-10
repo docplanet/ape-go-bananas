@@ -60,6 +60,8 @@ export function locateBridge(hash: string = location.hash): BridgeLocator | null
 }
 
 export class Bridge {
+  /** What the sidecar said about itself; filled in by health(). */
+  info: BridgeInfo = { engine: 'ape', version: '0', node: '0', transport: 'http' };
   private nextId = 1;
   private readonly pending = new Map<number, Pending>();
   private events: EventSource | null = null;
@@ -82,7 +84,24 @@ export class Bridge {
   async health(): Promise<BridgeInfo> {
     const res = await fetch(this.url('/health'));
     if (!res.ok) throw new BridgeError(-32000, `the bridge answered ${res.status} ${res.statusText}`);
-    return (await res.json()) as BridgeInfo;
+    this.info = (await res.json()) as BridgeInfo;
+    return this.info;
+  }
+
+  /** EngineHost: the folder named on the command line, if any. */
+  courseRoot(): string | null {
+    return this.locator.courseDir;
+  }
+
+  /** EngineHost: where this bridge installs agents. */
+  dataDir(): string {
+    return this.locator.dataDir;
+  }
+
+  /** EngineHost: one file beneath `root`, fetched through the bridge. */
+  async readFile(root: string, relPath: string): Promise<Uint8Array | null> {
+    const res = await fetch(this.fileUrl(root, relPath));
+    return res.ok ? new Uint8Array(await res.arrayBuffer()) : null;
   }
 
   /** Opens the events stream; resolves once the sidecar's ready line arrives. */

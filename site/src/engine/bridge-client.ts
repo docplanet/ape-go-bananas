@@ -9,10 +9,12 @@
 // OpenRouter key entered on the page is passed to agent/connect for that
 // connection and otherwise held only in memory -- see docs/APP.md.
 
-import { Bridge, BridgeError, type ReverseRequest } from './bridge-transport.js';
+import { BridgeError, type ReverseRequest } from './bridge-transport.js';
+import type { EngineHost } from './host.js';
 import type { PipelineClient } from '../../../dist/pipeline/index.js';
 
-export { Bridge, BridgeError, locateBridge, type BridgeLocator, type ReverseRequest } from './bridge-transport.js';
+export { Bridge, BridgeError, locateBridge, type BridgeLocator, type BridgeInfo, type ReverseRequest } from './bridge-transport.js';
+export type { EngineHost } from './host.js';
 
 export interface DeckNote {
   deckName: string;
@@ -146,7 +148,7 @@ export interface PermissionRequest {
 export type SidecarClient = ReturnType<typeof makeSidecarClient>;
 
 /** Every method of the sidecar, bound to one bridge. Satisfies PipelineClient. */
-export function makeSidecarClient(bridge: Bridge) {
+export function makeSidecarClient(bridge: EngineHost) {
   const call = <T>(method: string, params?: unknown) => bridge.call<T>(method, params);
   const client = {
     ping: () => call<{ engine: string; version: string; node: string }>('sidecar/ping'),

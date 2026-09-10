@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>A.P.E.</title>
+<script src="../coi.js"></script>
 <meta name="description" content="Lecture files in, an Anki deck out. The work runs on your own computer with an agent you already pay for; this page is the controls. Nothing is uploaded.">
 </head>
 <body>
@@ -16,11 +17,21 @@
        you already pay for; this page is the controls. Nothing is uploaded.</p>
   </header>
 
-  <!-- The two steps to a working page, first. A page alone cannot read a
-       folder or start an agent; the bridge on the user's machine does, and
-       this page is what it opens. Everything below waits for that link. -->
-  <section id="start" class="steps">
-    <ol>
+  <!-- What a first-time visitor sees. The engine runs in this tab on
+       WebContainer (a Node runtime compiled to WebAssembly), so the whole
+       pipeline is one button; the bridge below is only for reaching the
+       newest Claude Code, which ships as a native binary. -->
+  <section id="start">
+    <div class="hero">
+      <button type="button" id="startdeck" class="big">Start a deck</button>
+      <p class="startstatus" id="startstatus"></p>
+      <p class="small">Runs here, in this tab — nothing installed, nothing uploaded. Sign in to an agent
+         you already pay for, add your lecture files, and the deck is built on this page.</p>
+    </div>
+
+    <details id="bridge-steps" class="steps">
+      <summary>Or run it against your own machine, with the newest Claude Code</summary>
+      <ol>
       <li>
         <h2>Start the bridge</h2>
         <p>In a terminal — with <a href="https://nodejs.org/">Node.js</a> 20 or newer installed — run this, with your lecture folder in the quotes:</p>
@@ -31,7 +42,8 @@
         <h2>Open the link it prints</h2>
         <p>That link is this page, attached to your bridge: the folder is filled in, you choose an agent — a Claude, Gemini or Codex subscription, or any model with an OpenRouter key — and run the steps in order: extract, organize, cards, audit, export. Each step's result is shown to you before the next.</p>
       </li>
-    </ol>
+      </ol>
+    </details>
   </section>
 
   <details id="checker">

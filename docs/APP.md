@@ -298,7 +298,80 @@ prints), the checker is a collapsed section at the bottom, and a lecture
 file dropped on it is answered with where it goes. Attached to a bridge,
 the steps disappear and the checker is the deck view.
 
-**Not done, deliberately or not yet.** The picker lists the registry in its
+## Stage 4: the engine runs in the tab, and the bridge becomes the exception
+
+The bridge was the wrong front door. A first-time visitor with lecture PDFs
+met a terminal command, and the answer to "why am I opening a terminal" is
+not a good one: a page cannot start a process, so *something* local has to.
+But WebContainer is a Node runtime compiled to WebAssembly, and it runs in
+the tab -- which means the local something can be the page itself.
+
+**The sidecar is not reimplemented; it is mounted.** `dist/` (62 files,
+532 KB of plain JavaScript using only `node:` builtins) is mounted into the
+container's filesystem and started as an ordinary child process, so
+`deck/*`, `course/*`, `method/*`, `agents/*` and `agent/*` arrive intact and
+`src/pipeline` and every pane are untouched. What differs between hosting it
+on the user's machine and hosting it in the tab is only the pipe, and that
+is now the whole of the difference: `site/src/engine/host.ts` is the
+interface, `bridge-transport.ts` and `container/host.ts` are the two
+implementations, and `makeSidecarClient` takes either.
+
+**The pipe needs a wrapper.** WebContainer gives a spawned process a
+pseudo-terminal, which echoes and is free to rewrite what crosses it -- the
+first spike watched its own `initialize` come back as output. So a small
+program inside the container (`container/wrapper.ts`) owns the real pipes to
+the sidecar and relays each line base64-encoded (`container/framing.ts`,
+8 tests). The first cut decoded frames with `atob` alone and rendered
+"Step 1 â Extract" for "Step 1 — Extract"; base64 is over bytes, so the
+round trip is `TextEncoder`/`TextDecoder` and is pinned by test.
+
+**Cross-origin isolation without a server.** `SharedArrayBuffer` needs two
+response headers, and GitHub Pages sends no custom headers. `site/public/
+coi.js` is loaded in both contexts: on the page it registers itself as a
+service worker and reloads once; as the worker it adds COOP/COEP to every
+response. Verified against `vite preview`, which sets no headers either --
+`crossOriginIsolated=true` on a cold load.
+
+**Proven on the built site, 2026-09-10.** Cold page to
+`engine 0.0.0 on node 22.22.3 — in this tab` in **2.7 s** (boot, method
+files fetched, 62 engine files mounted, sidecar ready), then the agent
+picker rendered **41 providers** from the live registry -- fetched by npm
+inside the container -- with the course folder and all eight stages in the
+rail.
+
+**Claude Code is pinned, and Anthropic says to pin it.** From v2.1.113 the
+npm package ships a per-platform native binary, which cannot execute in a
+WebAssembly Node; Anthropic's own note on the change is "If you need the JS
+build, pin to an earlier version." So the page installs **2.1.112** (the
+last JavaScript build, 2026-04-16) into the container on demand and points
+the adapters at it through `CLAUDE_CODE_EXECUTABLE`, which
+`@anthropic-ai/claude-agent-sdk` reads before looking for a CLI itself.
+`npm_config_omit=optional` in the sidecar's environment keeps every install
+in the container from pulling native platform packages it cannot run. The
+model the pinned CLI reaches is current -- it is server-side -- but the
+wrapper ages, and the failure mode to expect is an auth or minimum-version
+change rather than a missing feature. That is what the bridge remains for:
+it runs whatever Claude Code the user has, native and current.
+
+**What the search found.** Every other ACP web client solves this the way
+the bridge does -- [acp-ui](https://github.com/formulahendry/acp-ui) states
+plainly that its web build "omits local stdio agents", and
+[acp2web](https://www.acp2web.com/) and Casper run the agent locally and
+attach a browser UI. Running the agent *in the tab* appears to be new.
+[webcode](https://github.com/wordbricks/webcode) puts Claude Code in
+WebContainer as a terminal, but documents nothing about the native cutover.
+
+**Licensing.** The WebContainer API is free for open source and requires a
+commercial licence for production use in a for-profit setting; this repo is
+the former, and that is a decision to revisit if the site ever is not.
+
+**Not done, deliberately or not yet.** Uploading lecture files into the
+container's course folder is next -- the folder exists and is pre-filled in
+the rail, but nothing puts material in it yet. Claude sign-in
+(`claude setup-token`, which the pinned CLI offers) is not wired to the
+picker, and neither is `installClaudeJs`. The picker's copy still says
+subscription agents "install on this computer", which in this tier is the
+tab. The picker lists the registry in its
 own order, so a marketplace entry sits above Claude Agent; and the chat bar
 shows Mode twice, once as the ACP session mode and once as the adapter's
 config option of the same name. Extraction runs only ahead of the extract

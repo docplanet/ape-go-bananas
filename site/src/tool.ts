@@ -466,20 +466,71 @@ $('mediafile').addEventListener('change', (e) => {
 $('export').addEventListener('click', () => void exportApkg());
 
 // ---- agent mode --------------------------------------------------------------
-// `ape-bridge` opens this page with its details in the fragment. When they are
-// there, the agent shell mounts over this page and the tool becomes its deck
-// view; when they are not, none of that code is even fetched.
-import { locateBridge } from './engine/bridge-transport.js';
+// The engine can run in one of two places, and the page is the same either
+// way (site/src/engine/host.ts). In this tab: WebContainer runs the sidecar
+// on Node compiled to WebAssembly, so nothing is installed and nothing is
+// downloaded -- the default. On the user's machine: `ape-bridge` opens this
+// page with its details in the fragment, which is how the newest Claude Code
+// (a native binary, which cannot run in a tab) is reached. Neither module is
+// fetched until one of them is chosen.
+import { Bridge, locateBridge } from './engine/bridge-transport.js';
+import type { EngineHost } from './engine/host.js';
 {
-  const locator = locateBridge();
-  if (locator) {
-    // Attached: the steps are done, and the checker is the deck view.
+  const enterAgentView = (): void => {
     $('start').hidden = true;
     const checker = $('checker') as HTMLDetailsElement;
     checker.open = true;
-    checker.querySelector('summary')!.hidden = true;
-  }
+    (checker.querySelector('summary') as HTMLElement).hidden = true;
+  };
+
+  const mount = async (host: EngineHost): Promise<void> => {
+    enterAgentView();
+    const { mountAgentApp } = await import('./agent/app.js');
+    await mountAgentApp(host);
+  };
+
+  const startInTab = async (): Promise<void> => {
+    const button = $('startdeck') as HTMLButtonElement;
+    const line = $('startstatus');
+    if (!crossOriginIsolated) {
+      showError('This browser could not isolate the page, which the in-tab runtime needs. Reload once; if it persists, use the bridge below.');
+      return;
+    }
+    button.disabled = true;
+    clearError();
+    try {
+      const { startContainerHost } = await import('./container/host.js');
+      const host = await startContainerHost((step) => {
+        line.textContent = `${step}…`;
+      });
+      line.textContent = '';
+      await mount(host);
+    } catch (err) {
+      button.disabled = false;
+      line.textContent = '';
+      showError(err instanceof Error ? err.message : String(err));
+    }
+  };
+
+  const locator = locateBridge();
   if (locator) {
-    void import('./agent/app.js').then((m) => m.mountAgentApp(locator)).catch((err: unknown) => showError(err instanceof Error ? err.message : String(err)));
+    void (async () => {
+      const bridge = new Bridge(locator);
+      try {
+        await bridge.health();
+        await bridge.connect();
+      } catch {
+        enterAgentView();
+        showError(
+          `This page was opened by ape-bridge, but the bridge cannot be reached. ` +
+            `Is it still running in your terminal? If your browser asked to allow access to your local network, it needs a yes. ` +
+            `Brave blocks websites from reaching this computer unless you add this site under brave://settings/content/localhostAccess.`,
+        );
+        return;
+      }
+      await mount(bridge);
+    })();
+  } else {
+    $('startdeck').addEventListener('click', () => void startInTab());
   }
 }

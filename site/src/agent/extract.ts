@@ -5,19 +5,17 @@
 // so a re-run costs nothing; images are written first and the text last,
 // which is what makes text.md the mark of a finished extraction.
 
-import type { Bridge } from '../engine/bridge-transport.js';
-import { BridgeError, type SidecarClient } from '../engine/bridge-client.js';
+import { BridgeError, type EngineHost, type SidecarClient } from '../engine/bridge-client.js';
 import { extractPdf, pageStem, toBase64 } from '../engine/pdf-extract.js';
 
-export async function extractMaterials(sidecar: SidecarClient, bridge: Bridge, courseDir: string, say: (text: string, isError?: boolean) => void): Promise<number> {
+export async function extractMaterials(sidecar: SidecarClient, host: EngineHost, courseDir: string, say: (text: string, isError?: boolean) => void): Promise<number> {
   const listing = await sidecar.listCourse(courseDir);
   const finished = new Set(listing.extracted.filter((e) => e.text !== null).map((e) => e.source));
   const todo = listing.files.filter((f) => f.kind === 'pdf' && !finished.has(f.relPath));
   for (const f of todo) {
     say(`reading ${f.name}…`);
-    const res = await fetch(bridge.fileUrl(courseDir, f.relPath));
-    if (!res.ok) throw new BridgeError(-32000, `could not read ${f.relPath} through the bridge: ${res.status}`);
-    const data = new Uint8Array(await res.arrayBuffer());
+    const data = await host.readFile(courseDir, f.relPath);
+    if (data === null) throw new BridgeError(-32000, `could not read ${f.relPath} from the course folder`);
     const dir = `_extracted/${f.relPath}`;
     const { pages } = await extractPdf(f.name, data, {
       async image(n, total, jpeg) {
