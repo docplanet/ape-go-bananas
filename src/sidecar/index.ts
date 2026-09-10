@@ -11,18 +11,10 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import {
-  FrameDecoder,
-  encodeErrorResponse,
-  encodeNotification,
-  encodeRequest,
-  encodeSuccessResponse,
-  type DecodedLine,
-  type RequestId,
-} from '../acp/framing.js';
-import { AgentBridge } from './agent.js';
-import { courseMethods } from './course.js';
-import { InvalidParams, buildMethods, type MethodHandler, type SidecarInfo } from './methods.js';
+
+import { FrameDecoder } from '../acp/framing.js';
+import { createDispatcher } from './dispatch.js';
+import type { SidecarInfo } from './methods.js';
 
 function packageVersion(): string {
   const here = dirname(fileURLToPath(import.meta.url));
@@ -54,111 +46,18 @@ function exitAfterFlush(code: number): void {
   // Deferred one tick so a handler that requested the exit (shutdown) gets
   // its own response queued first -- `outbound` is re-read then, not now.
   // Agent processes are reaped before the flush (§2 agent/disconnect).
-  setImmediate(() => void bridge.closeAll().catch(() => undefined).then(() => outbound).then(() => process.exit(code)));
+  setImmediate(() => void dispatcher.closeAll().catch(() => undefined).then(() => outbound).then(() => process.exit(code)));
 }
 
-// §3 of agent-protocol.md: requests the sidecar sends to the app (reverse
-// direction). Ids come from their own counter, numbers, and the app's
-// response on stdin resolves them here.
-let nextReverseId = 1;
-const pendingReverse = new Map<number, { resolve: (v: unknown) => void; reject: (e: Error) => void }>();
-const appLink = {
-  notify(method: string, params: unknown): void {
-    send(encodeNotification(method, params));
-  },
-  request(method: string, params: unknown): Promise<unknown> {
-    const id = nextReverseId++;
-    return new Promise((resolve, reject) => {
-      pendingReverse.set(id, { resolve, reject });
-      send(encodeRequest(id, method, params));
-    });
-  },
-};
-const bridge = new AgentBridge(appLink);
-
-const methods: Record<string, MethodHandler> = { ...buildMethods(info, () => exitAfterFlush(0)), ...courseMethods(), ...bridge.methods() };
-
-function respondError(id: RequestId, code: number, message: string, data?: unknown): void {
-  send(encodeErrorResponse(id, data === undefined ? { code, message } : { code, message, data }));
-}
-
-function respondFailure(id: RequestId, err: unknown): void {
-  if (err instanceof InvalidParams) {
-    respondError(id, err.code, err.message);
-  } else {
-    const error = err as Error;
-    respondError(id, -32000, error?.message ?? String(err), { name: error?.name ?? 'Error' });
-  }
-}
-
-function handle(decoded: DecodedLine): void {
-  if (!decoded.ok) {
-    // §3: not JSON, or JSON that is not a JSON-RPC message shape.
-    respondError(null, -32700, decoded.error.message);
-    return;
-  }
-  const message = decoded.message;
-  switch (message.kind) {
-    case 'request': {
-      const handler = methods[message.method];
-      if (handler === undefined) {
-        respondError(message.id, -32601, `method not found: ${message.method}`);
-        return;
-      }
-      // Engine handlers are synchronous, so their responses leave in
-      // arrival order (§2.2). Agent handlers return promises and answer
-      // when done, which is what lets `agent/cancel` land mid-turn.
-      try {
-        const result = handler(message.params);
-        if (result instanceof Promise) {
-          result.then(
-            (value) => send(encodeSuccessResponse(message.id, value)),
-            (err: unknown) => respondFailure(message.id, err),
-          );
-        } else {
-          send(encodeSuccessResponse(message.id, result));
-        }
-      } catch (err) {
-        respondFailure(message.id, err);
-      }
-      return;
-    }
-    case 'notification': {
-      // §3: unknown or throwing notifications are ignored; there is no id to answer.
-      const handler = methods[message.method];
-      if (handler === undefined) return;
-      try {
-        const r = handler(message.params);
-        if (r instanceof Promise) r.catch(() => undefined);
-      } catch {
-        /* ignored by contract */
-      }
-      return;
-    }
-    case 'response':
-    case 'error-response': {
-      // The app answering one of our reverse requests (agent-protocol.md §3).
-      const id = typeof message.id === 'number' ? message.id : Number(message.id);
-      const pending = pendingReverse.get(id);
-      if (pending === undefined) {
-        process.stderr.write(`sidecar: response for unknown reverse id ${String(message.id)}, ignored\n`);
-        return;
-      }
-      pendingReverse.delete(id);
-      if (message.kind === 'response') pending.resolve(message.result);
-      else pending.reject(new Error(message.error.message));
-      return;
-    }
-  }
-}
+const dispatcher = createDispatcher({ info, send, onShutdown: () => exitAfterFlush(0) });
 
 const decoder = new FrameDecoder();
 process.stdin.on('data', (chunk: Buffer) => {
   if (exiting) return;
-  for (const line of decoder.push(chunk)) handle(line);
+  for (const line of decoder.push(chunk)) dispatcher.handle(line);
 });
 process.stdin.on('end', () => {
-  for (const line of decoder.end()) handle(line);
+  for (const line of decoder.end()) dispatcher.handle(line);
   exitAfterFlush(0);
 });
 process.stdin.on('error', (err: Error) => {
@@ -168,4 +67,4 @@ process.stdin.on('error', (err: Error) => {
 // A closed stdout means the app is gone; nothing left to say to anyone.
 process.stdout.on('error', () => process.exit(0));
 
-send(encodeNotification('sidecar/ready', { ...info, pid: process.pid }));
+send(dispatcher.readyLine({ pid: process.pid }));

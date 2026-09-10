@@ -6,7 +6,6 @@
 // meaning (§4 flags/*, and APP.md's "no card-authoring logic in app code").
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { basename, dirname, extname, join } from 'node:path';
-import { writeApkg } from '../apkg/index.js';
 import {
   checkDeck,
   formatCheckReport,
@@ -174,13 +173,19 @@ export function buildMethods(info: SidecarInfo, onShutdown: () => void): Record<
       return { html, count: notes.length, outPath };
     },
 
-    'deck/export': (raw) => {
+    'deck/export': async (raw) => {
       const params = asParams(raw);
       const path = requireString(params, 'path');
       const notes = loadDeckNotes(path);
       const outPath = optionalString(params, 'outPath') ?? join(dirname(path), `${basename(path, extname(path))}.apkg`);
       const deckName = optionalString(params, 'deckName') ?? notes[0]?.deckName ?? '';
       const mediaDir = optionalString(params, 'mediaDir') ?? resolveMediaDir();
+      // Loaded on first use, the way src/cli/index.ts defers its subcommands:
+      // the writer reaches node:sqlite, which does not exist below Node 24,
+      // and the bridge (src/bridge) must start on the Node a Claude Code user
+      // already has. Every other method here runs on Node 20; only an actual
+      // export asks for more -- and the page can do that one itself.
+      const { writeApkg } = await import('../apkg/index.js');
       const { unresolvedMedia } = writeApkg(notes, { deckName, outPath, mediaDir });
       return { outPath, count: notes.length, unresolvedMedia };
     },
