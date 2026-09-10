@@ -204,7 +204,7 @@ function refreshPreview(): void {
     if (media.size === 0) return;
     frame.contentWindow?.postMessage({ apeMedia: media }, '*');
   };
-  frame.srcdoc = withLocalImages(deck.reviewHtml) + PREVIEW_BRIDGE;
+  frame.srcdoc = withLocalImages(deck.reviewHtml) + PREVIEW_BRIDGE + (previewExtras?.script ?? '');
 }
 
 /** The "referenced but not supplied" note, over what is already in memory. */
@@ -232,19 +232,30 @@ function clearDeck(): void {
   $('exportnote').hidden = true;
 }
 
+export interface LoadedDeckInfo {
+  count: number;
+  deckNames: string[];
+  clean: boolean;
+  referencedMedia: string[];
+}
+
 async function loadDeck(file: File): Promise<void> {
+  await loadDeckText(await file.text(), file.name).catch(() => undefined);
+}
+
+/** Loads a deck from its text; the agent shell feeds deck.json read through the bridge. */
+export async function loadDeckText(text: string, label: string): Promise<LoadedDeckInfo> {
   clearError();
   try {
-    const text = await file.text();
     const loaded = await ask<Extract<WorkerResponse, { kind: 'load' }>>({
       kind: 'load',
       deckText: text,
-      label: file.name,
+      label: label,
     });
 
     deck = {
       text,
-      label: file.name,
+      label,
       // Every note must share one deckName for export (src/apkg/collection.ts);
       // the engine rejects a mismatch, so take the first and let it complain.
       deckName: loaded.deckNames[0] ?? 'A.P.E.',
@@ -260,14 +271,48 @@ async function loadDeck(file: File): Promise<void> {
 
     results.hidden = false;
     dropZone.classList.remove('over');
+    return { count: loaded.count, deckNames: loaded.deckNames, clean: loaded.clean, referencedMedia: loaded.referencedMedia };
   } catch (err) {
     // Without this the previous deck stays on screen and stays exportable:
     // `deck` is only reassigned on success, so Export would silently ship the
     // old notes while the error box describes the new file.
     clearDeck();
     showError(err instanceof Error ? err.message : String(err));
+    throw err;
   }
 }
+
+/** Media supplied by something other than a drop -- the agent shell, from the bridge. */
+export function addMediaBytes(name: string, bytes: Uint8Array): void {
+  media.set(mediaKey(name), bytes);
+  updateMissingNote();
+  refreshPreview();
+}
+
+export { showError, clearError };
+
+/**
+ * Something the agent shell layers onto the preview: a script appended to
+ * the review page (the Flag buttons), and a handler for what that script
+ * posts back. The tool page alone sets nothing here.
+ */
+export interface PreviewExtras {
+  script: string;
+  onMessage(data: unknown): void;
+}
+let previewExtras: PreviewExtras | null = null;
+export function setPreviewExtras(extras: PreviewExtras | null): void {
+  previewExtras = extras;
+  refreshPreview();
+}
+/** Posts into the preview -- e.g. which cards are flagged. */
+export function postToPreview(message: unknown): void {
+  ($('review') as HTMLIFrameElement).contentWindow?.postMessage(message, '*');
+}
+window.addEventListener('message', (event) => {
+  const frame = $('review') as HTMLIFrameElement;
+  if (event.source === frame.contentWindow) previewExtras?.onMessage(event.data);
+});
 
 async function addMedia(files: File[]): Promise<void> {
   // Every other async entry point reports its own failures; without this a
@@ -284,7 +329,7 @@ async function addMedia(files: File[]): Promise<void> {
   }
 }
 
-async function exportApkg(): Promise<void> {
+export async function exportApkg(): Promise<void> {
   if (!deck) return;
   clearError();
   const button = $('export') as HTMLButtonElement;
@@ -395,3 +440,15 @@ $('mediafile').addEventListener('change', (e) => {
   if (files.length > 0) void addMedia(files);
 });
 $('export').addEventListener('click', () => void exportApkg());
+
+// ---- agent mode --------------------------------------------------------------
+// `ape-bridge` opens this page with its details in the fragment. When they are
+// there, the agent shell mounts over this page and the tool becomes its deck
+// view; when they are not, none of that code is even fetched.
+import { locateBridge } from './engine/bridge-transport.js';
+{
+  const locator = locateBridge();
+  if (locator) {
+    void import('./agent/app.js').then((m) => m.mountAgentApp(locator)).catch((err: unknown) => showError(err instanceof Error ? err.message : String(err)));
+  }
+}

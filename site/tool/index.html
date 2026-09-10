@@ -7,6 +7,8 @@
 <meta name="description" content="Check a deck.json, read every card, and export a real .apkg. Runs entirely in your browser — nothing is uploaded and nothing is installed.">
 </head>
 <body>
+<div id="shell">
+<aside id="rail" hidden></aside>
 <main>
   <header class="top">
     <h1>A.P.E. <span class="sep">·</span> <span class="what">deck tool</span></h1>
@@ -38,8 +40,17 @@
       <div class="pane pane-report">
         <h2>Checks</h2>
         <pre id="report"></pre>
+        <div id="flagbox" hidden>
+          <h2>Flags <small id="flagcount"></small></h2>
+          <ul id="flags" class="flags"></ul>
+        </div>
       </div>
     </div>
+  </section>
+
+  <section id="view-agent" hidden>
+    <section id="gate" class="gate" hidden></section>
+    <section id="agent-host" class="agent-host"></section>
   </section>
 
   <p id="error" class="error" hidden></p>
@@ -49,6 +60,7 @@
     <a href="https://github.com/docplanet/ape-go-bananas">source and issues on GitHub</a>
   </footer>
 </main>
+</div>
 <script type="module" src="../src/tool.ts"></script>
 </body>
 </html>
