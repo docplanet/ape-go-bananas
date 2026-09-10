@@ -1,0 +1,65 @@
+# Typechecks and tests the engine on every push and pull request.
+#
+# release.yml also runs this suite, but only on a `v*` tag -- by which point a
+# regression is already in a build someone can download. This workflow is the
+# same check moved to where it can still stop something.
+#
+# Why macOS, and why the method repo is checked out beside this one:
+# `test/apkg` reopens every package it writes with the system `unzip`, and
+# `test/checks/differential.test.ts` spawns the real `python3 tools/check_deck.py`
+# from the method repo and diffs its output byte-for-byte. Both are how the
+# suite avoids grading its own homework, and both need tooling a Linux runner
+# ships differently -- the same reason release.yml tests on the Apple silicon
+# job alone (see its comment). The engine is pure Node and identical on every
+# platform, so testing it once is testing it everywhere.
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  engine:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: APE
+      - uses: actions/checkout@v4
+        with:
+          repository: docplanet/anki-process-engine-live
+          path: Anki
+
+      # Node 24 is not a preference: the engine imports node:sqlite, which
+      # does not exist below it. `pretest` refuses to run on an older major
+      # rather than reporting a false green (README, "Status").
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.12.0'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: engine — typecheck
+        working-directory: APE
+        run: |
+          npm ci
+          npm run typecheck
+
+      - name: engine — test
+        working-directory: APE
+        env:
+          APE_ENGINE_REPO: ${{ github.workspace }}/Anki
+        run: npm test
+
+      # The site is a separate npm project (it has the browser's sql.js and
+      # fflate; the engine keeps its zero-dependency rule). Its suite is what
+      # pins the browser build against the Node one, so a change to either
+      # side of the platform seam fails here.
+      - name: site — typecheck and test
+        working-directory: APE/site
+        run: |
+          npm ci
+          npm run build
+          npm test

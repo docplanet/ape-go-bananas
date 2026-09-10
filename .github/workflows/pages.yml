@@ -1,10 +1,16 @@
-# Publishes site/ to GitHub Pages. The page reads the latest release from the
-# GitHub API, so it never needs a rebuild when a version ships.
+# Publishes the site to GitHub Pages: the download page at /, and the browser
+# tool at /tool/.
+#
+# It is a build now, not a file copy. The tool imports the engine's compiled
+# dist/ (checks, the .apkg writer) and bundles it with sql.js and fflate, so
+# the engine has to be built first and the site's own npm project second.
+# The download page still reads the latest release from the GitHub API at run
+# time, so shipping a version needs no rebuild here.
 name: pages
 on:
   push:
     branches: [main]
-    paths: ['site/**', '.github/workflows/pages.yml']
+    paths: ['site/**', 'src/**', 'package.json', '.github/workflows/pages.yml']
   workflow_dispatch:
 permissions:
   contents: read
@@ -18,9 +24,24 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # Node 24: the engine's build imports node:sqlite, which does not exist
+      # below it. The browser bundle does not use node:sqlite -- sql.js stands
+      # in for it -- but tsc still has to compile the module that does.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.12.0'
+      - name: engine — build dist/
+        run: |
+          npm ci
+          npm run build
+      - name: site — build
+        working-directory: site
+        run: |
+          npm ci
+          npm run build
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: site
+          path: site/dist
       - id: deployment
         uses: actions/deploy-pages@v4
