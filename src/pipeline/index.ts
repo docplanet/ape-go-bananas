@@ -23,10 +23,17 @@ export interface CourseFileLike {
   mimeType: string;
 }
 
+/** What the page extracted from one source file, beside it: course/list's `extracted`. */
+export interface ExtractedLike {
+  source: string; // relPath of the PDF
+  text: string | null; // relPath of text.md, when written
+  images: string[]; // relPaths of the page images, in page order
+}
+
 /** The subset of the sidecar surface the stages need, however it is reached. */
 export interface PipelineClient {
   readMethod(name: string): Promise<{ text: string }>;
-  listCourse(path: string): Promise<{ files: CourseFileLike[] }>;
+  listCourse(path: string): Promise<{ files: CourseFileLike[]; extracted?: ExtractedLike[] }>;
   readCourse(path: string, name: string): Promise<{ text: string }>;
   newSession(connectionId: string): Promise<{ session: { sessionId: string } }>;
   prompt(sessionId: string, blocks: ContentBlock[]): Promise<{ stopReason: string }>;
@@ -75,6 +82,24 @@ function describe(files: CourseFileLike[]): string {
   return files.map((f) => `- ${f.relPath} (${f.kind}, ${(f.bytes / 1024).toFixed(0)} KB)`).join('\n');
 }
 
+/**
+ * The paragraph that stops the agent probing for PDF tooling: what the page
+ * already extracted, where it is, and that nothing needs converting. Empty
+ * when nothing was extracted, so a folder of plain text reads as before.
+ */
+export function describeExtracted(extracted: ExtractedLike[]): string {
+  const lines = extracted
+    .filter((e) => e.text !== null || e.images.length > 0)
+    .map((e) => {
+      const parts: string[] = [];
+      if (e.text) parts.push(`${e.text} (the text of every page, under "## Page N" headings)`);
+      if (e.images.length > 0) parts.push(e.images.length === 1 ? `one page image, ${e.images[0]}` : `${e.images.length} page images, ${e.images[0]} … ${e.images[e.images.length - 1]}`);
+      return `- ${e.source} → ${parts.join('; ')}`;
+    });
+  if (lines.length === 0) return '';
+  return `\n\nAlready extracted beside the material by this app, with no tools:\n${lines.join('\n')}\nRead those instead of converting the source; do not look for pdftotext, pypdf or any other tooling. The text can carry stray spaces inside words where the PDF's fonts have odd widths ("c opied"); for exact wording, the page image is the authority.`;
+}
+
 /** The prompt for a writing stage: method as the system block, the ask, the listing, then the materials as links. */
 export async function stageBlocks(client: PipelineClient, stage: WritingStage, courseDir: string, deckName: string): Promise<ContentBlock[]> {
   const [method, course] = await Promise.all([client.readMethod(stage.method), client.listCourse(courseDir)]);
@@ -87,15 +112,21 @@ export async function stageBlocks(client: PipelineClient, stage: WritingStage, c
   // (a live run without one wrote "Deck: not supplied"); the app collects it.
   const deckLine = deckName ? `Deck: ${deckName}` : 'Deck: not supplied by the user';
   const attached = extras.length > 0 ? `\n\n${extras.map((e) => e.name).join(', ')} from the method repository ${extras.length === 1 ? 'is' : 'are'} attached below; do not search the file system for ${extras.length === 1 ? 'it' : 'them'}.` : '';
+  const extracted = course.extracted ?? [];
   const blocks: ContentBlock[] = [
     { type: 'resource', resource: { uri: 'ape://system', text: method.text, mimeType: 'text/markdown' } },
-    { type: 'text', text: `${stage.ask}${attached}\n\n${deckLine}\nCourse folder: ${courseDir}\n\nMaterials:\n${describe(materials) || '(none)'}` },
+    { type: 'text', text: `${stage.ask}${attached}\n\n${deckLine}\nCourse folder: ${courseDir}\n\nMaterials:\n${describe(materials) || '(none)'}${describeExtracted(extracted)}` },
     ...extras.map((e): ContentBlock => ({ type: 'resource', resource: { uri: `ape://method/${e.name}`, text: e.text, mimeType: 'text/markdown' } })),
   ];
   for (const f of materials) {
     if ((f.kind === 'pdf' || f.kind === 'image' || f.kind === 'text') && f.bytes <= ATTACH_LIMIT) {
       blocks.push({ type: 'resource_link', uri: fileUri(courseDir, f.relPath), name: f.relPath, mimeType: f.mimeType });
     }
+  }
+  // The extracted text is linked, not inlined: the agent reads it when it
+  // gets there, and a 60-page lecture is not paid for twice in one prompt.
+  for (const e of extracted) {
+    if (e.text) blocks.push({ type: 'resource_link', uri: fileUri(courseDir, e.text), name: e.text, mimeType: 'text/markdown' });
   }
   return blocks;
 }

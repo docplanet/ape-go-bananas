@@ -125,6 +125,13 @@ export interface CourseFile {
   mimeType: string;
 }
 
+/** What the page extracted from one source file, beside it (course/list's `extracted`). */
+export interface Extracted {
+  source: string;
+  text: string | null;
+  images: string[];
+}
+
 export interface PermissionRequest {
   id: number;
   method: 'agent/requestPermission';
@@ -178,8 +185,10 @@ export function makeSidecarClient(bridge: Bridge) {
     listMethod: () => call<{ dir: string; files: { name: string; title: string; bytes: number }[] }>('method/list'),
     readMethod: (name: string) => call<{ name: string; text: string }>('method/read', { name }),
     listCourse: (path: string) =>
-      call<{ path: string; files: CourseFile[]; artifacts: { inventory: boolean; plan: boolean; deck: boolean; flags: boolean; review: boolean } }>('course/list', { path }),
+      call<{ path: string; files: CourseFile[]; artifacts: { inventory: boolean; plan: boolean; deck: boolean; flags: boolean; review: boolean }; extracted: Extracted[] }>('course/list', { path }),
     readCourse: (path: string, name: string) => call<{ name: string; text: string; bytes: number }>('course/read', { path, name }),
+    /** One file beneath the course folder, text or bytes; directories are made. Confined to the folder like course/read. */
+    writeCourse: (path: string, name: string, body: { text: string } | { base64: string }) => call<{ name: string; bytes: number }>('course/write', { path, name, ...body }),
     prompt: (sessionId: string, blocks: ContentBlock[]) => call<{ stopReason: string }>('agent/prompt', { sessionId, blocks }),
     cancel: (sessionId: string) => call<Record<string, never>>('agent/cancel', { sessionId }),
     setMode: (sessionId: string, modeId: string) => call<{ modes: ModeState }>('agent/setMode', { sessionId, modeId }),

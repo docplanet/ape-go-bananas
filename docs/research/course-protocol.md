@@ -27,19 +27,26 @@ params `{ name }` → `{ name, text }`. `name` must be a bare file name that
 ### `course/list`
 params `{ path }` (a directory) →
 ```
-{ path, files: File[], artifacts: { inventory: boolean, plan: boolean, deck: boolean, flags: boolean, review: boolean } }
+{ path, files: File[], artifacts: { inventory: boolean, plan: boolean, deck: boolean, flags: boolean, review: boolean }, extracted: Extracted[] }
 ```
 `File` is `{ name, relPath, bytes, kind, mimeType }` for every regular
 file under `path`, recursive, sorted by `relPath`, skipping entries whose
-name starts with `.`, `node_modules`, and the artifacts themselves
-(`inventory.md`, `plan.md`, `deck.json`, `flags.json`, `review.html`,
-`*.apkg`). `kind` by extension: `pdf`; `image` (png jpg jpeg gif webp);
+name starts with `.`, `node_modules`, the top-level `_extracted/` tree, and
+the artifacts themselves (`inventory.md`, `plan.md`, `deck.json`,
+`flags.json`, `review.html`, `*.apkg`). `kind` by extension: `pdf`; `image` (png jpg jpeg gif webp);
 `audio` (mp3 m4a wav aac ogg flac); `video` (mp4 mov webm mkv); `text` (md
 txt vtt srt csv json html); `slides` (pptx ppt key odp); `doc` (docx doc
 pages rtf); else `other`. `mimeType` is the usual one for the extension,
 `application/octet-stream` when unknown. `artifacts` reports which of
 `inventory.md`, `plan.md`, `deck.json`, `flags.json`, `review.html` exist
 directly in `path`. A `path` that is not a directory → `-32000`.
+
+`extracted` is what the page put beside a source file under
+`_extracted/<relPath of the source>/`: for each listed file whose directory
+there exists, `{ source, text, images }` — `source` the file's `relPath`,
+`text` the relPath of `text.md` when present (else `null`), `images` the
+relPaths of `pNNN.png|jpg|jpeg|webp` sorted by name. In `files` order; a
+directory for nothing listed, or with neither text nor images, is omitted.
 
 ### `course/read`
 params `{ path, name }` → `{ name, text, bytes }` — reads a UTF-8 text file
@@ -48,6 +55,15 @@ or is not a regular file; only for files whose `kind` would be `text` (else
 `-32602` `"…is not a text file"`). Binary attachments never pass through
 this: the app hands them to the agent as `resource_link` blocks, and the
 agent (or the embedded loop) reads them itself.
+
+### `course/write`
+params `{ path, name, text }` or `{ path, name, base64 }` → `{ name, bytes }`
+— writes one file at `name` relative to `path`, creating directories,
+replacing what is there. Exactly one of `text` (UTF-8) or `base64` (bytes),
+else `-32602`; `name` that is `path` itself, escapes it, or names a
+directory → `-32602` naming `name`; `path` not a directory → `-32000`. The
+page uses it for `_extracted/…` (text and page images from a PDF, rendered
+in the tab); nothing else writes through it today.
 
 ## 3. What the oracle must prove
 
@@ -60,3 +76,10 @@ agent (or the embedded loop) reads them itself.
   `files` and `artifacts`; a file path instead of a dir → `-32000`.
 - `course/read` for `notes.md` (exact text), for a nested `sub/a.txt`, for
   `../outside.md` → `-32602`, for `slide.png` → `-32602`.
+- `course/write` text and base64 into `_extracted/lecture.pdf/`, bytes
+  round-tripping exactly; then `course/list` reports the entry (images
+  sorted, `text` null until written) and still lists the same `files`; a
+  nested source keeps its path; an extracted dir for nothing listed is
+  ignored; overwrite allowed. Refused: `../outside.md`, an absolute name,
+  `.`, a directory, both bodies, neither body, missing params, a file for
+  `path` — and nothing outside is touched by a refused call.

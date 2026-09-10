@@ -5,7 +5,7 @@
 // which spawnSidecar copies from process.env, so each spawn below sets or
 // deletes it on process.env for the duration of the spawn call.
 import assert from 'node:assert/strict';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 import test, { after } from 'node:test';
 
@@ -160,7 +160,7 @@ test('course/list: every regular file recursively, sorted by relPath, dotfiles a
   await s.ready;
   const res = await s.request(1, 'course/list', { path: dir });
   assert.equal(res.error, undefined, JSON.stringify(res.error));
-  assert.deepStrictEqual(res.result, { path: dir, files: EXPECTED_FILES, artifacts: NO_ARTIFACTS });
+  assert.deepStrictEqual(res.result, { path: dir, files: EXPECTED_FILES, artifacts: NO_ARTIFACTS, extracted: [] });
   assert.equal(await s.end(), 0);
 });
 
@@ -171,8 +171,8 @@ test('course/list: artifacts are reported, never listed as files; *.apkg is skip
   await s.ready;
   const full = await s.request(1, 'course/list', { path: all.dir });
   assert.equal(full.error, undefined, JSON.stringify(full.error));
-  assert.deepStrictEqual(full.result, { path: all.dir, files: EXPECTED_FILES, artifacts: { inventory: true, plan: true, deck: true, flags: true, review: true } });
-  assert.deepStrictEqual((await s.request(2, 'course/list', { path: planOnly.dir })).result, { path: planOnly.dir, files: EXPECTED_FILES, artifacts: { ...NO_ARTIFACTS, plan: true } });
+  assert.deepStrictEqual(full.result, { path: all.dir, files: EXPECTED_FILES, artifacts: { inventory: true, plan: true, deck: true, flags: true, review: true }, extracted: [] });
+  assert.deepStrictEqual((await s.request(2, 'course/list', { path: planOnly.dir })).result, { path: planOnly.dir, files: EXPECTED_FILES, artifacts: { ...NO_ARTIFACTS, plan: true }, extracted: [] });
   assert.equal(await s.end(), 0);
 });
 
@@ -214,3 +214,53 @@ test('course/read refuses an escaping name, a non-text kind, a non-file, and bad
   assert.equal(((await s.request(8, 'course/read', { path: dir, name: 'sub/a.txt' })).result as { bytes: number }).bytes, bytesOf('nested text\n'), 'still alive');
   assert.equal(await s.end(), 0);
 });
+
+// --- §2 course/write and `extracted` ---------------------------------------
+
+test('course/write puts text and bytes beneath the folder, creating directories; course/list reports them as `extracted`, never as files (§2, §3)', { timeout: TIMEOUT }, async () => {
+  const { dir } = makeCourseTree();
+  const s = spawnSidecar();
+  await s.ready;
+  const md = '# lecture.pdf\n\n## Page 1\n\nUTF-8 text — with a dash.\n';
+  const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0]);
+  // images first, text last: the page writes in that order, and only a
+  // finished extraction has its text.md
+  assert.deepStrictEqual(await s.request(1, 'course/write', { path: dir, name: '_extracted/lecture.pdf/p002.png', base64: png.toString('base64') }), { jsonrpc: '2.0', id: 1, result: { name: '_extracted/lecture.pdf/p002.png', bytes: png.length } });
+  assert.deepStrictEqual((await s.request(2, 'course/write', { path: dir, name: '_extracted/lecture.pdf/p001.png', base64: png.toString('base64') })).result, { name: '_extracted/lecture.pdf/p001.png', bytes: png.length });
+  const partial = (await s.request(3, 'course/list', { path: dir })).result as { files: unknown; extracted: unknown };
+  assert.deepStrictEqual(partial.files, EXPECTED_FILES, 'nothing under _extracted/ is material');
+  assert.deepStrictEqual(partial.extracted, [{ source: 'lecture.pdf', text: null, images: ['_extracted/lecture.pdf/p001.png', '_extracted/lecture.pdf/p002.png'] }], 'images sorted by name, text absent until written');
+  assert.deepStrictEqual((await s.request(4, 'course/write', { path: dir, name: '_extracted/lecture.pdf/text.md', text: md })).result, { name: '_extracted/lecture.pdf/text.md', bytes: bytesOf(md) });
+  const done = (await s.request(5, 'course/list', { path: dir })).result as { extracted: unknown };
+  assert.deepStrictEqual(done.extracted, [{ source: 'lecture.pdf', text: '_extracted/lecture.pdf/text.md', images: ['_extracted/lecture.pdf/p001.png', '_extracted/lecture.pdf/p002.png'] }]);
+  assert.deepStrictEqual(readFileSync(join(dir, '_extracted/lecture.pdf/p001.png')), png, 'bytes round-trip exactly');
+  assert.equal(readFileSync(join(dir, '_extracted/lecture.pdf/text.md'), 'utf8'), md, 'text round-trips exactly');
+  assert.deepStrictEqual((await s.request(6, 'course/read', { path: dir, name: '_extracted/lecture.pdf/text.md' })).result, { name: '_extracted/lecture.pdf/text.md', text: md, bytes: bytesOf(md) }, 'and is readable back through course/read');
+  // a nested source keeps its path; an extracted dir for nothing listed is ignored
+  await s.request(7, 'course/write', { path: dir, name: '_extracted/sub/a.txt/text.md', text: 'x' });
+  await s.request(8, 'course/write', { path: dir, name: '_extracted/ghost.pdf/text.md', text: 'x' });
+  const nested = (await s.request(9, 'course/list', { path: dir })).result as { extracted: { source: string }[] };
+  assert.deepStrictEqual(nested.extracted.map((e) => e.source), ['lecture.pdf', 'sub/a.txt'], 'source order, ghost skipped');
+  // overwriting is allowed: a re-extraction replaces
+  assert.deepStrictEqual((await s.request(10, 'course/write', { path: dir, name: '_extracted/lecture.pdf/text.md', text: 'v2' })).result, { name: '_extracted/lecture.pdf/text.md', bytes: 2 });
+  assert.equal(readFileSync(join(dir, '_extracted/lecture.pdf/text.md'), 'utf8'), 'v2');
+  assert.equal(await s.end(), 0);
+});
+
+test('course/write refuses an escaping name, the folder itself, a directory, both or neither body, and bad params with -32602 (§2, §3)', { timeout: TIMEOUT }, async () => {
+  const { root, dir } = makeCourseTree();
+  const s = spawnSidecar();
+  await s.ready;
+  expectParamError(await s.request(1, 'course/write', { path: dir, name: '../outside.md', text: 'x' }), 'name', 'escapes path');
+  expectParamError(await s.request(2, 'course/write', { path: dir, name: join(root, 'outside.md'), text: 'x' }), 'name', 'absolute name escapes path');
+  expectParamError(await s.request(3, 'course/write', { path: dir, name: '.', text: 'x' }), 'name', 'the folder itself');
+  expectParamError(await s.request(4, 'course/write', { path: dir, name: 'sub', text: 'x' }), 'name', 'a directory is not a regular file');
+  expectError(await s.request(5, 'course/write', { path: dir, name: 'a.md', text: 'x', base64: 'eA==' }), -32602, 'both bodies');
+  expectError(await s.request(6, 'course/write', { path: dir, name: 'a.md' }), -32602, 'neither body');
+  expectParamError(await s.request(7, 'course/write', { path: dir, text: 'x' }), 'name', 'name absent');
+  expectParamError(await s.request(8, 'course/write', { name: 'a.md', text: 'x' }), 'path', 'path absent');
+  expectError(await s.request(9, 'course/write', { path: join(dir, 'notes.md'), name: 'a.md', text: 'x' }), -32000, 'path is a file');
+  assert.equal(readFileSync(join(root, 'outside.md'), 'utf8'), 'outside the course folder\n', 'nothing outside was touched');
+  assert.equal(existsSync(join(dir, 'a.md')), false, 'nothing was written by a refused call');
+  assert.equal(await s.end(), 0);
+})

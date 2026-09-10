@@ -31,6 +31,8 @@ export interface StageHost {
   openDeck(courseDir: string): Promise<void>;
   /** Exports the currently open deck. */
   exportDeck(): Promise<void>;
+  /** Extracts text and page images beside every PDF that has none yet; runs before the extract stage. */
+  prepareMaterials(courseDir: string): Promise<void>;
   /** The flags the owner has put on the open deck, in note-index order. */
   currentFlags(): Flag[];
 }
@@ -103,6 +105,7 @@ export function mountStages(rail: HTMLOListElement, gate: HTMLElement, host: Sta
     try {
       if (writing) {
         running = true;
+        if (stage === 'extract') await host.prepareMaterials(dir);
         host.say(`running ${stage}…`);
         const r = await runner.run(writing);
         host.say(r.stopReason === 'end_turn' ? `${stage} finished` : `${stage} stopped: ${r.stopReason}`, r.stopReason !== 'end_turn');

@@ -1,11 +1,18 @@
-// Read-only file methods -- docs/research/course-protocol.md. The app builds
-// a stage's prompt from these without the webview touching the filesystem,
-// and nothing here interprets what it reads.
-import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
-import { basename, extname, join, relative, resolve, sep } from 'node:path';
+// File methods over the course folder -- docs/research/course-protocol.md.
+// The app builds a stage's prompt from these without the webview touching
+// the filesystem, and nothing here interprets what it reads. The one write,
+// course/write, exists so the page can put what it extracted from a PDF
+// beside the PDF; it is confined to the folder the same way course/read is.
+import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
+import { basename, dirname, extname, join, relative, resolve, sep } from 'node:path';
 import { InvalidParams, type MethodHandler } from './methods.js';
 
 const ARTIFACTS = ['inventory.md', 'plan.md', 'deck.json', 'flags.json', 'review.html'] as const;
+// Where the page puts what it extracted from a source file: text.md and one
+// image per page under `_extracted/<relPath of the source>/`. Not material,
+// so not listed as files; reported as `extracted` instead.
+const EXTRACTED = '_extracted';
+const PAGE_IMAGE = /^p\d+\.(png|jpe?g|webp)$/i;
 
 const KINDS: Record<string, { kind: string; mime: string }> = {
   pdf: { kind: 'pdf', mime: 'application/pdf' },
@@ -97,6 +104,7 @@ function bareName(name: string, field: string): string {
 function listFiles(root: string, dir: string, out: { name: string; relPath: string; bytes: number; kind: string; mimeType: string }[]): void {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     if (entry.name.startsWith('.') || entry.name === 'node_modules') continue;
+    if (dir === root && entry.name === EXTRACTED) continue;
     const full = join(dir, entry.name);
     if (entry.isDirectory()) {
       listFiles(root, full, out);
@@ -108,6 +116,29 @@ function listFiles(root: string, dir: string, out: { name: string; relPath: stri
     if (entry.name.toLowerCase().endsWith('.apkg')) continue;
     out.push({ name: entry.name, relPath: rel, bytes: statSync(full).size, ...classify(entry.name) });
   }
+}
+
+/** For each listed file, what `_extracted/<relPath>/` holds: the text, the page images. Source order. */
+function extractedFor(root: string, files: { relPath: string }[]): { source: string; text: string | null; images: string[] }[] {
+  const out: { source: string; text: string | null; images: string[] }[] = [];
+  for (const f of files) {
+    const dir = join(root, EXTRACTED, ...f.relPath.split('/'));
+    if (!isDirectory(dir)) continue;
+    const names = readdirSync(dir).sort();
+    const at = (n: string) => `${EXTRACTED}/${f.relPath}/${n}`;
+    const text = names.includes('text.md') && statSync(join(dir, 'text.md')).isFile() ? at('text.md') : null;
+    const images = names.filter((n) => PAGE_IMAGE.test(n)).map(at);
+    if (text !== null || images.length > 0) out.push({ source: f.relPath, text, images });
+  }
+  return out;
+}
+
+/** `name` resolved beneath `path`, or -32602 when it is the folder itself or climbs out of it. */
+function within(path: string, name: string): string {
+  const root = resolve(path);
+  const full = resolve(root, name);
+  if (full === root || !full.startsWith(root + sep)) throw new InvalidParams(`params.name: "${name}" escapes the course folder`);
+  return full;
 }
 
 export function courseMethods(): Record<string, MethodHandler> {
@@ -149,7 +180,24 @@ export function courseMethods(): Record<string, MethodHandler> {
         path,
         files,
         artifacts: { inventory: has('inventory.md'), plan: has('plan.md'), deck: has('deck.json'), flags: has('flags.json'), review: has('review.html') },
+        extracted: extractedFor(path, files),
       };
+    },
+
+    'course/write': (raw) => {
+      const p = asParams(raw);
+      const path = str(p, 'path');
+      const name = str(p, 'name');
+      if (!isDirectory(path)) throw new Error(`${path} is not a directory`);
+      const full = within(path, name);
+      const hasText = typeof p.text === 'string';
+      const hasBase64 = typeof p.base64 === 'string';
+      if (hasText === hasBase64) throw new InvalidParams('params: exactly one of `text` (UTF-8) or `base64` (bytes) must be given');
+      const data = hasText ? Buffer.from(p.text as string, 'utf8') : Buffer.from(p.base64 as string, 'base64');
+      if (existsSync(full) && !statSync(full).isFile()) throw new InvalidParams(`params.name: "${name}" is not a regular file`);
+      mkdirSync(dirname(full), { recursive: true });
+      writeFileSync(full, data);
+      return { name, bytes: data.length };
     },
 
     'course/read': (raw) => {
@@ -157,9 +205,7 @@ export function courseMethods(): Record<string, MethodHandler> {
       const path = str(p, 'path');
       const name = str(p, 'name');
       if (!isDirectory(path)) throw new Error(`${path} is not a directory`);
-      const root = resolve(path);
-      const full = resolve(root, name);
-      if (full !== root && !full.startsWith(root + sep)) throw new InvalidParams(`params.name: "${name}" escapes the course folder`);
+      const full = within(path, name);
       let st;
       try {
         st = statSync(full);

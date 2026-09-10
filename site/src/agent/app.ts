@@ -15,6 +15,7 @@ import { addMediaBytes, exportApkg, loadDeckText, postToPreview, setPreviewExtra
 import { makeBus } from './bus.js';
 import { mountChat, type Chat } from './chat.js';
 import { mountFallbackPermissions } from './permission-any.js';
+import { extractMaterials } from './extract.js';
 import { mountPicker } from './picker.js';
 import { mountStages, type Stages } from './stages.js';
 
@@ -202,6 +203,9 @@ export async function mountAgentApp(locator: BridgeLocator): Promise<void> {
     exportDeck: async () => {
       if (!deckLoaded && courseDir) await openDeck(courseDir);
       await exportApkg();
+    },
+    prepareMaterials: async (dir) => {
+      await extractMaterials(sidecar, bridge, dir, say);
     },
     currentFlags: () => flags,
   });

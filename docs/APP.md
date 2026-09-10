@@ -257,15 +257,37 @@ six tests; both prompt panes consult it first, and an auto-answer is printed
 in the chat so it is never silent). The tooling probe stays a prompt until
 the page extracts PDF text and slide images itself — the next item below.
 
-**Not done, deliberately or not yet.** The page does not extract PDFs: the
-agent finds `pdftotext` or `pypdf` on the machine or asks to, and a laptop
-with neither has no extract stage. The fix is in the tab (pdf.js text with
-page markers plus one PNG per slide, written beside the material through a
-`course/write` the bridge does not yet have) so the prompt lists text and
-images and the agent never probes. The picker lists the registry in its own
-order, so a marketplace entry sits above Claude Agent; and the chat bar shows
-Mode twice, once as the ACP session mode and once as the adapter's config
-option of the same name. The package is not on npm, so `npx
+**PDFs are read in the tab.** Before the extract stage runs, the page
+takes every PDF in the course folder that has no finished extraction and
+makes one with pdf.js (`site/src/engine/pdf-extract.ts`, a lazy 430 KB
+chunk plus its worker, fetched only then): the text of every page under
+`## Page N` headings, and one JPEG per page at up to 1400 px, written beside
+the material as `_extracted/<file>/text.md` and `pNNN.jpg` through a new
+`course/write` (`src/sidecar/course.ts`, confined to the folder like
+`course/read`). `course/list` reports the tree as `extracted`, never as
+material, and the stage prompt describes it and links the text
+(`src/pipeline`, `describeExtracted`): read these, do not look for
+`pdftotext` or `pypdf`. Images go first and the text last, so `text.md` is
+the mark of a finished extraction and a re-run skips it. Run live on the
+41-page biochemistry lecture from a fresh Chrome: five seconds end to end,
+41 JPEGs of 17–243 KB (6.6 MB; the first cut wrote 1.1 MB PNGs, 45 MB a
+lecture), 17 KB of text, then the stage prompt went out with the extracted
+paragraph and SETUP.md attached. Two honest limits: pdf.js puts stray
+spaces inside words where a font's widths are odd ("c opied", on the same
+slides where the rendered font is visibly loose), so the prompt tells the
+agent the page image is the authority for exact wording; and a Web Worker
+the browser kills gives no error, only promises that never settle — seen
+once, on a tab that had already run one extraction and then sat at "page
+11 of 41" for good — so every pdf.js call now has a deadline that turns
+that into a message to reload the tab.
+
+**Not done, deliberately or not yet.** The picker lists the registry in its
+own order, so a marketplace entry sits above Claude Agent; and the chat bar
+shows Mode twice, once as the ACP session mode and once as the adapter's
+config option of the same name. Extraction runs only ahead of the extract
+stage, so it needs an agent connected; the zero-install tool page cannot
+yet extract a PDF on its own. Slides (`pptx`) and documents (`docx`) are
+still the agent's to convert, with SETUP.md's commands. The package is not on npm, so `npx
 ape-bridge` needs a publish (`prepublishOnly` builds; `files` ships `dist`);
 `ape` is taken as a name. Only `npx`-distributed registry agents install —
 `binary` ones (Cursor, Devin, Amp) list but do not. A page reload does not
