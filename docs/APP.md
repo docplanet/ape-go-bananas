@@ -187,8 +187,9 @@ default to `../../dist/sidecar/index.js` relative to `src-tauri/`).
 ## Stage 3: the browser page drives a local agent through a bridge
 
 A tab cannot spawn Claude Code — that is the browser sandbox, not a gap. So
-the subscriber runs one command, `npx ape-bridge [course-folder]`, and the
-page does the rest. The bridge is `src/sidecar` — the same method table the
+the subscriber runs one command — `npx -p github:docplanet/ape-go-bananas
+ape-bridge [course-folder]`, which builds itself on the first run because
+npm runs `prepare` on a git install — and the page does the rest. The bridge is `src/sidecar` — the same method table the
 Rust shell drove over stdio — listening on `127.0.0.1` (`src/sidecar/serve.ts`):
 one Server-Sent Events stream carries everything outbound in the order the
 sidecar said it, and requests arrive as newline-delimited JSON-RPC in POST
@@ -288,15 +289,26 @@ once, on a tab that had already run one extraction and then sat at "page
 11 of 41" for good — so every pdf.js call now has a deadline that turns
 that into a message to reload the tab.
 
+**The page leads with the first step.** The first version of the tool
+page opened with the deck checker — the one thing a page can do alone —
+and a student with lecture PDFs met a file picker with every file greyed
+out and no word about a bridge. The page is now the two steps in order
+(start the bridge, with the command and a copy button; open the link it
+prints), the checker is a collapsed section at the bottom, and a lecture
+file dropped on it is answered with where it goes. Attached to a bridge,
+the steps disappear and the checker is the deck view.
+
 **Not done, deliberately or not yet.** The picker lists the registry in its
 own order, so a marketplace entry sits above Claude Agent; and the chat bar
 shows Mode twice, once as the ACP session mode and once as the adapter's
 config option of the same name. Extraction runs only ahead of the extract
 stage, so it needs an agent connected; the zero-install tool page cannot
 yet extract a PDF on its own. Slides (`pptx`) and documents (`docx`) are
-still the agent's to convert, with SETUP.md's commands. The package is not on npm, so `npx
-ape-bridge` needs a publish (`prepublishOnly` builds; `files` ships `dist`);
-`ape` is taken as a name. Only `npx`-distributed registry agents install —
+still the agent's to convert, with SETUP.md's commands. The package is not
+on npm — `ape` is taken as a name — so the command is the `github:` form,
+which works (verified on Node 20.18.1: install, `prepare` build and
+`--help` in 5.5 s) but costs a first-run build a published package would
+not. Only `npx`-distributed registry agents install —
 `binary` ones (Cursor, Devin, Amp) list but do not. A page reload does not
 resume its agent connection; reconnecting spawns a fresh adapter while the
 old one lives until the bridge exits (`session/load` is the open item in

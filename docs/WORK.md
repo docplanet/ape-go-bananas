@@ -83,7 +83,8 @@ once (see `git notes show b383e7a`).
 | sidecar core extracted (`dispatch.ts`), HTTP/SSE transport (`serve.ts`, 14 tests), `ape-bridge`, `src/pipeline` over an injected client, lazy `node:sqlite` so the bridge starts on Node 20 | `a85b01f` |
 | the page as the full app over the bridge: picker, sign-in, chat, eight stages, flags, audit → adjudicate → apply; run end to end live | `6d7628a` |
 | live from the published site in Chrome 152; Brave's localhost block named in the error; `SETUP.md` fetched and attached to extract; permission policy answers reads and in-folder edits (`permission-policy.ts`, 6 tests) | `80f8e2c` `6f95273` |
-| PDFs read in the tab: pdf.js text + one JPEG per page under `_extracted/`, `course/write` and `course/list.extracted` (11 course tests), `describeExtracted` in the prompt (5 pipeline tests), deadlines on a dead worker; run live on a 41-page lecture | _this commit_ |
+| PDFs read in the tab: pdf.js text + one JPEG per page under `_extracted/`, `course/write` and `course/list.extracted` (11 course tests), `describeExtracted` in the prompt (5 pipeline tests), deadlines on a dead worker; run live on a 41-page lecture | `819b765` |
+| `[hidden]` means hidden (the plain tool page was blank in two browsers); the page leads with the two steps and `npx -p github:… ape-bridge` works from the repo (`prepare`), verified on Node 20 | `a39d67f` `258bcf3` |
 | tiering rule written into the method (no count; signal, then time) — method repo `548036d`; Muscle deck re-tiered 122 core / 53 plus | _method repo_ |
 
 `npm test` counted wrong until `b4a78de`. Bare `node --test` matched any

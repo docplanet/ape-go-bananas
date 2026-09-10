@@ -7,9 +7,29 @@ about what works here is backed by a command in [Status](#status) that was
 actually run. Nobody has defined what the letters stand for — none
 of this repo's code, comments, or docs do either.
 
+## Use it
+
+Lecture files in, an Anki deck out, with an agent you already pay for. Two
+steps, in this order:
+
+```sh
+npx -p github:docplanet/ape-go-bananas ape-bridge "/path/to/lecture folder"
+```
+
+then open the link it prints. That link is the page at
+<https://docplanet.github.io/ape-go-bananas/tool/> attached to the bridge on
+your machine: the folder is filled in, you choose an agent (a Claude, Gemini
+or Codex subscription, or any model with an OpenRouter key) and run the
+steps in order — extract, organize, cards, audit, export. Nothing is
+uploaded; the bridge listens on this computer only. Needs Node ≥ 20; the
+first run builds the bridge (npm runs `prepare` on a git install), after
+that it starts in a second. The same page on its own, with nothing
+installed, checks a finished `deck.json` and exports the `.apkg`.
+
 ## Requirements
 
-- Node 24.12.0, pinned in `.nvmrc`. A system-default `node` on an older major
+- Node 24.12.0, pinned in `.nvmrc`, to develop and test. The bridge and the
+  browser page need only Node 20 (`engines`), and say so. A system-default `node` on an older major
   will run the wrong runtime silently; use the pinned version explicitly if
   your shell isn't already picking up `.nvmrc`.
 - Zero runtime dependencies. `typescript` and `@types/node` are the only
