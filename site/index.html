@@ -14,6 +14,8 @@
   h1 { font-size: 40px; letter-spacing: .04em; margin: 0 0 8px; }
   .tag { color: var(--muted); font-size: 18px; margin: 0 0 32px; }
   .cta { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 24px; margin-bottom: 24px; }
+  .cta.alt { padding: 16px 20px; }
+  .cta.alt a { color: var(--accent); }
   .btn { display: inline-block; background: var(--accent); color: #fff; text-decoration: none; padding: 14px 22px; border-radius: 10px; font-weight: 600; font-size: 17px; }
   .btn:hover { filter: brightness(1.08); }
   .small { color: var(--muted); font-size: 14px; margin-top: 10px; }
@@ -39,6 +41,15 @@
       <div>All downloads:</div>
       <ul id="all"><li><a href="https://github.com/docplanet/ape-go-bananas/releases/latest">release page on GitHub</a></li></ul>
     </div>
+  </section>
+
+  <section class="cta alt">
+    <strong>Already have a deck.json?</strong>
+    <p class="small" style="margin-top:6px">
+      The <a href="tool/">browser tool</a> runs the same engine in this tab — check a deck, read every
+      card, and export a real <code>.apkg</code>. Nothing to install, nothing uploaded. Useful if you
+      run the method with your own agent and only want the checks and the export.
+    </p>
   </section>
 
   <h2>What it does</h2>

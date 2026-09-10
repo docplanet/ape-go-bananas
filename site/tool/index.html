@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>A.P.E. — deck tool</title>
+<meta name="description" content="Check a deck.json, read every card, and export a real .apkg. Runs entirely in your browser — nothing is uploaded and nothing is installed.">
+</head>
+<body>
+<main>
+  <header class="top">
+    <h1>A.P.E. <span class="sep">·</span> <span class="what">deck tool</span></h1>
+    <p class="tag">Check a <code>deck.json</code>, read every card, export a real <code>.apkg</code>.
+       It runs in this tab — your deck is never uploaded.</p>
+  </header>
+
+  <section id="drop" class="drop">
+    <input type="file" id="file" accept=".json,application/json" hidden>
+    <input type="file" id="mediafile" accept="image/*,audio/*" multiple hidden>
+    <p class="dropline"><strong>Drop a deck.json here</strong>, or <button type="button" class="link" id="pick">choose a file</button>.</p>
+    <p class="small">Images the cards reference can be dropped in too — they go into the package and show up in the preview.</p>
+  </section>
+
+  <section id="results" hidden>
+    <div class="bar">
+      <div id="summary" class="summary"></div>
+      <div class="actions">
+        <button type="button" id="addmedia" class="ghost">Add images</button>
+        <button type="button" id="export">Export .apkg</button>
+      </div>
+    </div>
+    <p id="exportnote" class="small note" hidden></p>
+    <div class="panes">
+      <div class="pane pane-review">
+        <h2>Cards</h2>
+        <iframe id="review" title="Card review" sandbox="allow-scripts"></iframe>
+      </div>
+      <div class="pane pane-report">
+        <h2>Checks</h2>
+        <pre id="report"></pre>
+      </div>
+    </div>
+  </section>
+
+  <p id="error" class="error" hidden></p>
+
+  <footer>
+    <a href="../">Download the desktop app</a> ·
+    <a href="https://github.com/docplanet/ape-go-bananas">source and issues on GitHub</a>
+  </footer>
+</main>
+<script type="module" src="../src/tool.ts"></script>
+</body>
+</html>
