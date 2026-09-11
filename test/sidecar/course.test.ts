@@ -199,6 +199,21 @@ test('course/read returns exact UTF-8 text and byte count for notes.md and neste
   assert.equal(await s.end(), 0);
 });
 
+test('course/read with encoding "base64" returns the exact bytes of any kind, and refuses another encoding (§2)', { timeout: TIMEOUT }, async () => {
+  const { dir } = makeCourseTree();
+  const s = spawnSidecar();
+  await s.ready;
+  for (const [id, name] of [[1, 'slide.png'], [2, 'lecture.pdf'], [3, 'notes.md']] as const) {
+    const content = COURSE_FILES.find(([rel]) => rel === name)![1];
+    const buf = typeof content === 'string' ? Buffer.from(content, 'utf8') : content;
+    assert.deepStrictEqual(await s.request(id, 'course/read', { path: dir, name, encoding: 'base64' }), { jsonrpc: '2.0', id, result: { name, base64: buf.toString('base64'), bytes: buf.length } });
+  }
+  // The confinement is the same in both encodings; the text-kind check is not.
+  expectParamError(await s.request(4, 'course/read', { path: dir, name: '../outside.md', encoding: 'base64' }), 'name', 'escapes path');
+  expectParamError(await s.request(5, 'course/read', { path: dir, name: 'notes.md', encoding: 'latin1' }), 'encoding', 'unknown encoding');
+  assert.equal(await s.end(), 0);
+});
+
 test('course/read refuses an escaping name, a non-text kind, a non-file, and bad params with -32602 (§2, §3)', { timeout: TIMEOUT }, async () => {
   const { root, dir } = makeCourseTree();
   const s = spawnSidecar();

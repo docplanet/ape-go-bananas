@@ -49,12 +49,18 @@ relPaths of `pNNN.png|jpg|jpeg|webp` sorted by name. In `files` order; a
 directory for nothing listed, or with neither text nor images, is omitted.
 
 ### `course/read`
-params `{ path, name }` → `{ name, text, bytes }` — reads a UTF-8 text file
-whose `name` is relative to `path`, refused (`-32602`) if it escapes `path`
-or is not a regular file; only for files whose `kind` would be `text` (else
-`-32602` `"…is not a text file"`). Binary attachments never pass through
-this: the app hands them to the agent as `resource_link` blocks, and the
-agent (or the embedded loop) reads them itself.
+params `{ path, name, encoding? }` → `{ name, text, bytes }` — reads a UTF-8
+text file whose `name` is relative to `path`, refused (`-32602`) if it
+escapes `path` or is not a regular file; only for files whose `kind` would
+be `text` (else `-32602` `"…is not a text file"`). Binary attachments do not
+pass through this on their way to the agent: the app hands them over as
+`resource_link` blocks, and the agent (or the embedded loop) reads them
+itself.
+
+With `encoding: "base64"` → `{ name, base64, bytes }`: the file's bytes, any
+kind, same confinement. This is how the desktop app's webview gets a PDF to
+its own reader (it reaches the filesystem only through the sidecar); the
+bridge serves the same bytes over `/file`. Any other `encoding` → `-32602`.
 
 ### `course/write`
 params `{ path, name, text }` or `{ path, name, base64 }` → `{ name, bytes }`

@@ -204,6 +204,12 @@ export function courseMethods(): Record<string, MethodHandler> {
       const p = asParams(raw);
       const path = str(p, 'path');
       const name = str(p, 'name');
+      // `encoding: 'base64'` is how a shell with no filesystem of its own gets
+      // the bytes of a PDF to the PDF reader in its webview: the desktop app
+      // reaches files only through this process. The bridge has /file for the
+      // same purpose. Text stays the default and keeps its kind check.
+      const encoding = p.encoding === undefined ? 'utf8' : p.encoding;
+      if (encoding !== 'utf8' && encoding !== 'base64') throw new InvalidParams(`params.encoding must be "utf8" or "base64"`);
       if (!isDirectory(path)) throw new Error(`${path} is not a directory`);
       const full = within(path, name);
       let st;
@@ -213,6 +219,7 @@ export function courseMethods(): Record<string, MethodHandler> {
         throw new InvalidParams(`params.name: no file "${name}"`);
       }
       if (!st.isFile()) throw new InvalidParams(`params.name: "${name}" is not a regular file`);
+      if (encoding === 'base64') return { name, base64: readFileSync(full).toString('base64'), bytes: st.size };
       if (classify(basename(full)).kind !== 'text') throw new InvalidParams(`params.name: "${name}" is not a text file`);
       const text = readFileSync(full, 'utf8');
       return { name, text, bytes: st.size };
