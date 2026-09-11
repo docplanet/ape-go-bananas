@@ -9,6 +9,13 @@ caused near-duplicate work.
 Messages are asynchronous. The repo is not. So claims live here, not in
 messages.
 
+> **2026-09-10 — read [HANDOFF.md](HANDOFF.md) first.** The browser direction
+> (running the agent in the tab on WebContainer) was tried, proved, and then
+> abandoned: it pins a discontinued Claude Code build and keeps no state
+> across a reload. The desktop app in `app/` is the direction again. The
+> handoff says what to keep, what to demote, and the one fork to fix first
+> (`app/src/pipeline.ts`).
+
 ## Protocol
 
 1. **Before starting anything: `git pull`/check HEAD, then read this file.**

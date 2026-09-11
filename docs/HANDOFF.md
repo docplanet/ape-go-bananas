@@ -1,156 +1,262 @@
-# Handoff: building the app on top of this engine
+# Handoff: back to the desktop app
 
-Read this first, then `docs/STATUS.md`, then `docs/APP.md` — the build
-log for the app, which now exists under `app/`. Everything below is either a fact
-established by running something, or a constraint with a reason attached.
+Written 2026-09-10, at the end of a long session. It records what was built,
+what was learned, why the browser direction was abandoned, and what the next
+session should do. Nothing here is deleted work — read "What to keep" before
+touching anything.
 
-## Where you are
+---
 
-- **This repo (`~/Dev/APE`)** is the engine: deck checks, an `.apkg` writer,
-  an ACP client, and a CLI over them. It is finished and verified. You are
-  building *on* it.
-- **The method repo (`~/Dev/Anki`)** is a separate checkout. It holds the
-  card-writing method as prose (`method/1-extract.md`, `2-organize.md`,
-  `3-cards.md`, which are symlinks into `.claude/skills/`), the Python tools
-  this repo ported, and **`APP.md` — the design document for what you are
-  building.** Read `APP.md` before anything else. It is design-only and
-  settled in discussion; it is not a wishlist.
+## 1. Where this started
 
-Do not `cd` between them and rely on it sticking. Use absolute paths.
+A.P.E. shipped as a Tauri desktop app. The prompting question was: Squoosh,
+CyberChef and Whisper Web do real local computation on a hosted page with
+nothing installed — could A.P.E. do the same, and skip the download, the
+Gatekeeper warning, the four-platform release matrix and the signing key?
 
-## Non-negotiables inherited from the method repo
+The plan (`~/.claude/plans/hey-claude-had-a-sorted-spring.md`) split it into
+three tiers on one page:
 
-1. **No code decides what a card says.** The method files stay prose and are
-   the single source of truth. The app bundles them unmodified and reads
-   them; improving the method must never mean rebuilding the app, and the
-   app must never edit the method.
-2. **The writer ratifies nothing.** A flagged card goes to a *fresh*
-   adjudicator context that returns fix-or-approve; the writing context
-   applies the verdict verbatim. In the harness this is discipline. In the
-   app it has to be wiring.
-3. **The seven reference cards are the fixture set.** `test/fixtures/
-   reference-cards.json`. Any check the app grows must pass all seven before
-   it is allowed to fail anything else.
+| Tier | Install | Status now |
+| --- | --- | --- |
+| Engine — checks, review, `.apkg` | nothing | **works, keep** |
+| Full pipeline over a real folder | a local bridge | works, keep as fallback |
+| ACP agents (Claude / Gemini / Codex) | same bridge | works, keep as fallback |
 
-## What already works, and its API
+A fourth tier was then attempted — running the ACP agent *inside the browser
+tab* via WebContainer. That is the part being abandoned.
 
-Build the UI against these. Do not reimplement or refactor them — all three
-are verified against the real external system, not just against tests.
+---
 
-```ts
-// checks — a faithful port of the Python, proven by differential test
-checkDeck(notes, opts) -> findings + summary   // src/checks
-renderReview(notes) -> HTML
+## 2. What was actually built (all committed, all on `main`)
 
-// apkg — verified importing into a real Anki 26.5 collection
-writeApkg(notes, { deckName, outPath, mediaDir, clock }) // src/apkg
+**Stage 1 — the engine stopped knowing which platform it is on** (`b4a78de`).
+SQLite, deflate, media reads and the media-existence check became injected
+dependencies; `buildApkg` and `parseDeckNotes` were split out; `sha1` and
+`crc32` were written in pure TypeScript and pinned against `node:crypto` /
+`node:zlib`. The CLI and sidecar were unaffected. **This is the most valuable
+work of the whole detour and is platform-independent.**
 
-// acp — verified against claude-agent-acp 0.75.1 and Gemini CLI 0.40.1
-connect({ command, args, env, cwd, onPermissionRequest }) // src/acp
-  -> client.newSession({ cwd }) -> session.prompt(input)  // async iterator
-     session.setMode(id) / client.setConfigOption(k, v)
-```
+**Stage 2 — the zero-install tool page** (`e5e36df`). `site/` gained a Vite
+build: sql.js + fflate adapters, the engine in a Web Worker, checks, the card
+review and real `.apkg` export with nothing installed, plus a parity test
+proving the browser writer is byte-identical to the Node one.
 
-CLI: `ape check|review|export`. See the README.
+**Stage 3 — the bridge** (`a85b01f`, `6d7628a`). The sidecar gained a second
+transport (SSE + POST over loopback, `src/sidecar/serve.ts`), an `ape-bridge`
+binary, and `src/pipeline/` was lifted out of `app/src/pipeline.ts` so a
+second shell could use it. The page became the full app over that bridge and
+ran a real lecture end to end.
 
-## The one thing that will bite you
+**Stage 4 — the engine in the tab** (`2dad160`, `1691073`, …). WebContainer
+(Node compiled to WebAssembly) ran the *actual* sidecar in the browser: 62
+files of `dist/` mounted into a virtual filesystem, a wrapper process doing
+base64 line-framing because WebContainer hands a spawned process a
+pseudo-terminal that mangles JSON-RPC, and a service worker faking the
+COOP/COEP headers GitHub Pages will not send. It worked: cold page to a ready
+engine in 2.9 s, 41 agents listed, a 4.4 MB lecture uploaded, Claude Code
+installed in-tab, and `claude setup-token` printing a real OAuth URL.
 
-**An agent will not ask permission unless you pin the mode.** `session/new`
-returns `modes.currentModeId` inherited from the host's own agent config. In
-`auto` the agent decides for itself: it will write files without ever calling
-your permission handler. Observed, not theorised — an early smoke test had a
-file created unprompted with zero requests.
+Along the way, two genuinely good fixes that have nothing to do with browsers:
 
-`setMode('default')` pins Manual and a real `session/request_permission` then
-routes to your callback. Verified both ways: denial left the directory empty,
-approval created the file.
+- **PDFs are read without external tooling** (`819b765`). The first live run
+  watched the agent ask to run `python3` to look for `pdftotext`. Now pdf.js
+  extracts the text of every page (under `## Page N` headings) plus one JPEG
+  per page, written beside the material under `_extracted/`, and the stage
+  prompt says so. A 41-page lecture takes ~5 s.
+- **The page stops asking permission for the agent to read** (`80f8e2c`).
+  Reads, searches, thinking and fetches are allowed automatically; edits are
+  allowed when every path is inside the course folder; commands, deletes and
+  moves still ask. `bypassPermissions` is still refused.
 
-So **APP.md's flag-and-approve model is viable only if the app pins the mode
-explicitly.** Never assume a default, and never infer the mode from host
-config — `acceptEdits` set through config comes back as `default`, while the
-same value set through `setMode` is adopted. Config is advisory; `setMode` and
-`setConfigOption` are authoritative. Read `currentModeId`; do not deduce it.
+---
 
-## Never commit a raw ACP wire capture
+## 3. Why the browser direction is being abandoned
 
-Capturing both directions of the stdio stream is the right way to verify
-anything about a real agent — it is how every live finding in
-`docs/STATUS.md` was established. But the Claude adapter emits the signed-in
-user's account block in its own responses:
+Not because it failed — it demonstrably worked — but because the foundation
+is unsound:
 
-    "account":{"plan":"max","email":"...","organization":"..."}
+1. **It rests on a discontinued artifact.** From v2.1.113 (17 April 2026) the
+   Claude Code npm package ships a per-platform *native binary*, which cannot
+   execute on a WebAssembly Node. The in-tab tier therefore pins **2.1.112**,
+   the last JavaScript build, frozen forever. Anthropic's own guidance is "if
+   you need the JS build, pin to an earlier version", so the pin is
+   sanctioned — but it has an invisible termination date. When the auth flow
+   or a minimum-version check changes, the front door breaks for everyone at
+   once.
+2. **There is no persistence.** Every page load is a fresh sandbox — the
+   workdir hash changed on every run. A reload loses the uploaded lecture,
+   the 18 MB Claude install, the sign-in and every artifact. The pipeline is
+   eight stages over many minutes. This alone is close to disqualifying.
+3. **It is workarounds stacked on workarounds**, each existing to paper over
+   the one below it. And WebContainer is free for open source but needs a
+   commercial licence for for-profit production — a dependency with unknown
+   cost if this becomes a product.
 
-So a raw capture carries the operator's email and plan. Keep captures in a
-scratch directory, never in the tree, and quote only the specific frames you
-need into docs — redacted. This repo is a sibling of a deliberately
-anonymized one; a capture committed once lives in history forever.
+The owner's call, which is correct: **build the desktop app properly
+instead.** A desktop process can spawn the user's real, current, native
+Claude Code. Every problem above disappears — no pin, no ageing, no sandbox,
+no licence, no header shims.
 
-## Environment
+---
 
-- **Node 24 only** (`.nvmrc`). On Node 20 the test runner does not discover
-  `.ts` files, so the suite reports `0 tests` and exits `0` — a false green. A
-  `pretest` guard now refuses below 24. If it fires, fix your PATH, never the
-  guard.
-- **Zero runtime dependencies.** `node:sqlite`, `node:zlib`, `node:child_process`.
-  Keep it that way in the engine. A UI layer will need a framework; that is a
-  deliberate decision to make and record, not a default to drift into.
-- Tests: `npm test`. Typecheck: `npm run typecheck`. Both must be clean.
+## 4. What to keep (read this before deleting anything)
 
-## What is left in the engine
+**Keep entirely — platform-independent, 344 passing tests:**
 
-Small, and none of it blocks UI work:
+- `src/` — the whole engine. Checks, `.apkg` writer, ACP client, agent
+  registry, the sidecar and its method table.
+- `src/pipeline/` — **the canonical pipeline.** Stage definitions, the
+  auditor/adjudicator briefs, `stageBlocks`, `describeExtracted`. See §5.
+- `src/sidecar/` — including the methods added this week: `course/write`
+  (confined to the folder like `course/read`, 11 tests) and
+  `course/list`'s `extracted` field.
+- `src/bridge/` — `ape-bridge`. Still works; keep as a developer tool and a
+  fallback even if it is not the front door.
 
-- `session/load` / `session/resume` — the only real code gap. Both agents
-  advertise `loadSession: true` and the client implements neither, so a host
-  cannot reopen a session it created. APP.md's resumable runs need this.
-- Gemini writes a bare non-JSON line to stdout, violating §2. Needs a
-  behavioural decision — tolerate, or keep erroring.
-- `.apkg` non-ASCII filename path is untested (the one media fixture is ASCII).
-- Whether an AnkiConnect live tier belongs here at all — APP.md wants it as a
-  detected upgrade over `.apkg`; nothing is built.
+**Keep and port into the desktop app — these are the week's real wins:**
 
-## How this repo was built, and why you should keep it that way
+- `site/src/engine/pdf-extract.ts` — pdf.js text + page images. The Tauri
+  app has a webview, so this works there unchanged and removes the
+  `pdftotext` / `pypdf` dependency entirely. **High value, port first.**
+- `site/src/agent/permission-policy.ts` — pure, 6 tests, no DOM. Drops
+  straight in.
+- `site/src/agent/*` — `picker.ts`, `chat.ts`, `stages.ts`, `signin.ts`,
+  `bus.ts`, `permission-any.ts`, `app.ts`. **This is a more developed UI
+  than `app/src/` has** (1,294 lines vs 1,190, and it covers the eight
+  stages, the review gates, flags, the audit → adjudicate → apply route and
+  the agent picker). It should become the desktop app's UI.
+- `site/src/engine/host.ts` — the `EngineHost` interface. This is the seam
+  that makes the above portable: one interface, currently two
+  implementations (`bridge-transport.ts` over HTTP, `container/host.ts` over
+  WebContainer). Adding a third over Tauri's `invoke` is the main task.
 
-Tests are written **before** the implementation, by a different context than
-the one that implements them, and implementers may not edit them. That is not
-ceremony. Every serious bug here survived a green suite:
+**Keep deployed as-is:**
 
-- The `.apkg` writer shipped rejected by Anki while 167 tests passed. Every
-  test read the output back with `node:sqlite` and `unzip` — independent of
-  the writer, but not of this repo's *reading of the format*. One consistent
-  misreading satisfied all of them.
-- `npm test` reported success while running zero tests.
-- A presence check inverted all eight capability fields; no real agent
-  triggered it, which is why it would have rotted.
-- Deleting a spec-mandated guard left its `assert.rejects(/terminal/i)`
-  **passing**, because the regex matched the mock's own error. Only the
-  assertion counting frames on the wire caught it.
+- The zero-install tool page (`site/tool/`) minus the container tier. Drop a
+  `deck.json` in, get checks, the card preview and a real `.apkg` with
+  nothing installed. It is genuinely useful and costs nothing to keep.
 
-The lesson each time: an oracle that shares an author with the code, or
-shares its assumptions, proves nothing. Where you can, verify against the
-real external system — Anki's own deserializer, a real agent — not a mock.
-`docs/STATUS.md` records which parts have an independent oracle and which
-only have a self-authored one. Keep that table honest as you add to it.
+**Demote or delete:**
 
-## If more than one session works here at once
+- `site/src/container/*` (WebContainer host, wrapper, framing, pinned
+  version) and `site/public/coi.js`. Either delete, or keep behind an
+  explicitly labelled experiment that nothing links to. **Do not leave it as
+  the front door** — `site/src/tool.ts` currently makes "Start a deck" boot
+  the container.
+- `site/tool/index.html`'s hero should stop advertising the in-tab tier.
 
-`docs/WORK.md` is the claims ledger. Claim by committing a row, never by
-sending a message — messages are delivered between turns and are stale on
-arrival. Stage explicit paths; `git add -A` in a two-writer repo sweeps the
-other session's uncommitted work into your commit (it happened once — see
-`git notes show b383e7a`).
+---
 
-With a single session, ignore all of that.
+## 5. The bug to fix first
 
-## What to build
+`app/src/pipeline.ts` is a **fork**. When the pipeline was lifted into
+`src/pipeline/` for the browser, the desktop app kept its own 154-line copy,
+and it has none of this week's work:
 
-Per APP.md: a Tauri shell — one window, chat pane, file drop, stage rail,
-preview pane. The pipeline as screens: extract → inventory review → organize
-→ plan review → cards → deck preview → audit → deliver, with each artifact
-written beside the user's course folder so a run resumes and a power user can
-inspect.
+- no `companions` → the desktop app still sends the agent hunting through
+  `skills/` and `.claude/` for `SETUP.md`, which the bridge now fetches and
+  attaches.
+- no `describeExtracted` → it still lets the agent probe for `pdftotext`,
+  and dies on a machine without it.
 
-**The card preview is the feature.** APP.md is explicit that the app's reason
-to exist over "clone the repo and point an agent at it" is that every deck
-this method produced was improved by an owner looking at rendered cards and
-flagging what the pipeline missed. Build that loop first; it is the product.
+Nothing imports `app/src/pipeline.ts` except the app itself. Delete it and
+import `src/pipeline/` instead. This is the single highest-value change in
+the repo right now.
+
+The root cause is structural: **`app/` is in no CI job.** `ci.yml` and
+`pages.yml` do not mention it; only `release.yml` does, and that runs on
+`v*` tags. `npm test` and `npm run typecheck` do not cover it. That is why
+it rotted silently — fix the CI gap at the same time.
+
+---
+
+## 6. State of the desktop app, as of this handoff
+
+| | |
+| --- | --- |
+| Last touched | `5a00f04`, 2026-09-07 — 21 commits before HEAD |
+| Typechecks against the current engine | **yes, clean** (`cd app && npx tsc --noEmit`) |
+| Released | **v0.1.0**, 16 assets: `.dmg` (arm64 + x64), `.exe`, `.deb`, `.AppImage`, all with `.sig`, plus `latest.json` for the updater |
+| Downloads | ~1 each — effectively none |
+| In CI | **no** |
+| Toolchain here | cargo 1.92.0, rustc 1.92.0, tauri-cli 2.11.4 — a local build should work |
+| Rust side | `app/src-tauri/src/{lib,main,sidecar}.rs`, 401 lines; owns the Node child process and speaks the sidecar protocol |
+| Signing | updater only (`TAURI_SIGNING_PRIVATE_KEY`, minisign). **Apple signing is not configured** — macOS users still get "unidentified developer" |
+
+`app/src/sidecar.ts` (203 lines) already has exactly the `EngineHost` shape:
+a single `call()` over `invoke('sidecar_call', {method, params})`, plus
+`onNotification` / `onRequest` over Tauri events and `answer` / `refuse` over
+`invoke('sidecar_answer')`. Writing `TauriHost implements EngineHost` should
+be roughly 60 lines of adapter over what is already there.
+
+Per `docs/APP.md`, the desktop layout is **a placeholder by declaration** —
+which is exactly why importing the browser UI is attractive rather than
+wasteful.
+
+---
+
+## 7. Suggested plan for the next session
+
+1. **Stop the rot.** Add `app/` to `ci.yml`: `npm --prefix app run build`
+   (which is `tsc --noEmit && vite build`). Cheap, and it would have caught
+   the fork.
+2. **Kill the fork.** Delete `app/src/pipeline.ts`; import `src/pipeline/`.
+   Confirm the extract prompt now carries `SETUP.md` and the extracted-PDF
+   paragraph.
+3. **Port PDF extraction.** Move `site/src/engine/pdf-extract.ts` somewhere
+   both shells can use it, and run it before the extract stage in the app the
+   way `site/src/agent/extract.ts` does. Needs a write path — the sidecar
+   already has `course/write`.
+4. **Decide the UI question.** Either (a) make `app/` use `site/src/agent/*`
+   behind a `TauriHost implements EngineHost`, which gets the eight stages,
+   gates, flags and the audit route for roughly the cost of one adapter; or
+   (b) keep `app/src/main.ts` and port pieces across. (a) is recommended and
+   is what the `EngineHost` work was for.
+5. **Demote the container tier** in `site/`, and make the tool page a plain
+   deck checker again with a download link.
+6. **Then the product questions**, in this order: Apple signing ($99/yr,
+   removes the "unidentified developer" wall and was the original reason for
+   the whole browser detour), and whether `ape-bridge` stays.
+
+---
+
+## 8. Facts worth carrying over
+
+- **Node**: this machine defaults to v20.18.1; the engine's tests and build
+  need **v24.12.0** (`~/.nvm/versions/node/v24.12.0/bin`). `npm test` guards
+  this — on Node 20 the test runner silently discovers zero `.ts` tests and
+  exits 0, a false green.
+- **Tests**: 344 engine + 16 site, all passing at `cb0ebec`. `npm test` at
+  the root, `npm --prefix site test` for the site.
+- **Claude Code versions**: 2.1.112 (2026-04-16) is the last JavaScript
+  build; 2.1.113 onward is native. Irrelevant once the desktop app spawns
+  the user's own CLI — which is the point.
+- **Model overrides** (found but never shipped): the CLI reads
+  `ANTHROPIC_DEFAULT_SONNET_MODEL` / `_OPUS_MODEL` with an unconditional
+  early return and **no allowlist**, and the ACP adapter reads
+  `ANTHROPIC_CUSTOM_MODEL_OPTION` (exempt from the allowlist, but only
+  applied if the bundled SDK already knows the model). Useful if a model
+  list ever needs forcing.
+- **`@anthropic-ai/claude-agent-sdk` is not an alternative to the CLI** — it
+  spawns it. Its `/browser` export is a client for a session running on
+  Anthropic's infrastructure, not a local runtime. Its
+  `spawnClaudeCodeProcess` hook ("custom spawn logic for VM execution") may
+  be useful later.
+- **Method files** live in their own repo
+  (`docplanet/anki-process-engine-live`), fetched at run time. `SETUP.md`
+  sits at the repository root, not in `method/` — the bridge fetches both.
+- The live tool page is
+  <https://docplanet.github.io/ape-go-bananas/tool/>; `pages.yml` deploys it
+  on every push to `main`.
+
+---
+
+## 9. One process note
+
+Most of this session's second half was spent fixing surface problems — rail
+affordances, escape-sequence rendering, a stale model dropdown — on a
+foundation that had a termination date. Each fix was correct and none of
+them mattered. The owner had to be the one to step back and say so. Worth
+remembering: when the third consecutive fix is cosmetic, check whether the
+thing underneath is sound before polishing it further.
