@@ -59,6 +59,22 @@ function deadline<T>(what: string, p: Promise<T>, ms: number): Promise<T> {
   return Promise.race([p, late]).finally(() => clearTimeout(timer));
 }
 
+type PdfPage = Awaited<ReturnType<Awaited<ReturnType<typeof import('pdfjs-dist').getDocument>['promise']>['getPage']>>;
+
+// Not page.getTextContent(): pdf.js 6 drains its text stream with `for await`,
+// and the macOS webview (WebKit) has no async iterator on ReadableStream --
+// "undefined is not a function (near '...value of readableStream...')" on
+// the first extract in the app. A reader works everywhere.
+async function textPieces(page: PdfPage): Promise<TextPiece[]> {
+  const reader = page.streamTextContent().getReader();
+  const pieces: TextPiece[] = [];
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) return pieces;
+    for (const it of value.items) if ('str' in it) pieces.push(it as TextPiece);
+  }
+}
+
 /** Renders every page and collects its text. Runs on the main thread (pdf.js parses in its own worker; the canvas is here). */
 export async function extractPdf(name: string, data: Uint8Array, sink: ExtractSink): Promise<{ pages: number }> {
   const pdfjs = await import('pdfjs-dist');
@@ -73,8 +89,7 @@ export async function extractPdf(name: string, data: Uint8Array, sink: ExtractSi
     for (let n = 1; n <= pages; n += 1) {
       const page = await deadline(`page ${n}`, doc.getPage(n), PAGE_DEADLINE_MS);
       try {
-        const content = await deadline(`page ${n} text`, page.getTextContent(), PAGE_DEADLINE_MS);
-        const pieces = content.items.filter((it): it is TextPiece & typeof it => 'str' in it);
+        const pieces = await deadline(`page ${n} text`, textPieces(page), PAGE_DEADLINE_MS);
         parts.push(`\n## Page ${n}\n\n${pageLines(pieces)}\n`);
         const base = page.getViewport({ scale: 1 });
         const viewport = page.getViewport({ scale: Math.min(MAX_SCALE, MAX_WIDTH / base.width) });
