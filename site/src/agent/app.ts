@@ -65,8 +65,13 @@ export async function mountAgentApp(host: EngineHost): Promise<void> {
       <label class="muted" for="deckname-in">Deck name</label>
       <input id="deckname-in" placeholder="Course::Lecture 3" autocomplete="off">
     </div>
+    <div class="railhead">Steps <span class="muted">— click one to run</span></div>
     <ol class="stages" id="stages"></ol>
-    <nav class="views"><button data-view="agent">Agent</button><button data-view="deck">Deck</button></nav>
+    <div class="railhead">View</div>
+    <nav class="views">
+      <button data-view="agent" title="The agent: sign-in, the picker, and the chat">Agent</button>
+      <button data-view="deck" title="The deck: every card, the checks and your flags — after stage 5">Deck</button>
+    </nav>
     <div class="status" id="status">connecting to the bridge…</div>`;
   const status = $('status');
   const say = (text: string, isError = false): void => {
@@ -123,7 +128,7 @@ export async function mountAgentApp(host: EngineHost): Promise<void> {
           say(`adding ${file.name}…`);
           await host.writeCourseFile!(file.name, new Uint8Array(await file.arrayBuffer()));
         }
-        say(`${files.length} file${files.length === 1 ? '' : 's'} added — run extract when you are ready`);
+        say(`${files.length} file${files.length === 1 ? '' : 's'} added — click 1 extract on the left when you are ready`);
       } catch (err) {
         say(err instanceof Error ? err.message : String(err), true);
       }
@@ -277,6 +282,7 @@ export async function mountAgentApp(host: EngineHost): Promise<void> {
     chat = null;
     connection = null;
     stages.setConnection(null);
+    $('signin-open')?.classList.remove('hidden');
     mountPicker($('agent-host'), pickerClient, bus, host.dataDir(), () => courseDir, {
       say,
       onConnected(result) {
@@ -287,7 +293,10 @@ export async function mountAgentApp(host: EngineHost): Promise<void> {
         connection = result;
         chat = mountChat($('agent-host'), sidecar, bus, result, say, () => courseDir);
         stages.setConnection(result);
-        say(`${result.agent?.name ?? result.provider} ready — pick a stage on the left`);
+        // Signed in and connected: the sign-in button is now a confusing
+        // second door, so it goes until the picker comes back.
+        $('signin-open')?.classList.add('hidden');
+        say(`${result.agent?.name ?? result.provider} ready — click 1 extract on the left to start`);
         void stages.refreshMarks();
       },
     });
