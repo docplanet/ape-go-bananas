@@ -61,7 +61,7 @@ export interface AgentApp {
   dispose(): Promise<void>;
 }
 
-const REMEMBER = { deck: 'ape.deck', agent: 'ape.agent', name: (dir: string) => `ape.name:${dir}` };
+const REMEMBER = { deck: 'ape.deck', agent: 'ape.agent', mode: 'ape.mode', name: (dir: string) => `ape.name:${dir}` };
 const remember = {
   get: (key: string): string | null => {
     try {
@@ -332,7 +332,7 @@ export function mountAgentApp(host: EngineHost, opts: AgentAppOptions): AgentApp
         // The adapter names itself by its package; the person chose "Claude Agent".
         const named: ConnectResult = { ...result, agent: { name: picker.nameOf(result.provider) ?? result.agent?.name ?? result.provider, version: result.agent?.version ?? '' } };
         connection = named;
-        chat = mountChat(agentHost, sidecar, bus, named, say, () => courseDir);
+        chat = mountChat(agentHost, sidecar, bus, named, say, () => courseDir, { get: () => remember.get(REMEMBER.mode), set: (id) => remember.set(REMEMBER.mode, id) });
         stages.setConnection(named);
         picker.setState({ connected: result.provider, chosen: result.provider });
         remember.set(REMEMBER.agent, result.provider);

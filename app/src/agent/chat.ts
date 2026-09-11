@@ -28,7 +28,20 @@ export interface Chat {
   applyConfigTo(sessionId: string): Promise<void>;
 }
 
-export function mountChat(host: HTMLElement, sidecar: SidecarClient, bus: Bus, conn: ConnectResult, say: (t: string, e?: boolean) => void, courseDir: () => string | null): Chat {
+/** Where the person's mode choice lives between sessions (the app's local storage). */
+export interface ModePreference {
+  get(): string | null;
+  set(id: string): void;
+}
+
+/** The mode a fresh session is moved to when nothing was chosen: Claude's Auto, where the agent settles routine permissions itself. */
+export const DEFAULT_MODE = 'auto';
+
+function isModeOption(o: ConfigOption): boolean {
+  return o.type === 'select' && (o.category === 'mode' || /^mode$/i.test(o.id) || /^mode$/i.test(o.name));
+}
+
+export function mountChat(host: HTMLElement, sidecar: SidecarClient, bus: Bus, conn: ConnectResult, say: (t: string, e?: boolean) => void, courseDir: () => string | null, preferredMode?: ModePreference): Chat {
   const session = conn.session!;
   let busy = false;
   let cost = 0;
@@ -75,13 +88,38 @@ export function mountChat(host: HTMLElement, sidecar: SidecarClient, bus: Bus, c
     }
     // An agent that offers its mode as a config option (ACP's newer form; Claude
     // does, under the id "mode") also reports the older modes field. One select.
-    const modeIsOption = configOptions.some((o) => o.type === 'select' && (o.category === 'mode' || /^mode$/i.test(o.id) || /^mode$/i.test(o.name)));
-    if (modes && !modeIsOption) {
+    if (modes && !configOptions.some(isModeOption)) {
       parts.push(`<label>Mode <select data-mode="1">${modes.availableModes.map((m) => `<option value="${esc(m.id)}" ${m.id === modes!.currentModeId ? 'selected' : ''} title="${esc(m.description ?? '')}">${esc(m.name)}</option>`).join('')}</select></label>`);
     }
     selectors.innerHTML = parts.join('');
   }
   renderSelectors();
+
+  /** Moves the session to mode `id`, through whichever form the agent offers it. */
+  async function setMode(id: string): Promise<void> {
+    const opt = configOptions.find(isModeOption);
+    if (opt) {
+      const r = await sidecar.setConfigOption(session.sessionId, opt.id, id);
+      configOptions = r.configOptions as ConfigOption[];
+    } else {
+      const r = await sidecar.setMode(session.sessionId, id);
+      modes = r.modes as ModeState;
+    }
+    renderSelectors();
+  }
+
+  // The sidecar pins every new session to the agent's manual mode. The shell
+  // then moves it to the mode the person last chose, or Auto where the agent
+  // has one: the agent settles routine permissions itself there, and what it
+  // still asks reaches the policy in permission-policy.ts as before.
+  void (async () => {
+    const want = preferredMode?.get() ?? DEFAULT_MODE;
+    const opt = configOptions.find(isModeOption);
+    const offered = opt ? opt.options?.some((x) => x.value === want) : modes?.availableModes.some((m) => m.id === want);
+    const current = opt ? opt.currentValue : modes?.currentModeId;
+    if (!offered || current === want) return;
+    await setMode(want).catch(() => undefined); // the agent's own default stands
+  })();
 
   selectors.addEventListener('change', async (e) => {
     const sel = e.target as HTMLSelectElement;
@@ -89,9 +127,12 @@ export function mountChat(host: HTMLElement, sidecar: SidecarClient, bus: Bus, c
       if (sel.dataset.config) {
         const r = await sidecar.setConfigOption(session.sessionId, sel.dataset.config, sel.value);
         configOptions = r.configOptions as ConfigOption[];
+        const changed = configOptions.find((o) => o.id === sel.dataset.config);
+        if (changed && isModeOption(changed)) preferredMode?.set(sel.value);
       } else if (sel.dataset.mode) {
         const r = await sidecar.setMode(session.sessionId, sel.value);
         modes = r.modes as ModeState;
+        preferredMode?.set(sel.value);
       }
       renderSelectors();
     } catch (err) {
