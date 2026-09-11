@@ -5,11 +5,60 @@ what was learned, why the browser direction was abandoned, and what the next
 session should do. Nothing here is deleted work — read "What to keep" before
 touching anything.
 
-> **Status, later the same day.** §7 steps 1–5 are done — see `docs/APP.md`,
-> Stage 5, for what landed and how it was verified. Remaining: §7.6 (Apple
-> signing; whether `ape-bridge` stays). §4's "demote or delete" was resolved
-> as delete. §5's fork is gone. Paths named below under `site/src/agent` and
-> `site/src/engine` now live under `app/src/`.
+## Pick-up note, written 2026-09-11 (read this first)
+
+**Where things are.** The desktop app in `app/` is the product; everything
+in §7 below through step 5 is done and committed on `main` (last commit
+`f4f5767`, nothing pushed). The shell was rebuilt twice tonight after the
+owner tried it:
+
+1. **Main screen is card generation; the agent is a setting.** Rail: deck
+   name, the eight steps, Settings. Main pane: a Next bar that says what is
+   next and runs it, the artifact gate, the agent's output, the deck view at
+   step 6. Settings holds the agent (installed first, registry folded away;
+   "Use" remembers it) and the app's facts. The chosen agent connects on its
+   own whenever a deck opens. Files: `app/src/agent/{app,stages,settings,
+   picker,home,materials}.ts`, styles in `agent/shell.css`.
+2. **Decks are workspaces the app owns.** No folder picking. Home lists
+   decks (`decks/list`) with their state; New deck by name, or drop files /
+   a folder anywhere on the window and a deck is made from them. The deck
+   screen shows a tile per file (kind, size, pages read after extract) with
+   remove and Add files. Engine methods added: `decks/list`, `decks/create`,
+   `course/import` (paths, desktop), `course/delete`; `course/read` gained
+   `encoding: "base64"`. All in `src/sidecar/course.ts`, 14 course tests,
+   documented in `docs/research/course-protocol.md`.
+
+**Verified** (in a browser over `ape-bridge`, which runs the identical
+shell): home, new deck by name and by drop, tiles, remove, Settings, Use
+Claude Agent connecting and returning to the steps, reload resuming the
+deck with the agent reconnected, deck preview through the bar, the bar
+moving to the audit. Suites: 347 engine, 8 app, 1 site, all green.
+
+**Not yet verified, and the first thing to do tomorrow**, in the desktop
+app itself:
+- a **drop of a PDF or a folder onto the window** (desktop drops arrive as
+  paths and go through `course/import`; the browser check used bytes);
+- **New deck** working after the last fix -- the dev build had been running
+  a weeks-old staged engine (`src-tauri/resources/engine`), which is why
+  the owner saw `method not found: decks/create`; debug builds now prefer
+  the repo's `dist/` (`app/src-tauri/src/sidecar.rs`, `resolve_paths`);
+- **a real extract stage** with Claude connected (never run in the app;
+  the same code ran the whole method live from the page on the 10th).
+
+**How to run it:**
+`cd app && PATH=~/.nvm/versions/node/v24.12.0/bin:$PATH npm run app:dev`.
+The engine must be built first (`npm run build` at the root; the app
+imports `dist/pipeline` and spawns `dist/sidecar`). Decks live under
+`~/Library/Application Support/dev.docplanet.ape/decks/`.
+
+**Known rough edges, deliberately left:** flagging a card uses
+`window.prompt`; no "start over" for a deck (re-running step 1 overwrites
+`inventory.md`); the deck name lives in localStorage keyed by folder
+(`ape.name:<path>`), the folder name is derived from it once; the site's
+bridge tier still works but is only a developer route.
+
+**Still open from §7.6:** Apple signing ($99/yr, removes the "unidentified
+developer" wall), and whether `ape-bridge` stays.
 
 ---
 
