@@ -85,6 +85,13 @@ function stageMethod() {
   // read+write rather than cpSync: the method files are relative symlinks
   // into the skills tree, and cpSync's dereference misreads them as dirs.
   for (const f of readdirSync(methodDir).filter((f) => f.endsWith('.md'))) writeFileSync(join(dest, f), readFileSync(join(methodDir, f)));
+  // SETUP.md sits at the method repo's root, not in method/, and 1-extract.md
+  // sends the agent to it by name. The pipeline attaches it to the extract
+  // stage (src/pipeline, `companions`) so the agent never searches for it --
+  // which only works if it is here to attach. The bridge fetches it the same way.
+  const setup = join(methodDir, '..', 'SETUP.md');
+  if (existsSync(setup)) writeFileSync(join(dest, 'SETUP.md'), readFileSync(setup));
+  else console.log(`${setup} not found; the extract stage will run without it`);
   console.log(`staged method files from ${methodDir} -> ${dest}`);
 }
 

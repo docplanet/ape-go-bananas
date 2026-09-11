@@ -4,11 +4,12 @@
 // session that wrote none of the cards, and the writer applies its verdicts
 // verbatim. Nothing here says what a card is; the method text does.
 //
-// This is app/src/pipeline.ts lifted out of the desktop app, over an injected
-// client instead of the Tauri one, so the browser page (site/) runs the same
-// stages through the bridge with the same prompts. The desktop app keeps its
-// copy for now -- by its own rule it imports nothing from the engine at build
-// time -- and can adopt this one when that rule is revisited.
+// Over an injected client, so the desktop app (app/, through Tauri) and the
+// browser page (site/, through the bridge) run the same stages with the same
+// prompts. It began as app/src/pipeline.ts; the app kept a copy for a while,
+// by a rule that it imports nothing from the engine at build time, and the
+// copy silently missed `companions` and `describeExtracted` -- so the rule
+// went, and there is one pipeline (docs/APP.md, "Where it lives").
 
 import type { ContentBlock } from '../acp/protocol.js';
 import type { Flag } from '../sidecar/methods.js';

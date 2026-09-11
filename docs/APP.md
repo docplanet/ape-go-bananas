@@ -10,8 +10,15 @@ purpose rather than drifted away from.
 `app/` in this repo. The engine at the root keeps its zero-runtime-dependency
 rule; `app/` has its own `package.json` (Tauri CLI, `@tauri-apps/api`, the
 dialog plugin, Vite, TypeScript) and its own `src-tauri/` crate. One repo
-because the app imports nothing from the engine at build time — it *spawns*
-it — and the two must move together when the sidecar protocol changes.
+because the app *spawns* the engine and the two must move together when the
+sidecar protocol changes.
+
+The app imports one thing from the engine at build time: `src/pipeline`,
+through the engine's compiled `dist/`, the same way the site does. It used
+to import nothing and keep its own copy of the stage prompts; the copy fell
+three weeks behind (no `SETUP.md` companion, no extracted-PDF paragraph)
+without any test noticing, because `app/` was in no CI job. Now there is one
+pipeline, and `ci.yml` builds the app on every push.
 
 ## How the app reaches the engine: a Node sidecar, owned by Rust
 

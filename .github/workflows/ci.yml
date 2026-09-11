@@ -63,3 +63,15 @@ jobs:
           npm ci
           npm run build
           npm test
+
+      # The desktop app's frontend. No Rust here: `npm run build` is
+      # `tsc --noEmit && vite build`, which is where a change to the engine's
+      # surface or to src/pipeline breaks the app -- and until this step
+      # existed nothing ran it short of a `v*` tag (release.yml). That is how
+      # app/src/pipeline.ts rotted into a fork for three weeks unnoticed.
+      # The engine's dist/ from the typecheck step above is what it imports.
+      - name: app — typecheck and build
+        working-directory: APE/app
+        run: |
+          npm ci
+          npm run build

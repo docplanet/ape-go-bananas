@@ -169,7 +169,7 @@ file agree there too.
   agent a method file and the course folder and asks for that stage's
   artifact; the auditor and adjudicator run in fresh sessions. Over an
   injected client, so the desktop app and the browser page run the same
-  stages. Lifted from `app/src/pipeline.ts`, which keeps its copy for now.
+  stages from the same file.
 - `src/sidecar/` — the JSON-RPC surface the shells drive. `dispatch.ts` is
   the transport-neutral core (method table, reverse channel, ordering);
   `index.ts` speaks it over stdio for the desktop app, `serve.ts` over HTTP

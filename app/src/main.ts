@@ -5,11 +5,11 @@
 // preview.ts and chat.ts are the seams they call into.
 import { open } from '@tauri-apps/plugin-dialog';
 import { getCurrentWebview } from '@tauri-apps/api/webview';
-import { sidecar, SidecarError, type ConnectResult, type Flag } from './sidecar';
+import { sidecar, pipelineClient, SidecarError, type ConnectResult, type Flag } from './sidecar';
 import { mountPreview } from './preview';
 import { mountPicker } from './providers';
 import { mountChat } from './chat';
-import { WRITING_STAGES, makeRunner, type Runner, type StageId } from './pipeline';
+import { WRITING_STAGES, makeRunner, type Runner, type StageId } from '../../dist/pipeline/index.js';
 import { offerUpdate } from './updater';
 
 const STAGES = ['extract', 'inventory review', 'organize', 'plan review', 'cards', 'deck preview', 'audit', 'deliver'] as const;
@@ -95,7 +95,7 @@ function showPicker() {
         return;
       }
       chat = mountChat($('agent-host'), result, say);
-      runner = makeRunner(result, courseDir, () => $<HTMLInputElement>('deckname-in').value.trim());
+      runner = makeRunner(pipelineClient, result, courseDir, () => $<HTMLInputElement>('deckname-in').value.trim());
       say(`${result.agent?.name ?? result.provider} ready — pick a stage on the left`);
       void refreshStageMarks();
     },

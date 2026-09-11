@@ -4,6 +4,7 @@
 // the designed screens will call; nothing in it knows what a card is.
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
+import type { PipelineClient } from '../../dist/pipeline/index.js';
 
 export interface DeckNote {
   deckName: string;
@@ -116,6 +117,13 @@ export interface CourseFile {
   mimeType: string;
 }
 
+/** What sits under `_extracted/<relPath>/` for one source file: the page text, the page images (course-protocol.md). */
+export interface Extracted {
+  source: string;
+  text: string | null;
+  images: string[];
+}
+
 export interface PermissionRequest {
   id: number;
   method: 'agent/requestPermission';
@@ -185,7 +193,8 @@ export const sidecar = {
   listMethod: () => call<{ dir: string; files: { name: string; title: string; bytes: number }[] }>('method/list'),
   readMethod: (name: string) => call<{ name: string; text: string }>('method/read', { name }),
   listCourse: (path: string) =>
-    call<{ path: string; files: CourseFile[]; artifacts: { inventory: boolean; plan: boolean; deck: boolean; flags: boolean; review: boolean } }>('course/list', { path }),
+    call<{ path: string; files: CourseFile[]; artifacts: { inventory: boolean; plan: boolean; deck: boolean; flags: boolean; review: boolean }; extracted: Extracted[] }>('course/list', { path }),
+  writeCourse: (path: string, name: string, body: { text: string } | { base64: string }) => call<{ name: string; bytes: number }>('course/write', { path, name, ...body }),
   readCourse: (path: string, name: string) => call<{ name: string; text: string; bytes: number }>('course/read', { path, name }),
   prompt: (sessionId: string, blocks: ContentBlock[]) => call<{ stopReason: string }>('agent/prompt', { sessionId, blocks }),
   cancel: (sessionId: string) => call<Record<string, never>>('agent/cancel', { sessionId }),
@@ -193,6 +202,21 @@ export const sidecar = {
   setConfigOption: (sessionId: string, id: string, value: string | boolean) =>
     call<{ configOptions: ConfigOption[] }>('agent/setConfigOption', { sessionId, id, value }),
   disconnect: (connectionId: string) => call<Record<string, never>>('agent/disconnect', { connectionId }),
+};
+
+/**
+ * The sidecar as src/pipeline sees it. The stages are the engine's, shared
+ * with the browser page; this is the app's client in the shape they take,
+ * plus the one thing they cannot know -- which errors are the sidecar
+ * saying no (an artifact not written yet) rather than the app breaking.
+ */
+export const pipelineClient: PipelineClient = {
+  readMethod: sidecar.readMethod,
+  listCourse: sidecar.listCourse,
+  readCourse: sidecar.readCourse,
+  newSession: sidecar.newSession,
+  prompt: sidecar.prompt,
+  isRpcError: (err) => err instanceof SidecarError,
 };
 
 /** OS credential store, through the Rust side. Names are provider ids. */
