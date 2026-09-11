@@ -107,6 +107,7 @@ export function makeBridgeDeckView(sidecar: SidecarClient, host: EngineHost, say
     async export(dir) {
       if (!loaded) await open(dir);
       await exportApkg();
+      return null; // saved by the browser, wherever it puts downloads
     },
   };
 }

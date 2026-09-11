@@ -16,6 +16,7 @@ const root = document.getElementById('app')!;
 root.innerHTML = `
   <aside class="rail" id="rail"></aside>
   <main class="main" id="main">
+    <div id="bar" hidden></div>
     <section id="view-agent" class="view" hidden></section>
     <section id="view-deck" class="view" hidden>
       <section class="drop" id="drop">
@@ -42,7 +43,7 @@ function esc(s: string): string {
 
 // ---- the deck view, over the sidecar ----------------------------------------
 
-function makeDeckView(sidecar: SidecarClient, say: (text: string, isError?: boolean) => void): DeckView & { openPath(path: string): Promise<void> } {
+function makeDeckView(sidecar: SidecarClient, say: (text: string, isError?: boolean) => void): DeckView {
   let deckPath: string | null = null;
   let flags: Flag[] = [];
   let preview: ReturnType<typeof mountPreview> | null = null;
@@ -88,12 +89,14 @@ function makeDeckView(sidecar: SidecarClient, say: (text: string, isError?: bool
     }
   }
 
-  async function exportPath(path: string): Promise<void> {
+  async function exportPath(path: string): Promise<string | null> {
     try {
       const out = await sidecar.export(path);
       say(`wrote ${out.outPath}` + (out.unresolvedMedia.length ? ` (missing media: ${out.unresolvedMedia.join(', ')})` : ''), out.unresolvedMedia.length > 0);
+      return out.outPath;
     } catch (err) {
       say(err instanceof EngineError ? err.message : String(err), true);
+      return null;
     }
   }
 
@@ -112,7 +115,6 @@ function makeDeckView(sidecar: SidecarClient, say: (text: string, isError?: bool
     },
     open: (dir) => openPath(`${dir.replace(/[\\/]$/, '')}/deck.json`),
     export: (dir) => exportPath(`${dir.replace(/[\\/]$/, '')}/deck.json`),
-    openPath,
   };
 }
 
@@ -135,6 +137,7 @@ void (async () => {
   const deck = makeDeckView(sidecar, (t, e) => status.say(t, e));
   const app = mountAgentApp(host, {
     rail: $('rail'),
+    bar: $('bar'),
     view: $('view-agent'),
     deck,
     keys: secrets,
@@ -144,26 +147,18 @@ void (async () => {
     },
   });
 
-  // Opened with a deck.json (a file argument): its folder is the course.
-  const initial = host.courseRoot();
-  if (initial) {
-    app.setCourseDir(initial);
-    await app.openDeck(initial);
-  }
-
-  // A drop anywhere in the window: a deck.json opens, a folder becomes the course.
+  // A drop anywhere in the window: a folder becomes the course; a deck.json
+  // makes its folder the course and opens the deck.
   void getCurrentWebview().onDragDropEvent((event) => {
     const drop = $('drop');
     drop.classList.toggle('hover', event.payload.type === 'over');
     if (event.payload.type !== 'drop' || !event.payload.paths[0]) return;
     const p = event.payload.paths[0];
     if (p.endsWith('.json')) {
-      app.setCourseDir(p.replace(/[\\/][^\\/]+$/, ''));
-      void deck.openPath(p);
-      deck.show(true);
-      $('view-agent').hidden = true;
+      const dir = p.replace(/[\\/][^\\/]+$/, '');
+      void app.setCourseDir(dir).then((ok) => (ok ? app.openDeck(dir) : undefined));
     } else {
-      app.setCourseDir(p);
+      void app.setCourseDir(p);
     }
   });
 

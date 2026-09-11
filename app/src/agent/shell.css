@@ -1,0 +1,106 @@
+/* The shell's own styles: the rail, the next-step bar, the home and settings
+   panes, the gate, the picker, the chat. Shared by the desktop app
+   (../style.css) and the tool page over the bridge (site/src/tool.css);
+   each supplies the palette variables and its own page layout. */
+
+/* ---- the rail ------------------------------------------------------------- */
+.rail h1, #rail h1 { font-size: 20px; margin: 0 0 6px; letter-spacing: .04em; font-weight: 600; }
+.railhead { margin: 14px 0 4px; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); display: block; }
+.course { display: grid; gap: 4px; font-size: 12px; }
+.course .path { word-break: break-all; color: var(--fg); overflow: hidden; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; }
+.course .muted { font-size: 11px; }
+.course button { justify-self: start; padding: 3px 10px; font-size: 12px; margin-top: 2px; }
+#rail-deck { width: 100%; background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; font: inherit; font-size: 13px; }
+.stages { list-style: none; margin: 4px 0; padding: 0; counter-reset: s; }
+.stages li { display: flex; align-items: baseline; gap: 6px; padding: 5px 8px; color: var(--muted);
+  border-left: 2px solid transparent; border-radius: 0 6px 6px 0; cursor: pointer; font-size: 14px; }
+.stages li::before { counter-increment: s; content: counter(s); opacity: .5; }
+.stages li .sname { flex: 1; }
+.stages li .sstate { font-size: 11px; }
+.stages li:hover { color: var(--fg); background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.stages li:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.stages li.on { color: var(--fg); border-left-color: var(--accent); }
+.stages li.next { color: var(--fg); }
+.stages li.next .sstate::before { content: "next"; color: var(--accent); }
+.stages li.done .sstate::before { content: "\2713"; color: var(--accent); }
+.stages li.running { color: var(--fg); }
+.stages li.running .sstate::before { content: "running…"; color: var(--warn); }
+.railfoot { margin-top: auto; display: grid; gap: 6px; font-size: 12px; }
+.railfoot button { justify-self: start; }
+.status { font-size: 12px; color: var(--muted); word-break: break-word; }
+.status.error { color: var(--bad); }
+
+/* ---- the next-step bar ------------------------------------------------------ */
+.nextbar { display: flex; align-items: center; gap: 16px; padding: 12px 16px; background: var(--panel); border-bottom: 1px solid var(--line); flex: none; }
+.nb-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.nb-k { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--accent); }
+.nb-text strong { font-size: 16px; }
+.nb-hint { color: var(--muted); font-size: 13px; }
+.nb-actions { display: flex; gap: 8px; flex: none; }
+
+/* ---- home, settings ----------------------------------------------------------- */
+.home-pane, .settings-pane { padding: 8px 4px; max-width: 72ch; }
+.home h2, .settings-pane h2 { font-size: 22px; margin: 0 0 10px; }
+.home p { margin: 0 0 14px; }
+.setup-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin: 6px 0 14px; }
+.setup-row input { flex: 1; min-width: 260px; background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; font: inherit; }
+.big { font-size: 16px; padding: 11px 20px; border-radius: 9px; }
+.home-steps { margin: 18px 0 0; padding-left: 1.4em; color: var(--muted); font-size: 13px; }
+.home-steps li { margin: 4px 0; }
+.home-steps li::marker { color: var(--accent); }
+.settings-pane .bar { border-radius: 10px; margin-bottom: 8px; }
+.set-section { padding: 12px 4px; border-bottom: 1px solid var(--line); }
+.set-section h3 { font-size: 15px; margin: 0 0 4px; }
+.hint { color: var(--muted); font-size: 13px; margin: 4px 0 10px; }
+.facts { display: grid; grid-template-columns: max-content 1fr; gap: 4px 14px; font-size: 13px; margin: 0 0 8px; }
+.facts dt { color: var(--muted); } .facts dd { margin: 0; word-break: break-all; }
+
+/* ---- the gate ----------------------------------------------------------------- */
+.gate { border: 1px solid var(--warn); border-radius: 10px; max-height: 45vh; display: flex; flex-direction: column; background: var(--panel); flex: none; }
+.gate .bar { border-radius: 10px 10px 0 0; }
+.gate .artifact { flex: 1; overflow: auto; margin: 0; padding: 12px 14px; font: 13px/1.6 Menlo, ui-monospace, monospace; white-space: pre-wrap; }
+
+/* ---- the picker (in Settings) --------------------------------------------------- */
+.pk-current { font-size: 14px; margin: 0 0 10px; }
+.providers { list-style: none; padding: 0; margin: 8px 0; display: grid; gap: 8px; }
+.providers li { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px 14px; }
+.pname { font-weight: 600; } .pname small { color: var(--muted); font-weight: 400; margin-left: 6px; }
+.pk-badge { font-size: 11px; font-weight: 400; color: var(--muted); border: 1px solid var(--line); border-radius: 10px; padding: 0 7px; margin-left: 6px; vertical-align: middle; }
+.pk-badge.on { color: var(--accent); border-color: var(--accent); }
+.pdesc { color: var(--muted); font-size: 13px; margin: 2px 0 8px; }
+.pactions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.pactions input { background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; font: inherit; min-width: 260px; }
+.pk-more { margin: 10px 0; }
+.pk-more summary { cursor: pointer; color: var(--muted); font-size: 13px; }
+.plog, .log { font: 12px/1.5 Menlo, ui-monospace, monospace; color: var(--muted); margin: 8px 0 0; white-space: pre-wrap; max-height: 140px; overflow: auto; }
+.auth { background: var(--panel); border: 1px solid var(--warn); border-radius: 10px; padding: 10px 14px; margin: 8px 0; }
+
+/* ---- the chat ----------------------------------------------------------------- */
+.agent-host { display: flex; flex-direction: column; min-height: 0; flex: 1; }
+.chat-pane { flex: 1; display: flex; flex-direction: column; min-height: 40vh; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); }
+.chat-pane .bar { border-radius: 10px 10px 0 0; }
+.selectors { display: flex; gap: 6px 10px; font-size: 12px; color: var(--muted); flex-wrap: wrap; justify-content: flex-end; }
+.chat-pane .bar { flex-wrap: wrap; }
+.selectors select { background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 6px; padding: 2px 4px; font: inherit; max-width: 180px; }
+.messages { flex: 1; overflow: auto; padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; }
+.msg { white-space: pre-wrap; word-break: break-word; border-radius: 8px; padding: 8px 12px; max-width: 80ch; font-size: 14px; }
+.msg.user { background: color-mix(in srgb, var(--accent) 18%, var(--panel)); align-self: flex-end; }
+.msg.agent { background: var(--bg); }
+.msg.thought { color: var(--muted); font-size: 13px; border-left: 2px solid var(--line); padding-left: 10px; }
+.msg.tool { color: var(--warn); font: 12px/1.5 Menlo, ui-monospace, monospace; background: transparent; padding: 2px 12px; }
+.permission { margin: 0 14px 8px; background: var(--bg); border: 1px solid var(--warn); border-radius: 8px; padding: 10px 12px; }
+.ptitle { font-weight: 600; margin-bottom: 6px; }
+.composer { display: flex; gap: 8px; padding: 8px 14px 12px; border-top: 1px solid var(--line); }
+.composer textarea, .composer input { flex: 1; background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 6px; padding: 8px; font: inherit; resize: vertical; }
+
+/* sign-in console, for a host that runs the CLI's own flow */
+.signin { border: 1px solid var(--accent); border-radius: 10px; background: var(--panel); flex: none; margin: 8px 0; }
+.signin .console { margin: 0; padding: 12px 14px; max-height: 38vh; overflow: auto; white-space: pre-wrap; word-break: break-word; font: 12px/1.6 Menlo, ui-monospace, monospace; }
+
+/* shared bits */
+.bar { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-bottom: 1px solid var(--line); background: var(--panel); }
+.bar h2 { font-size: 15px; margin: 0; }
+.grow { flex: 1; }
+.hidden { display: none !important; }
+button.quiet { background: transparent; color: var(--muted); border: 1px solid var(--line); font-weight: 400; }
+button.link { background: none; border: 0; padding: 0; color: var(--accent); font: inherit; text-decoration: underline; font-weight: 400; cursor: pointer; }

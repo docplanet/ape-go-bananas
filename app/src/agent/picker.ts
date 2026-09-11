@@ -1,7 +1,10 @@
-// The provider picker: every agent the public registry knows, installable
-// in place, plus the API-key slot. Sign-in runs the vendor's own flow from a
-// button -- the sidecar spawns it on the user's machine and a browser opens
-// for the OAuth step (docs/research/claude-adapter-auth.md §4).
+// The agent, as a setting: every agent the public registry knows, the ones
+// installed here first, plus the API-key slot. "Use" remembers the choice;
+// the shell connects it whenever a course folder is known (the agent's
+// session is opened in that folder), so the ordinary path is: choose once,
+// never see this screen again. Sign-in runs the vendor's own flow from a
+// button -- the sidecar spawns it on this computer and a browser opens for
+// the OAuth step (docs/research/claude-adapter-auth.md §4).
 //
 // An API key entered here goes to agent/connect and to the store the shell
 // provides: the OS keychain in the desktop app, sessionStorage on the tool
@@ -11,12 +14,10 @@ import { EngineError, type ConnectResult, type Provider, type SidecarClient } fr
 import type { Bus } from './bus.js';
 
 export interface PickerCallbacks {
+  /** The user picked this agent; remember it. Called before any connection is attempted. */
+  onChosen(id: string): void;
   onConnected(result: ConnectResult): void;
   say(text: string, isError?: boolean): void;
-}
-
-function esc(s: string): string {
-  return s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
 }
 
 /** Where an API key lives between sessions. Names are provider ids. */
@@ -25,40 +26,86 @@ export interface KeyStore {
   set(id: string, value: string): Promise<void>;
 }
 
-export function mountPicker(host: HTMLElement, sidecar: SidecarClient, bus: Bus, dataDir: string, courseDir: () => string | null, keys: KeyStore, cb: PickerCallbacks): void {
+export interface PickerState {
+  /** The remembered agent's id, if any. */
+  chosen: string | null;
+  /** The provider id currently connected, if any. */
+  connected: string | null;
+  /** Whether a course folder is set: without one nothing can connect, and the buttons say so. */
+  hasFolder: boolean;
+}
+
+export interface Picker {
+  /** Connects `id` if it is installed here (waits for the registry first); false when it is not. */
+  connectIfInstalled(id: string): Promise<boolean>;
+  setState(state: Partial<PickerState>): void;
+  /** The display name of an agent id, once the registry is loaded. */
+  nameOf(id: string): string | null;
+}
+
+function esc(s: string): string {
+  return s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
+}
+
+export function mountPicker(host: HTMLElement, sidecar: SidecarClient, bus: Bus, dataDir: string, courseDir: () => string | null, keys: KeyStore, cb: PickerCallbacks): Picker {
   let providers: Provider[] = [];
   let pending: ConnectResult | null = null; // a connection waiting on sign-in
   const progress = new Map<string, string[]>();
+  const state: PickerState = { chosen: null, connected: null, hasFolder: false };
 
   host.innerHTML = `
-    <section class="picker">
-      <header class="bar"><h2>Choose an agent</h2><span class="grow"></span><button id="refresh">Refresh list</button></header>
-      <p class="hint">Subscription agents install on this computer and sign in through your browser. Or use any model with an OpenRouter key.</p>
-      <ul class="providers" id="providers"></ul>
+    <div class="picker">
+      <div id="pk-current" class="pk-current"></div>
+      <ul class="providers" id="pk-main"></ul>
+      <details class="pk-more"><summary id="pk-install-sum">Install another agent</summary><ul class="providers" id="pk-install"></ul></details>
+      <details class="pk-more"><summary id="pk-other-sum">Other agents in the registry</summary><ul class="providers" id="pk-other"></ul></details>
       <div id="auth" class="auth hidden"></div>
       <pre id="log" class="log hidden"></pre>
-    </section>`;
-  const list = host.querySelector<HTMLUListElement>('#providers')!;
-  const auth = host.querySelector<HTMLDivElement>('#auth')!;
-  const log = host.querySelector<HTMLPreElement>('#log')!;
+      <p class="hint"><button type="button" id="refresh" class="link">Refresh the list</button></p>
+    </div>`;
+  const $ = <T extends HTMLElement>(sel: string): T => host.querySelector<T>(sel)!;
+  const auth = $<HTMLDivElement>('#auth');
+  const log = $<HTMLPreElement>('#log');
+
+  function card(p: Provider): string {
+    const isChosen = p.id === state.chosen;
+    const isConnected = p.id === state.connected;
+    const badge = isConnected ? '<span class="pk-badge on">connected</span>' : isChosen ? '<span class="pk-badge">chosen</span>' : '';
+    const state_ = p.kind === 'api' ? 'any model, one API key' : p.installed ? `installed ${p.installedVersion}` : p.installable ? `v${p.version ?? '?'}` : `${p.distribution} — not installable from here yet`;
+    const useLabel = isConnected ? 'Reconnect' : state.hasFolder ? 'Use' : 'Use';
+    const useTitle = state.hasFolder ? '' : 'Remembered now; connects when a course folder is chosen';
+    const actions =
+      p.kind === 'api'
+        ? `<input type="password" placeholder="sk-or-…" data-key="${p.id}" autocomplete="off"><button type="button" data-use="${p.id}" title="${useTitle}">${useLabel}</button>`
+        : p.installed
+          ? `<button type="button" data-use="${p.id}" title="${useTitle}">${useLabel}</button><button type="button" data-uninstall="${p.id}" class="quiet">Remove</button>`
+          : p.installable
+            ? `<button type="button" data-install="${p.id}">Install</button>`
+            : '';
+    const lines = progress.get(p.id);
+    return `<li data-id="${p.id}"><div class="pname">${esc(p.name)} <small>${esc(state_)}</small> ${badge}</div><div class="pdesc">${esc(p.description)}</div><div class="pactions">${actions}</div>${lines ? `<pre class="plog">${esc(lines.slice(-6).join('\n'))}</pre>` : ''}</li>`;
+  }
 
   function render(): void {
-    list.innerHTML = providers
-      .map((p) => {
-        const state = p.kind === 'api' ? 'API key' : p.installed ? `installed ${p.installedVersion}` : p.installable ? `v${p.version ?? '?'}` : `${p.distribution} (not installable yet)`;
-        const actions =
-          p.kind === 'api'
-            ? `<input type="password" placeholder="sk-or-…" data-key="${p.id}" autocomplete="off"><button data-connect="${p.id}">Connect</button>`
-            : p.installed
-              ? `<button data-connect="${p.id}">Connect</button><button data-uninstall="${p.id}" class="quiet">Remove</button>`
-              : p.installable
-                ? `<button data-install="${p.id}">Install</button>`
-                : '';
-        const lines = progress.get(p.id);
-        return `<li data-id="${p.id}"><div class="pname">${esc(p.name)} <small>${esc(state)}</small></div><div class="pdesc">${esc(p.description)}</div><div class="pactions">${actions}</div>${lines ? `<pre class="plog">${esc(lines.slice(-6).join('\n'))}</pre>` : ''}</li>`;
-      })
-      .join('');
-    for (const input of list.querySelectorAll<HTMLInputElement>('input[data-key]')) {
+    const main = providers.filter((p) => p.installed || p.kind === 'api' || p.id === state.chosen);
+    const install = providers.filter((p) => !main.includes(p) && p.installable);
+    const other = providers.filter((p) => !main.includes(p) && !p.installable);
+    // The chosen one leads; the connected one, if different, next.
+    main.sort((a, b) => Number(b.id === state.chosen) - Number(a.id === state.chosen) || Number(b.kind !== 'api') - Number(a.kind !== 'api'));
+    $('#pk-main').innerHTML = main.map(card).join('');
+    $('#pk-install').innerHTML = install.map(card).join('');
+    $('#pk-other').innerHTML = other.map(card).join('');
+    $('#pk-install-sum').textContent = `Install another agent (${install.length})`;
+    $('#pk-other-sum').textContent = `${other.length} more in the registry that cannot be installed from here yet`;
+    const chosen = providers.find((p) => p.id === state.chosen);
+    $('#pk-current').innerHTML = !state.chosen
+      ? `<strong>No agent chosen yet.</strong> Pick one below — Use it — and it is remembered.`
+      : state.connected === state.chosen
+        ? `<strong>${esc(chosen?.name ?? state.chosen)}</strong> is connected in the course folder.`
+        : state.hasFolder
+          ? `<strong>${esc(chosen?.name ?? state.chosen)}</strong> is the chosen agent${chosen && !chosen.installed && chosen.kind !== 'api' ? ', but it is not installed here' : ''}.`
+          : `<strong>${esc(chosen?.name ?? state.chosen)}</strong> is the chosen agent; it connects when a course folder is chosen.`;
+    for (const input of host.querySelectorAll<HTMLInputElement>('input[data-key]')) {
       void keys.get(input.dataset.key!).then(
         (v) => {
           if (v && !input.value) input.value = v;
@@ -68,55 +115,65 @@ export function mountPicker(host: HTMLElement, sidecar: SidecarClient, bus: Bus,
     }
   }
 
+  let loaded: Promise<void>;
   async function load(refresh = false): Promise<void> {
     try {
       const res = await sidecar.listProviders(dataDir, refresh);
       providers = res.providers;
       if (res.registry.error) cb.say(`registry: ${res.registry.error}`, true);
-      render();
     } catch (err) {
       cb.say(String(err), true);
     }
+    render();
   }
+  loaded = load();
 
   function showAuth(result: ConnectResult): void {
     pending = result;
     auth.classList.remove('hidden');
     const status = result.authStatus ? `${result.authStatus.label}` : 'Sign-in needed';
     auth.innerHTML = `<div class="pname">${esc(result.agent?.name ?? result.provider)} · ${esc(status)}</div>
-      <div class="pactions">${result.authMethods.map((m) => `<button data-login="${m.id}" title="${esc(m.description ?? '')}">${esc(m.name)}</button>`).join('')}
-      <button data-skip="1" class="quiet">Continue anyway</button></div>`;
+      <div class="pactions">${result.authMethods.map((m) => `<button type="button" data-login="${m.id}" title="${esc(m.description ?? '')}">${esc(m.name)}</button>`).join('')}
+      <button type="button" data-skip="1" class="quiet">Continue anyway</button></div>`;
   }
 
-  async function connect(id: string): Promise<void> {
+  async function connect(id: string): Promise<boolean> {
     const cwd = courseDir();
+    const p = providers.find((x) => x.id === id);
     if (!cwd) {
-      cb.say('choose a course folder first', true);
-      return;
+      cb.say(`${p?.name ?? id} will connect when a course folder is chosen`);
+      return false;
     }
     const params: { provider: string; dataDir: string; cwd: string; apiKey?: string } = { provider: id, dataDir, cwd };
-    const p = providers.find((x) => x.id === id);
     if (p?.kind === 'api') {
-      const input = list.querySelector<HTMLInputElement>(`input[data-key="${id}"]`);
-      const key = input?.value.trim() ?? '';
+      const input = host.querySelector<HTMLInputElement>(`input[data-key="${id}"]`);
+      const key = input?.value.trim() || (await keys.get(id).catch(() => null)) || '';
       if (!key) {
-        cb.say('enter an API key', true);
-        return;
+        cb.say('enter an API key first', true);
+        return false;
       }
       params.apiKey = key;
       await keys.set(id, key).catch(() => undefined);
     }
-    cb.say(`connecting to ${id}…`);
+    cb.say(`connecting ${p?.name ?? id}…`);
+    progress.set(id, ['connecting…']);
+    render();
     try {
       const result = await sidecar.connect(params);
+      progress.delete(id);
       if (result.authRequired || (result.authStatus?.kind === 'none' && result.authMethods.length > 0)) {
+        render();
         showAuth(result);
         cb.say(result.authStatus?.label ?? 'sign-in needed');
-        return;
+        return false;
       }
       cb.onConnected(result);
+      return true;
     } catch (err) {
+      progress.delete(id);
+      render();
       cb.say(err instanceof EngineError ? err.message : String(err), true);
+      return false;
     }
   }
 
@@ -124,7 +181,7 @@ export function mountPicker(host: HTMLElement, sidecar: SidecarClient, bus: Bus,
     const t = (e.target as HTMLElement).closest<HTMLElement>('button');
     if (!t) return;
     if (t.id === 'refresh') return void load(true);
-    const { install, uninstall, connect: conn, login, skip } = t.dataset;
+    const { install, uninstall, use, login, skip } = t.dataset;
     if (install) {
       progress.set(install, ['installing…']);
       render();
@@ -139,12 +196,15 @@ export function mountPicker(host: HTMLElement, sidecar: SidecarClient, bus: Bus,
     } else if (uninstall) {
       await sidecar.uninstallProvider(dataDir, uninstall).catch(() => undefined);
       await load();
-    } else if (conn) {
-      await connect(conn);
+    } else if (use) {
+      state.chosen = use;
+      cb.onChosen(use);
+      render();
+      await connect(use);
     } else if (login && pending) {
       log.classList.remove('hidden');
       log.textContent = '';
-      cb.say('signing in — finish in the browser tab that opens…');
+      cb.say('signing in — finish in the browser window that opens…');
       try {
         const r = await sidecar.login(pending.connectionId, login);
         if (r.authenticated && r.session) {
@@ -162,10 +222,9 @@ export function mountPicker(host: HTMLElement, sidecar: SidecarClient, bus: Bus,
     }
   });
 
-  // Through the bus, never the client directly: the transport holds ONE
+  // Through the bus, never the client directly: the host holds ONE
   // notification handler, so registering here would silently replace the
-  // chat pane's and the stage runner's -- which is exactly what happened in
-  // the first live run (a stage completed with an empty chat).
+  // chat pane's and the stage runner's.
   bus.onNotification((method, params) => {
     if (method === 'agents/progress') {
       const p = params as { id: string; line: string };
@@ -180,5 +239,20 @@ export function mountPicker(host: HTMLElement, sidecar: SidecarClient, bus: Bus,
     }
   });
 
-  void load();
+  return {
+    async connectIfInstalled(id) {
+      await loaded;
+      const p = providers.find((x) => x.id === id);
+      if (!p || (!p.installed && p.kind !== 'api')) return false;
+      if (p.kind === 'api' && !(await keys.get(id).catch(() => null))) return false;
+      return connect(id);
+    },
+    setState(s) {
+      Object.assign(state, s);
+      render();
+    },
+    nameOf(id) {
+      return providers.find((p) => p.id === id)?.name ?? null;
+    },
+  };
 }

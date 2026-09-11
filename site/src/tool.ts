@@ -478,6 +478,8 @@ import { Bridge, locateBridge } from './engine/bridge-transport.js';
     void (async () => {
       const bridge = new Bridge(locator);
       $('build').hidden = true;
+      document.querySelector<HTMLElement>('header.top')!.hidden = true;
+      document.querySelector<HTMLElement>('main > footer')!.hidden = true;
       document.body.classList.add('with-rail');
       $('rail').hidden = false;
       try {
@@ -505,6 +507,7 @@ import { Bridge, locateBridge } from './engine/bridge-transport.js';
       };
       mountAgentApp(bridge, {
         rail,
+        bar: $('bar'),
         view: $('view-agent'),
         deck: makeBridgeDeckView(makeSidecarClient(bridge), bridge, say),
         // This tab, until it closes: a page has no keychain.

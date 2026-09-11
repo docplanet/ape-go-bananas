@@ -160,6 +160,11 @@ export class Bridge implements EngineHost {
     const id = this.nextId++;
     const line = `${JSON.stringify(params === undefined ? { jsonrpc: '2.0', id, method } : { jsonrpc: '2.0', id, method, params })}\n`;
     const result = new Promise<unknown>((resolve, reject) => this.pending.set(id, { resolve, reject }));
+    // The answer can arrive on the events stream before the POST's 202 does,
+    // and a promise rejected while nobody is awaiting it yet is reported as
+    // unhandled -- even though the caller is about to. Mark it handled here;
+    // the rejection still reaches the `await` below.
+    result.catch(() => undefined);
     try {
       await this.post(line);
     } catch (err) {

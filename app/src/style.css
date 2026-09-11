@@ -1,7 +1,9 @@
 /* The desktop window. Same palette as the site (site/src/tool.css), so the
-   app and the page it shares its shell with read as one thing. The agent
-   classes below are the site's, verbatim where they could be; the deck view
-   (drop / work / split) is this shell's own. */
+   app and the page it shares its shell with read as one thing; the shell's
+   own styles are agent/shell.css, shared. The deck view (drop / work /
+   split) is this shell's own. */
+@import './agent/shell.css';
+
 :root {
   color-scheme: light dark;
   --fg: #1d2329; --muted: #5b6672; --bg: #f7f8f9; --panel: #fff;
@@ -17,10 +19,9 @@
 [hidden] { display: none !important; }
 html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg);
   font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
-#app { display: grid; grid-template-columns: 220px 1fr; height: 100vh; }
+#app { display: grid; grid-template-columns: 230px 1fr; height: 100vh; }
 code { background: var(--panel); border: 1px solid var(--line); border-radius: 4px; padding: 1px 5px; font-size: 90%; }
 .muted { color: var(--muted); font-size: 12px; }
-.hidden { display: none !important; }
 .dead { padding: 40px; grid-column: 1 / -1; }
 .error { background: color-mix(in srgb, var(--bad) 12%, var(--panel)); border: 1px solid var(--bad); border-radius: 8px;
   padding: 12px 14px; white-space: pre-wrap; }
@@ -30,85 +31,14 @@ button { background: var(--accent); color: #fff; border: 0; border-radius: 8px; 
 button:hover { filter: brightness(1.08); }
 button:disabled { opacity: .5; cursor: default; }
 button.ghost { background: transparent; color: var(--accent); border: 1px solid var(--line); font-weight: 400; }
-button.quiet { background: transparent; color: var(--muted); border: 1px solid var(--line); font-weight: 400; }
-button.link { background: none; border: 0; padding: 0; color: var(--accent); font: inherit; text-decoration: underline; font-weight: 400; }
 
-/* ---- the rail ------------------------------------------------------------- */
-.rail { background: var(--panel); border-right: 1px solid var(--line); padding: 20px 14px; display: flex; flex-direction: column; gap: 10px; min-height: 0; overflow: auto; }
-.rail h1 { font-size: 20px; margin: 0 0 6px; letter-spacing: .04em; font-weight: 600; }
-.course { display: grid; gap: 4px; font-size: 13px; }
-.course label { margin-top: 6px; }
-.course input { width: 100%; background: var(--bg); color: var(--fg); border: 1px solid var(--line);
-  border-radius: 6px; padding: 5px 8px; font: inherit; font-size: 13px; }
-.pathrow { display: grid; gap: 4px; }
-.path { word-break: break-all; font-size: 12px; color: var(--fg); overflow: hidden; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; }
-.railhead { margin: 16px 0 2px; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
-.railhead .muted { text-transform: none; letter-spacing: 0; }
-.stages { list-style: none; margin: 8px 0; padding: 0; counter-reset: s; }
-.stages li { display: flex; align-items: baseline; gap: 6px; padding: 6px 8px; color: var(--muted);
-  border-left: 2px solid transparent; border-radius: 0 6px 6px 0; cursor: pointer; font-size: 14px; }
-.stages li::before { counter-increment: s; content: counter(s); opacity: .5; }
-.stages li .sname { flex: 1; }
-.stages li .sstate { font-size: 11px; }
-.stages li:hover { color: var(--fg); background: color-mix(in srgb, var(--accent) 12%, transparent); }
-.stages li:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
-.stages li.on { color: var(--fg); border-left-color: var(--accent); }
-.stages li:not(.running):hover .sstate::before { content: "\25B6"; opacity: .55; }
-.stages li.done .sstate::before { content: "\2713"; color: var(--accent); }
-.stages li.running { color: var(--fg); }
-.stages li.running .sstate::before { content: "running…"; color: var(--warn); }
-.views { display: flex; gap: 6px; }
-.views button { flex: 1; padding: 6px 0; font-size: 14px; }
-.signin-open { margin-top: 10px; width: 100%; }
-.status { margin-top: auto; font-size: 12px; color: var(--muted); word-break: break-word; }
-.status.error { color: var(--bad); }
+.rail { background: var(--panel); border-right: 1px solid var(--line); padding: 20px 14px; display: flex; flex-direction: column; gap: 4px; min-height: 0; overflow: auto; }
 
 /* ---- the main pane ---------------------------------------------------------- */
 .main { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
 .view { flex: 1; display: flex; flex-direction: column; min-height: 0; }
 #view-agent { padding: 16px; overflow: auto; gap: 16px; }
-.bar { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-bottom: 1px solid var(--line); background: var(--panel); }
-.bar h2 { font-size: 15px; margin: 0; }
-.grow { flex: 1; }
 .update-bar { display: flex; gap: 10px; align-items: center; padding: 8px 16px; background: var(--panel); border-bottom: 1px solid var(--accent); font-size: 12px; }
-
-/* the gate: an artifact shown before the next stage runs */
-.gate { border: 1px solid var(--warn); border-radius: 10px; max-height: 45vh; display: flex; flex-direction: column; background: var(--panel); flex: none; }
-.gate .bar { border-radius: 10px 10px 0 0; }
-.gate .artifact { flex: 1; overflow: auto; margin: 0; padding: 12px 14px; font: 13px/1.6 Menlo, ui-monospace, monospace; white-space: pre-wrap; }
-
-/* the picker */
-.agent-host { display: flex; flex-direction: column; min-height: 0; flex: 1; }
-.picker .bar { border-radius: 10px 10px 0 0; border: 1px solid var(--line); border-bottom: 0; }
-.picker .hint { color: var(--muted); font-size: 14px; margin: 10px 0; }
-.providers { list-style: none; padding: 0; margin: 12px 0; display: grid; gap: 10px; }
-.providers li { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; }
-.pname { font-weight: 600; } .pname small { color: var(--muted); font-weight: 400; margin-left: 6px; }
-.pdesc { color: var(--muted); font-size: 13px; margin: 2px 0 8px; }
-.pactions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-.pactions input { background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; font: inherit; min-width: 260px; }
-.plog, .log { font: 12px/1.5 Menlo, ui-monospace, monospace; color: var(--muted); margin: 8px 0 0; white-space: pre-wrap; max-height: 140px; overflow: auto; }
-.auth { background: var(--panel); border: 1px solid var(--warn); border-radius: 10px; padding: 10px 14px; margin: 8px 0; }
-
-/* the chat */
-.chat-pane { flex: 1; display: flex; flex-direction: column; min-height: 50vh; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); }
-.chat-pane .bar { border-radius: 10px 10px 0 0; }
-.selectors { display: flex; gap: 10px; font-size: 13px; color: var(--muted); }
-.selectors select { background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 6px; padding: 3px 6px; font: inherit; max-width: 260px; }
-.messages { flex: 1; overflow: auto; padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; }
-.msg { white-space: pre-wrap; word-break: break-word; border-radius: 8px; padding: 8px 12px; max-width: 80ch; font-size: 14px; }
-.msg.user { background: color-mix(in srgb, var(--accent) 18%, var(--panel)); align-self: flex-end; }
-.msg.agent { background: var(--bg); }
-.msg.thought { color: var(--muted); font-size: 13px; border-left: 2px solid var(--line); padding-left: 10px; }
-.msg.tool { color: var(--warn); font: 12px/1.5 Menlo, ui-monospace, monospace; background: transparent; padding: 2px 12px; }
-.permission { margin: 0 14px 8px; background: var(--bg); border: 1px solid var(--warn); border-radius: 8px; padding: 10px 12px; }
-.ptitle { font-weight: 600; margin-bottom: 6px; }
-.composer { display: flex; gap: 8px; padding: 8px 14px 12px; border-top: 1px solid var(--line); }
-.composer textarea, .composer input { flex: 1; background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 6px; padding: 8px; font: inherit; resize: vertical; }
-
-/* sign-in console, for a host that runs the CLI's own flow */
-.signin { border: 1px solid var(--accent); border-radius: 10px; background: var(--panel); flex: none; }
-.signin .console { margin: 0; padding: 12px 14px; max-height: 38vh; overflow: auto; white-space: pre-wrap; word-break: break-word; font: 12px/1.6 Menlo, ui-monospace, monospace; }
 
 /* ---- the deck view ---------------------------------------------------------- */
 .drop { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; margin: 24px;
