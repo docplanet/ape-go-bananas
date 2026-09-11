@@ -180,7 +180,10 @@ cd ~/Dev/APE/app && npm install && npm run app:dev
 `app:dev` sets `APE_NODE` to whatever `node` npm itself is running under —
 with `nvm use` in the engine repo that is 24 — then starts Vite and the
 Tauri window. `APE_SIDECAR` overrides the engine script path (debug builds
-default to `../../dist/sidecar/index.js` relative to `src-tauri/`).
+default to `../../dist/sidecar/index.js` relative to `src-tauri/`). A debug
+build also notices when that script is rebuilt under a running app: the next
+engine call respawns the sidecar and the window reloads (`sidecar.rs`,
+`stale`), rather than serving the old code until the next launch.
 
 ## Open, deliberately
 

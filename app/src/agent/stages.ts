@@ -20,6 +20,7 @@ import {
   type StageId,
 } from '../../../dist/pipeline/index.js';
 import { EngineError, type ConnectResult, type Flag, type SidecarClient, type SendToAnkiResult } from '../engine/client.js';
+import { mergeFlags } from './flags.js';
 
 export const STAGES: readonly StageId[] = ['extract', 'inventory review', 'organize', 'plan review', 'cards', 'deck preview', 'audit', 'deliver'];
 
@@ -369,10 +370,10 @@ export function mountStages(rail: HTMLOListElement, bar: HTMLElement, gate: HTML
         await sidecar.review(deckPath, { outPath: `${dir}/review.html` }).catch(() => undefined);
         const a = await runner!.audit();
         const { flags } = await sidecar.readFlags(deckPath);
-        const merged: Flag[] = [
+        const merged: Flag[] = mergeFlags([
           ...flags,
           ...a.findings.filter((f: AuditFinding) => f.card > 0).map((f: AuditFinding) => ({ noteIndex: f.card - 1, note: `[${f.angle}] ${f.finding}`, at: new Date().toISOString() })),
-        ];
+        ]);
         await sidecar.writeFlags(deckPath, merged);
         showGate(`<header class="bar"><span>audit.md · ${a.findings.length} finding(s), ${flags.length} owner flag(s)</span><span class="grow"></span>
           ${merged.length ? `<button type="button" data-adjudicate="1">Adjudicate ${merged.length}</button>` : ''}<button type="button" data-close="1" class="quiet">Close</button></header>
@@ -458,7 +459,7 @@ export function mountStages(rail: HTMLOListElement, bar: HTMLElement, gate: HTML
     setBusy('adjudicate');
     host.say(`adjudicating ${flags.length} flag(s) in a fresh session…`);
     try {
-      const r = await runner.adjudicate(flags);
+      const r = await runner.adjudicate(mergeFlags(flags)); // the owner may have flagged a card the audit already had
       showGate(`<header class="bar"><span>verdicts.md</span><span class="grow"></span>
         ${r.verdicts !== null ? '<button type="button" data-apply="1">Apply verdicts</button>' : ''}<button type="button" data-close="1" class="quiet">Close</button></header>
         <pre class="artifact">${r.verdicts === null ? '(no verdicts.md was written)' : esc(r.verdicts)}</pre>`);

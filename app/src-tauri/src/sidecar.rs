@@ -45,6 +45,9 @@ type Pending = Arc<Mutex<HashMap<u64, oneshot::Sender<Result<Value, RpcError>>>>
 pub struct Sidecar {
     inner: Mutex<Option<Running>>,
     status: Mutex<Status>,
+    /// How the process was started, so it can be started again.
+    launch: Mutex<Option<(AppHandle, Paths)>>,
+    started: Mutex<Option<std::time::SystemTime>>,
 }
 
 struct Running {
@@ -58,6 +61,8 @@ impl Sidecar {
     pub fn new() -> Self {
         Self {
             inner: Mutex::new(None),
+            launch: Mutex::new(None),
+            started: Mutex::new(None),
             status: Mutex::new(Status {
                 running: false,
                 node: None,
@@ -97,6 +102,7 @@ impl Sidecar {
     /// the first stdout line must be `sidecar/ready` (§2.1), forwarded to the
     /// webview like every other notification.
     pub fn start(&self, app: AppHandle, paths: Paths) -> Result<(), String> {
+        *self.launch.lock().unwrap() = Some((app.clone(), paths.clone()));
         let Paths { node, script, npm_cli, method_dir } = paths;
         let mut cmd = Command::new(&node);
         cmd.arg(&script);
@@ -177,6 +183,7 @@ impl Sidecar {
             pending,
             next_id: AtomicU64::new(1),
         });
+        *self.started.lock().unwrap() = Some(std::time::SystemTime::now());
         {
             let mut s = self.status.lock().unwrap();
             s.running = true;
@@ -193,9 +200,40 @@ impl Sidecar {
         s.error = Some(error);
     }
 
+    /// A dev build runs the engine as it is in the repo (`resolve_paths`), and
+    /// a rebuild there leaves this process serving the old code: "method not
+    /// found: anki/send" came from a sidecar two hours older than `dist/`.
+    /// True when the script on disk is newer than the process running it.
+    fn stale(&self) -> bool {
+        if !cfg!(debug_assertions) {
+            return false;
+        }
+        let Some(started) = *self.started.lock().unwrap() else { return false };
+        let Some(script) = self.launch.lock().unwrap().as_ref().map(|(_, p)| p.script.clone()) else { return false };
+        std::fs::metadata(script).and_then(|m| m.modified()).map(|m| m > started).unwrap_or(false)
+    }
+
+    /// Stops the process and starts it again from the same paths. Whatever
+    /// the old one held -- agent sessions above all -- is gone; the shell is
+    /// told, as a notification, and starts over.
+    pub fn restart(&self) -> Result<(), String> {
+        let (app, paths) = self.launch.lock().unwrap().clone().ok_or_else(|| "the engine was never started".to_string())?;
+        self.stop();
+        self.start(app.clone(), paths)?;
+        let _ = app.emit("sidecar://notification", json!({ "method": "engine/restarted", "params": Value::Null }));
+        Ok(())
+    }
+
     pub async fn call(&self, method: &str, params: Value) -> Result<Value, RpcError> {
         if cfg!(debug_assertions) {
             eprintln!("sidecar: -> {method}");
+        }
+        if self.stale() {
+            eprintln!("sidecar: the engine on disk is newer than the running process; restarting it");
+            if let Err(e) = self.restart() {
+                self.fail(e.clone());
+                return Err(RpcError { code: -32001, message: e, data: None });
+            }
         }
         let (stdin, rx, line) = {
             let guard = self.inner.lock().unwrap();
@@ -233,6 +271,7 @@ impl Sidecar {
 /// in a debug build the script defaults to the engine checkout this app lives
 /// in; `node` falls back to PATH. A wrong Node is the first thing a dev hits,
 /// so the version is checked here and the message names the fix.
+#[derive(Clone)]
 pub struct Paths {
     pub node: PathBuf,
     pub script: PathBuf,

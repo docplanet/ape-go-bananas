@@ -125,6 +125,12 @@ export function mountAgentApp(host: EngineHost, opts: AgentAppOptions): AgentApp
   // ---- the engine, wherever it is running -------------------------------------
   const sidecar: SidecarClient = makeSidecarClient(host);
   const bus = makeBus(sidecar);
+  // A dev build's engine respawns itself when dist/ is rebuilt under it
+  // (sidecar.rs). Everything the shell held on the old process is gone --
+  // the agent connection first -- so start over, as a code change does.
+  bus.onNotification((method) => {
+    if (method === 'engine/restarted') location.reload();
+  });
   const decksRoot = `${host.dataDir().replace(/[\\/]$/, '')}/decks`;
 
   // ---- screens ---------------------------------------------------------------
