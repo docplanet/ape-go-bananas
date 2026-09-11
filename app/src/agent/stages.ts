@@ -362,8 +362,12 @@ export function mountStages(rail: HTMLOListElement, bar: HTMLElement, gate: HTML
         hideGate();
         setBusy(stage);
         host.say('auditing the whole deck in a fresh session…');
-        const a = await runner!.audit();
         const deckPath = `${dir}/deck.json`;
+        // The auditor is told review.html is beside deck.json -- the run-sheet's
+        // step 2, every front rendered as the student will see it. The app keeps
+        // its own preview in memory, so the file is written here, just before.
+        await sidecar.review(deckPath, { outPath: `${dir}/review.html` }).catch(() => undefined);
+        const a = await runner!.audit();
         const { flags } = await sidecar.readFlags(deckPath);
         const merged: Flag[] = [
           ...flags,
