@@ -81,6 +81,8 @@ export interface ConfigOption {
   id: string;
   type: 'select' | 'boolean';
   name: string;
+  /** ACP's grouping, when the agent gives one: "mode", "model", "thought_level"… */
+  category?: string;
   currentValue: string | boolean;
   options?: { value: string; name: string }[];
 }

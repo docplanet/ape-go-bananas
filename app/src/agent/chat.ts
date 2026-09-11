@@ -73,7 +73,10 @@ export function mountChat(host: HTMLElement, sidecar: SidecarClient, bus: Bus, c
       if (/^agent$/i.test(o.id) || /^agent$/i.test(o.name)) continue;
       parts.push(`<label>${esc(o.name)} <select data-config="${o.id}">${o.options.map((x) => `<option value="${esc(x.value)}" ${x.value === o.currentValue ? 'selected' : ''}>${esc(x.name)}</option>`).join('')}</select></label>`);
     }
-    if (modes) {
+    // An agent that offers its mode as a config option (ACP's newer form; Claude
+    // does, under the id "mode") also reports the older modes field. One select.
+    const modeIsOption = configOptions.some((o) => o.type === 'select' && (o.category === 'mode' || /^mode$/i.test(o.id) || /^mode$/i.test(o.name)));
+    if (modes && !modeIsOption) {
       parts.push(`<label>Mode <select data-mode="1">${modes.availableModes.map((m) => `<option value="${esc(m.id)}" ${m.id === modes!.currentModeId ? 'selected' : ''} title="${esc(m.description ?? '')}">${esc(m.name)}</option>`).join('')}</select></label>`);
     }
     selectors.innerHTML = parts.join('');
