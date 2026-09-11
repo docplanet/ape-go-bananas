@@ -99,6 +99,8 @@ export function mountStages(rail: HTMLOListElement, bar: HTMLElement, gate: HTML
   let sentToAnki: string | null = null; // what landed in Anki, once it has
   /** The artifact the gate is showing, if any. */
   let showing: string | null = null;
+  /** A run-through is in progress: each stage starts the next until the audit. */
+  let through = false;
 
   // Each step is a button, and says so: the first person through this screen
   // read the list as a progress display and asked how to start the process.
@@ -224,7 +226,9 @@ export function mountStages(rail: HTMLOListElement, bar: HTMLElement, gate: HTML
     }
     bar.hidden = false;
     if (busy) {
-      bar.innerHTML = `<div class="nb-text"><span class="nb-k">Running</span><strong>${esc(busy)}…</strong><span class="nb-hint">Watch the agent below. Stop cancels its turn.</span></div>
+      bar.innerHTML = `<div class="nb-text"><span class="nb-k">${through ? 'Running through to audit' : 'Running'}</span><strong>${esc(busy)}…</strong><span class="nb-hint">${
+        through ? 'Each stage starts the next; it stops at the audit for you. Stop cancels the turn and ends the run.' : 'Watch the agent below. Stop cancels its turn.'
+      }</span></div>
         <div class="nb-actions"><button type="button" data-stop="1" class="quiet">Stop</button></div>`;
       return;
     }
@@ -232,8 +236,12 @@ export function mountStages(rail: HTMLOListElement, bar: HTMLElement, gate: HTML
     const n = STAGES.indexOf(a.stage) + 1;
     const needsAgent = !runner && (WRITING_STAGES.some((w) => w.id === a.stage) || a.stage === 'audit');
     rail.querySelectorAll<HTMLLIElement>('li').forEach((li) => li.classList.toggle('next', li.dataset.stage === a.stage));
+    // Run to audit: offered wherever a stage is still ahead of the audit and an agent can run it.
+    const canThrough = !!runner && !needsAgent && nextAuto() !== null && !(a.stage === 'extract' && !has.inventory && !host.hasMaterials());
     bar.innerHTML = `<div class="nb-text"><span class="nb-k">${exportedTo !== null && a.stage === 'deliver' ? 'Done' : 'Next'}</span><strong>${n} · ${esc(a.stage)}</strong><span class="nb-hint">${esc(a.hint)}</span></div>
-      <div class="nb-actions">${a.secondary ? `<button type="button" data-secondary="1" class="quiet">${esc(a.secondary.label)}</button>` : ''}${
+      <div class="nb-actions">${
+        canThrough ? `<button type="button" data-through="1" class="quiet" title="Extract, organize, cards and audit in a row, with no stops; come back to the findings.">Run to audit</button>` : ''
+      }${a.secondary ? `<button type="button" data-secondary="1" class="quiet">${esc(a.secondary.label)}</button>` : ''}${
         needsAgent ? `<button type="button" data-settings="1">Set up an agent in Settings</button>` : `<button type="button" data-go="1">${esc(a.button)}</button>`
       }</div>`;
   }
@@ -246,6 +254,7 @@ export function mountStages(rail: HTMLOListElement, bar: HTMLElement, gate: HTML
       return;
     }
     if (b.dataset.settings) return host.openSettings();
+    if (b.dataset.through) return void runThrough();
     const a = action();
     if (b.dataset.go) void a.go();
     else if (b.dataset.secondary && a.secondary) void a.secondary.go();
@@ -387,6 +396,51 @@ export function mountStages(rail: HTMLOListElement, bar: HTMLElement, gate: HTML
     if (r === null) return renderBar();
     sentToAnki = `${r.added} of ${r.total} card${r.total === 1 ? '' : 's'} in ${r.decks.join(', ')}`;
     renderBar();
+  }
+
+  /** The next stage a run-through would start, or null when it is the person's turn: the audit is written, or there is nothing to extract from. */
+  function nextAuto(): StageId | null {
+    if (!has.inventory) return host.hasMaterials() ? 'extract' : null;
+    if (!has.plan) return 'organize';
+    if (!has.deck) return 'cards';
+    if (!has.audit) return 'audit';
+    return null;
+  }
+
+  /**
+   * Run through to the audit: the writing stages and the audit in a row,
+   * with no stop at the read-and-confirm gates -- for the person who has
+   * been through the steps enough times and wants to come back to findings.
+   * It ends where judgment starts, with the audit on screen and adjudication
+   * waiting, or at the first stage that wrote nothing.
+   */
+  async function runThrough(): Promise<void> {
+    if (busy) return host.say(`${busy} is still running — watch the agent below`);
+    if (!runner) {
+      host.say('no agent is connected — set one up in Settings', true);
+      return host.openSettings();
+    }
+    through = true;
+    renderBar();
+    try {
+      for (;;) {
+        await refresh();
+        const stage = nextAuto();
+        if (stage === null) break;
+        if (stage === 'organize') reviewed.add('inventory review');
+        if (stage === 'cards') reviewed.add('plan review');
+        await run(stage);
+        await refresh();
+        if (!done(stage) && !(stage === 'audit' && has.audit)) {
+          host.say(`run-through stopped: ${stage} wrote nothing`, true);
+          return;
+        }
+      }
+      host.say(has.audit ? 'run-through done — the audit is ready to read' : 'run-through done');
+    } finally {
+      through = false;
+      renderBar();
+    }
   }
 
   async function adjudicate(): Promise<void> {
