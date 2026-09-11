@@ -36,6 +36,8 @@ export interface PickerState {
 }
 
 export interface Picker {
+  /** Resolves once the registry has been read the first time, so names can be looked up. */
+  readonly ready: Promise<void>;
   /** Connects `id` if it is installed here (waits for the registry first); false when it is not. */
   connectIfInstalled(id: string): Promise<boolean>;
   setState(state: Partial<PickerState>): void;
@@ -240,6 +242,7 @@ export function mountPicker(host: HTMLElement, sidecar: SidecarClient, bus: Bus,
   });
 
   return {
+    ready: loaded,
     async connectIfInstalled(id) {
       await loaded;
       const p = providers.find((x) => x.id === id);

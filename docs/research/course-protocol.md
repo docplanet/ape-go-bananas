@@ -71,6 +71,27 @@ directory → `-32602` naming `name`; `path` not a directory → `-32000`. The
 page uses it for `_extracted/…` (text and page images from a PDF, rendered
 in the tab); nothing else writes through it today.
 
+### `course/import`
+params `{ path, files }` → `{ imported }` — copies each absolute path in
+`files` into `path` by its basename (a directory: its regular files one
+level deep, dotfiles skipped, the directory not recreated). A missing
+source → `-32602`. How the desktop shell takes a drop or a picker's
+choice; the page, which has bytes rather than paths, uses `course/write`.
+
+### `course/delete`
+params `{ path, name }` → `{ name, removed }` — removes one file beneath
+`path`, and `_extracted/<name>/` with it; `removed: false` when it was not
+there. Confined like `course/read`; a directory → `-32602`.
+
+### `decks/list`, `decks/create`
+The shell's own workspaces: one course folder per deck under a `root` it
+names (the data dir's `decks/`). `decks/list { root }` → `{ root, decks }`,
+each `{ name, path, files, pdfs, artifacts, modified }`, newest first; the
+root is created if absent. `decks/create { root, name }` → `{ name, path }`
+with the folder name derived from the deck name (separators and characters
+a filesystem refuses become `-`; `Anatomy::Lecture 3` → `Anatomy-Lecture 3`)
+and numbered on a clash.
+
 ## 3. What the oracle must prove
 
 - `method/list`/`read` against a temp dir with three `.md` files (one with

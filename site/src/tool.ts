@@ -424,6 +424,7 @@ function isMediaFile(file: File): boolean {
 }
 
 document.addEventListener('drop', (e) => {
+  if (document.body.classList.contains('with-rail')) return; // the shell takes drops as materials
   const files = [...(e.dataTransfer?.files ?? [])];
   const json = files.find(isDeckFile);
   const rest = files.filter((f) => !isDeckFile(f));

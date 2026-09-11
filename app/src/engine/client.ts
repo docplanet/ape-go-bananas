@@ -131,6 +131,16 @@ export interface Extracted {
   images: string[];
 }
 
+/** One deck workspace as decks/list reports it. */
+export interface DeckSummary {
+  name: string;
+  path: string;
+  files: number;
+  pdfs: number;
+  artifacts: { inventory: boolean; plan: boolean; deck: boolean; flags: boolean; review: boolean };
+  modified: string;
+}
+
 export interface PermissionRequest {
   id: number;
   method: 'agent/requestPermission';
@@ -186,6 +196,13 @@ export function makeSidecarClient(host: EngineHost) {
     listCourse: (path: string) =>
       call<{ path: string; files: CourseFile[]; artifacts: { inventory: boolean; plan: boolean; deck: boolean; flags: boolean; review: boolean }; extracted: Extracted[] }>('course/list', { path }),
     readCourse: (path: string, name: string) => call<{ name: string; text: string; bytes: number }>('course/read', { path, name }),
+    /** Copies files (or a folder's files, one level) into the course folder by name: the desktop shell's drop and picker. */
+    importCourse: (path: string, files: string[]) => call<{ imported: string[] }>('course/import', { path, files }),
+    /** Removes one file beneath the course folder, and what was extracted from it. */
+    deleteCourse: (path: string, name: string) => call<{ name: string; removed: boolean }>('course/delete', { path, name }),
+    /** The shell's workspaces: one course folder per deck under `root`, newest first. */
+    listDecks: (root: string) => call<{ root: string; decks: DeckSummary[] }>('decks/list', { root }),
+    createDeck: (root: string, name: string) => call<{ name: string; path: string }>('decks/create', { root, name }),
     /** One file beneath the course folder, text or bytes; directories are made. Confined to the folder like course/read. */
     writeCourse: (path: string, name: string, body: { text: string } | { base64: string }) => call<{ name: string; bytes: number }>('course/write', { path, name, ...body }),
     prompt: (sessionId: string, blocks: ContentBlock[]) => call<{ stopReason: string }>('agent/prompt', { sessionId, blocks }),

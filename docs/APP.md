@@ -516,3 +516,21 @@ a stage click refused without an agent); and `tauri dev` bringing the same
 shell up over the sidecar Rust spawned. Not yet run in the app: a full
 stage with a connected agent -- the same code ran the whole method live from
 the page on the 10th, over the same sidecar methods.
+
+**Later the same night: the main screen is the work, and the app owns the
+workspace.** The first person through the ported shell met the agent list
+first, and a course folder whose earlier run made every step tick at once.
+Two changes. The agent is a *setting* (`agent/settings.ts`, `picker.ts`):
+chosen once, remembered, connected on its own whenever a deck is opened --
+its session is opened in the deck's folder, which is why the folder had to
+come first and why that order is no longer the person's problem. And there
+is no folder to choose: a deck is a workspace the app owns, one folder per
+deck under its data dir (`decks/list`, `decks/create`), files are added by
+dropping them on the window or from a picker (`course/import` for paths on
+the desktop, `course/write` for bytes on the page), and the deck's screen
+shows them as tiles with kind, size and, after extract, pages read
+(`agent/materials.ts`). The bar at the top of the main pane says what is
+next and runs it (`agent/stages.ts`); a later artifact implies the earlier
+steps, so a reopened deck resumes where it was, and the deck list says so
+before it is opened. The last deck reopens on launch. Verified over the
+bridge: new deck, drop, tiles, remove, resume with the agent reconnecting.

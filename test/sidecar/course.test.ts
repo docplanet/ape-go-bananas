@@ -199,6 +199,56 @@ test('course/read returns exact UTF-8 text and byte count for notes.md and neste
   assert.equal(await s.end(), 0);
 });
 
+test('decks/create names a folder from the deck name, numbers a clash; decks/list reports each with its material and artifacts, newest first', { timeout: TIMEOUT }, async () => {
+  const root = join(makeTmpDir(), 'decks');
+  const s = spawnSidecar();
+  await s.ready;
+  assert.deepStrictEqual((await s.request(1, 'decks/list', { root })).result, { root, decks: [] }, 'an empty root is created and empty');
+  const a = (await s.request(2, 'decks/create', { root, name: 'Anatomy::Lecture 3 / part 1' })).result as { name: string; path: string };
+  assert.equal(a.name, 'Anatomy-Lecture 3 - part 1');
+  assert.equal(a.path, join(root, a.name));
+  const b = (await s.request(3, 'decks/create', { root, name: 'Anatomy::Lecture 3 / part 1' })).result as { name: string };
+  assert.equal(b.name, 'Anatomy-Lecture 3 - part 1 (2)', 'a clash is numbered, not overwritten');
+  writeFileSync(join(a.path, 'slides.pdf'), '%PDF-1.4\n');
+  writeFileSync(join(a.path, 'inventory.md'), '# inv\n');
+  const listed = (await s.request(4, 'decks/list', { root })).result as { decks: { name: string; files: number; pdfs: number; artifacts: { inventory: boolean; deck: boolean } }[] };
+  assert.deepStrictEqual(listed.decks.map((d) => d.name).sort(), [a.name, b.name]);
+  const da = listed.decks.find((d) => d.name === a.name)!;
+  assert.equal(da.files, 1);
+  assert.equal(da.pdfs, 1);
+  assert.equal(da.artifacts.inventory, true);
+  assert.equal(da.artifacts.deck, false);
+  expectParamError(await s.request(5, 'decks/create', { root }), 'name', 'name absent');
+  assert.equal(await s.end(), 0);
+});
+
+test('course/import copies files, and a folder\'s files one level deep minus dotfiles; course/delete removes a file with its extraction', { timeout: TIMEOUT }, async () => {
+  const { dir } = makeCourseTree();
+  const src = makeTmpDir();
+  writeFileSync(join(src, 'a.pdf'), '%PDF-a');
+  mkdirSync(join(src, 'lecture'));
+  writeFileSync(join(src, 'lecture', 'b.pdf'), '%PDF-b');
+  writeFileSync(join(src, 'lecture', '.DS_Store'), 'x');
+  mkdirSync(join(src, 'lecture', 'nested'));
+  writeFileSync(join(src, 'lecture', 'nested', 'c.pdf'), '%PDF-c');
+  const s = spawnSidecar();
+  await s.ready;
+  const r = (await s.request(1, 'course/import', { path: dir, files: [join(src, 'a.pdf'), join(src, 'lecture')] })).result as { imported: string[] };
+  assert.deepStrictEqual(r.imported.sort(), ['a.pdf', 'b.pdf'], 'nested/ and the dotfile are left behind');
+  assert.equal(readFileSync(join(dir, 'b.pdf'), 'utf8'), '%PDF-b');
+  expectParamError(await s.request(2, 'course/import', { path: dir, files: [join(src, 'missing.pdf')] }), 'files', 'a missing source');
+  expectParamError(await s.request(3, 'course/import', { path: dir, files: 'a.pdf' }), 'files', 'not an array');
+  // An extraction beside the file goes with it.
+  await s.request(4, 'course/write', { path: dir, name: '_extracted/a.pdf/text.md', text: '# a' });
+  assert.deepStrictEqual((await s.request(5, 'course/delete', { path: dir, name: 'a.pdf' })).result, { name: 'a.pdf', removed: true });
+  assert.equal(existsSync(join(dir, 'a.pdf')), false);
+  assert.equal(existsSync(join(dir, '_extracted', 'a.pdf')), false);
+  assert.deepStrictEqual((await s.request(6, 'course/delete', { path: dir, name: 'a.pdf' })).result, { name: 'a.pdf', removed: false }, 'deleting twice is not an error');
+  expectParamError(await s.request(7, 'course/delete', { path: dir, name: '../outside.md' }), 'name', 'escapes path');
+  expectParamError(await s.request(8, 'course/delete', { path: dir, name: 'sub' }), 'name', 'a directory');
+  assert.equal(await s.end(), 0);
+});
+
 test('course/read with encoding "base64" returns the exact bytes of any kind, and refuses another encoding (§2)', { timeout: TIMEOUT }, async () => {
   const { dir } = makeCourseTree();
   const s = spawnSidecar();

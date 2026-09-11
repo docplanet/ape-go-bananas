@@ -1,10 +1,12 @@
-// The shell: docs/APP.md's one window. The rail on the left holds the course
-// folder, the deck name, the eight steps and Settings; the main pane is card
-// generation -- the bar that says what is next, the artifact gate, the
-// agent's live output, the deck preview at step 6 -- and, before a folder
-// is chosen, the one prompt to choose it. The agent is a setting: chosen
-// once in Settings, remembered, connected on its own whenever a folder is
-// chosen, because its session is opened in that folder.
+// The shell: docs/APP.md's one window. The rail on the left holds the deck's
+// name, the eight steps and Settings; the main pane is card generation --
+// the materials the person added, the bar that says what is next, the
+// artifact gate, the agent's live output, the deck preview at step 6 --
+// and, with no deck open, the list of decks. A deck is a workspace the app
+// owns, one folder per deck under its data dir; files are added by dropping
+// them on the window or from a picker. The agent is a setting: chosen once
+// in Settings, remembered, connected on its own whenever a deck is opened,
+// because its session is opened in the deck's folder.
 //
 // It is the same code in the desktop app and on the tool page when
 // `ape-bridge` opens it -- the host (engine/host.ts) is what differs. The
@@ -13,11 +15,13 @@
 // the sidecar's deck/* methods on the Node engine; the tool page does all
 // of that in the tab on the engine it already carries.
 
-import { EngineError, makeSidecarClient, type ConnectResult, type EngineHost, type SidecarClient } from '../engine/client.js';
+import { toBase64 } from '../engine/bytes.js';
+import { EngineError, makeSidecarClient, type ConnectResult, type DeckSummary, type EngineHost, type SidecarClient } from '../engine/client.js';
 import { makeBus } from './bus.js';
 import { mountChat, type Chat } from './chat.js';
 import { extractMaterials } from './extract.js';
 import { mountHome, type Home } from './home.js';
+import { mountMaterials, type Materials } from './materials.js';
 import { mountFallbackPermissions } from './permission-any.js';
 import { mountPicker, type KeyStore, type Picker } from './picker.js';
 import { mountSettings, type Settings } from './settings.js';
@@ -37,27 +41,27 @@ export interface AgentAppOptions {
   rail: HTMLElement;
   /** The next-step bar's element, above the main pane's views. */
   bar: HTMLElement;
-  /** The main pane's container for everything but the deck view: home, settings, the gate and the agent's output. */
+  /** The main pane's container for everything but the deck view: home, settings, materials, the gate and the agent's output. */
   view: HTMLElement;
   deck: DeckView;
   /** Where an API key entered in Settings is kept: the OS keychain on the desktop, the tab on the site. */
   keys: KeyStore;
-  /** A native folder dialog, where the shell has one; without it, a field to type the path in. */
-  pickFolder?: () => Promise<string | null>;
+  /** A native file dialog returning paths, where the shell has one; without it, a file input whose bytes go through the sidecar. */
+  pickFiles?: () => Promise<string[] | null>;
 }
 
 export interface AgentApp {
   courseDir(): string | null;
-  /** Validates the folder, remembers it, connects the chosen agent, and shows the steps. False when it is not a folder the engine can list. */
-  setCourseDir(dir: string): Promise<boolean>;
-  /** Loads `<dir>/deck.json` into the deck view and shows it. */
-  openDeck(dir: string): Promise<void>;
-  /** The one status line, for the shell's own messages too (a dropped file, an update). */
+  /** Files by path (a drop on the desktop window): into the open deck, or into a new deck named after them. */
+  addPaths(paths: string[]): Promise<void>;
+  /** Files by content (a browser drop or file input): same. */
+  addFiles(files: File[]): Promise<void>;
+  /** The one status line, for the shell's own messages too (an update). */
   say(text: string, isError?: boolean): void;
   dispose(): Promise<void>;
 }
 
-const REMEMBER = { course: 'ape.course', agent: 'ape.agent', deck: (dir: string) => `ape.deck:${dir}` };
+const REMEMBER = { deck: 'ape.deck', agent: 'ape.agent', name: (dir: string) => `ape.name:${dir}` };
 const remember = {
   get: (key: string): string | null => {
     try {
@@ -80,22 +84,18 @@ function esc(s: string): string {
   return s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
 }
 
-function basename(dir: string): string {
-  return dir.replace(/[\\/]+$/, '').split(/[\\/]/).pop() ?? dir;
+function basename(p: string): string {
+  return p.replace(/[\\/]+$/, '').split(/[\\/]/).pop() ?? p;
 }
 
 export function mountAgentApp(host: EngineHost, opts: AgentAppOptions): AgentApp {
   const { rail, bar, view, deck } = opts;
   rail.innerHTML = `
     <h1>A.P.E.</h1>
-    <div class="railhead">Course folder</div>
-    <div class="course">
-      <div id="rail-course" class="path">none</div>
-      <div id="rail-summary" class="muted"></div>
-      <button type="button" id="rail-change" class="quiet">Choose…</button>
-    </div>
-    <label class="railhead" for="rail-deck">Deck name</label>
+    <button type="button" id="rail-home" class="quiet">All decks</button>
+    <label class="railhead" for="rail-deck">Deck</label>
     <input id="rail-deck" placeholder="Course::Lecture 3" autocomplete="off" title="What the deck is called in Anki. Two colons make a subdeck.">
+    <div id="rail-summary" class="muted"></div>
     <div class="railhead">Steps</div>
     <ol class="stages" id="stages"></ol>
     <div class="railfoot">
@@ -103,7 +103,7 @@ export function mountAgentApp(host: EngineHost, opts: AgentAppOptions): AgentApp
       <button type="button" id="rail-settings" class="quiet">Settings</button>
       <div class="status" id="status"></div>
     </div>`;
-  view.innerHTML = `<section class="home-pane" hidden></section><section class="settings-pane" hidden></section><section class="gate" hidden></section><section class="agent-host" hidden></section>`;
+  view.innerHTML = `<section class="home-pane" hidden></section><section class="settings-pane" hidden></section><section class="materials" hidden></section><section class="gate" hidden></section><section class="agent-host" hidden></section>`;
   bar.className = 'nextbar';
   bar.hidden = true;
   const $ = <T extends HTMLElement>(root: HTMLElement, sel: string): T => root.querySelector<T>(sel)!;
@@ -114,13 +114,16 @@ export function mountAgentApp(host: EngineHost, opts: AgentAppOptions): AgentApp
   };
   const homeEl = $<HTMLElement>(view, '.home-pane');
   const settingsEl = $<HTMLElement>(view, '.settings-pane');
+  const materialsEl = $<HTMLElement>(view, '.materials');
   const gate = $<HTMLElement>(view, '.gate');
   const agentHost = $<HTMLElement>(view, '.agent-host');
   const deckInput = $<HTMLInputElement>(rail, '#rail-deck');
+  const railDeckBits = [deckInput, $<HTMLElement>(rail, '#rail-summary'), ...rail.querySelectorAll<HTMLElement>('.railhead, .stages')];
 
   // ---- the engine, wherever it is running -------------------------------------
   const sidecar: SidecarClient = makeSidecarClient(host);
   const bus = makeBus(sidecar);
+  const decksRoot = `${host.dataDir().replace(/[\\/]$/, '')}/decks`;
 
   // ---- screens ---------------------------------------------------------------
   type Screen = 'home' | 'settings' | 'agent' | 'deck';
@@ -132,30 +135,54 @@ export function mountAgentApp(host: EngineHost, opts: AgentAppOptions): AgentApp
     view.hidden = name === 'deck';
     homeEl.hidden = name !== 'home';
     settingsEl.hidden = name !== 'settings';
+    materialsEl.hidden = name !== 'agent';
     gate.hidden = name !== 'agent' || gate.innerHTML === '';
     agentHost.hidden = name !== 'agent';
     bar.hidden = !(name === 'agent' || name === 'deck') || !courseDir;
+    for (const el of railDeckBits) el.hidden = !courseDir;
+    $<HTMLElement>(rail, '#rail-home').hidden = name === 'home';
     deck.show(name === 'deck');
+    if (name === 'home') void refreshHome();
   }
 
-  // ---- course folder + deck name --------------------------------------------
+  // ---- the deck: a workspace -----------------------------------------------------
   let courseDir: string | null = null;
   let connection: ConnectResult | null = null;
   let chat: Chat | null = null;
 
   deckInput.addEventListener('change', () => {
-    if (courseDir) remember.set(REMEMBER.deck(courseDir), deckInput.value.trim());
+    if (courseDir) remember.set(REMEMBER.name(courseDir), deckInput.value.trim());
   });
 
-  async function setCourseDir(dir: string): Promise<boolean> {
-    let summary: string;
+  async function refreshHome(): Promise<void> {
     try {
-      const { files, artifacts } = await sidecar.listCourse(dir);
-      const pdfs = files.filter((f) => f.kind === 'pdf').length;
-      const texts = files.filter((f) => f.kind === 'text').length;
-      const material = [pdfs ? `${pdfs} PDF${pdfs === 1 ? '' : 's'}` : '', texts ? `${texts} text file${texts === 1 ? '' : 's'}` : ''].filter(Boolean).join(', ') || 'no material yet';
-      const resume = artifacts.deck ? 'deck.json is there' : artifacts.plan ? 'plan.md is there' : artifacts.inventory ? 'inventory.md is there' : 'nothing written yet';
-      summary = `${material} · ${resume}`;
+      home.setDecks((await sidecar.listDecks(decksRoot)).decks);
+    } catch (err) {
+      say(err instanceof EngineError ? err.message : String(err), true);
+    }
+  }
+
+  async function refreshMaterials(): Promise<void> {
+    if (!courseDir) return;
+    try {
+      const { files, extracted } = await sidecar.listCourse(courseDir);
+      const material = files.filter((f) => f.kind !== 'other');
+      materials.set(material, extracted);
+      const pdfs = material.filter((f) => f.kind === 'pdf').length;
+      $<HTMLElement>(rail, '#rail-summary').textContent = material.length ? `${material.length} file${material.length === 1 ? '' : 's'}${pdfs ? `, ${pdfs} PDF${pdfs === 1 ? '' : 's'}` : ''}` : 'no files yet';
+    } catch (err) {
+      say(err instanceof EngineError ? err.message : String(err), true);
+    }
+  }
+
+  /** Opens a deck's folder: the materials, the steps, and the chosen agent connected in it. */
+  async function openWorkspace(dir: string, name: string): Promise<boolean> {
+    if (dir === courseDir) {
+      show('agent');
+      return true;
+    }
+    try {
+      await sidecar.listCourse(dir);
     } catch (err) {
       say(err instanceof EngineError ? err.message : String(err), true);
       return false;
@@ -169,14 +196,11 @@ export function mountAgentApp(host: EngineHost, opts: AgentAppOptions): AgentApp
       picker.setState({ connected: null });
     }
     courseDir = dir;
-    remember.set(REMEMBER.course, dir);
-    $<HTMLElement>(rail, '#rail-course').textContent = dir;
-    $<HTMLElement>(rail, '#rail-course').title = dir;
-    $<HTMLElement>(rail, '#rail-summary').textContent = summary;
-    deckInput.value = remember.get(REMEMBER.deck(dir)) ?? basename(dir);
+    remember.set(REMEMBER.deck, dir);
+    deckInput.value = remember.get(REMEMBER.name(dir)) ?? name;
     picker.setState({ hasFolder: true });
     show('agent');
-    await stages.refresh();
+    await Promise.all([refreshMaterials(), stages.refresh()]);
     const chosen = remember.get(REMEMBER.agent);
     if (chosen) {
       const ok = await picker.connectIfInstalled(chosen);
@@ -187,22 +211,88 @@ export function mountAgentApp(host: EngineHost, opts: AgentAppOptions): AgentApp
     return true;
   }
 
-  $<HTMLButtonElement>(rail, '#rail-change').addEventListener('click', () => {
-    if (opts.pickFolder) {
-      void opts.pickFolder().then((dir) => {
-        if (dir) void setCourseDir(dir);
-      });
-    } else {
-      show('home');
-      home.focus();
+  async function newDeck(name: string): Promise<string | null> {
+    try {
+      const made = await sidecar.createDeck(decksRoot, name);
+      remember.set(REMEMBER.name(made.path), name);
+      await openWorkspace(made.path, name);
+      return made.path;
+    } catch (err) {
+      say(err instanceof EngineError ? err.message : String(err), true);
+      return null;
     }
+  }
+
+  // ---- adding and removing materials ----------------------------------------------
+  async function addPaths(paths: string[]): Promise<void> {
+    if (paths.length === 0) return;
+    if (!courseDir && !(await newDeck(basename(paths[0]!).replace(/\.[^.]+$/, '')))) return;
+    try {
+      const { imported } = await sidecar.importCourse(courseDir!, paths);
+      say(imported.length ? `added ${imported.length} file${imported.length === 1 ? '' : 's'}` : 'nothing to add from that');
+    } catch (err) {
+      say(err instanceof EngineError ? err.message : String(err), true);
+    }
+    await Promise.all([refreshMaterials(), stages.refresh()]);
+  }
+  async function addFiles(files: File[]): Promise<void> {
+    if (files.length === 0) return;
+    if (!courseDir && !(await newDeck(files[0]!.name.replace(/\.[^.]+$/, '')))) return;
+    let added = 0;
+    for (const file of files) {
+      try {
+        say(`adding ${file.name}…`);
+        await sidecar.writeCourse(courseDir!, file.name, { base64: toBase64(new Uint8Array(await file.arrayBuffer())) });
+        added += 1;
+      } catch (err) {
+        say(err instanceof EngineError ? err.message : String(err), true);
+      }
+    }
+    if (added) say(`added ${added} file${added === 1 ? '' : 's'}`);
+    await Promise.all([refreshMaterials(), stages.refresh()]);
+  }
+  const fileInput = document.createElement('input');
+  fileInput.type = 'file';
+  fileInput.multiple = true;
+  fileInput.hidden = true;
+  fileInput.addEventListener('change', () => {
+    void addFiles([...(fileInput.files ?? [])]);
+    fileInput.value = '';
   });
+  view.append(fileInput);
+  function askForFiles(): void {
+    if (opts.pickFiles) {
+      void opts.pickFiles().then((paths) => {
+        if (paths) void addPaths(paths);
+      });
+    } else fileInput.click();
+  }
+  // A browser drop anywhere: files by content. (The desktop webview hands
+  // drops to Rust instead, and main.ts calls addPaths with the paths.)
+  for (const type of ['dragenter', 'dragover'] as const) document.addEventListener(type, (e) => e.preventDefault());
+  document.addEventListener('drop', (e) => {
+    e.preventDefault();
+    const files = [...(e.dataTransfer?.files ?? [])];
+    if (files.length) void addFiles(files);
+  });
+  const materials: Materials = mountMaterials(materialsEl, {
+    onAdd: askForFiles,
+    onRemove(relPath) {
+      if (!courseDir) return;
+      void sidecar
+        .deleteCourse(courseDir, relPath)
+        .then(() => Promise.all([refreshMaterials(), stages.refresh()]))
+        .catch((err: unknown) => say(err instanceof EngineError ? err.message : String(err), true));
+    },
+  });
+
+  $<HTMLButtonElement>(rail, '#rail-home').addEventListener('click', () => show('home'));
   $<HTMLButtonElement>(rail, '#rail-settings').addEventListener('click', () => show('settings'));
 
   // ---- home, settings ----------------------------------------------------------
   const home: Home = mountHome(homeEl, {
-    ...(opts.pickFolder ? { pickFolder: opts.pickFolder } : {}),
-    onFolder: (dir) => void setCourseDir(dir),
+    onNew: (name) => void newDeck(name),
+    onOpen: (d) => void openWorkspace(d.path, d.name),
     openSettings: () => show('settings'),
   });
   const settings: Settings = mountSettings(settingsEl, host, {
@@ -225,7 +315,7 @@ export function mountAgentApp(host: EngineHost, opts: AgentAppOptions): AgentApp
     $<HTMLElement>(rail, '#rail-agent').textContent = !name ? 'No agent chosen' : connection ? `${name} · connected` : `${name} · not connected`;
     home.setAgent(name);
   }
-  const picker: Picker = mountPicker(settingsEl.querySelector<HTMLElement>('#set-agent')!, sidecar, bus, host.dataDir(), () => courseDir, opts.keys, {
+  const picker: Picker = mountPicker(settings.agentSlot, sidecar, bus, host.dataDir(), () => courseDir, opts.keys, {
     say,
     onChosen(id) {
       remember.set(REMEMBER.agent, id);
@@ -243,7 +333,7 @@ export function mountAgentApp(host: EngineHost, opts: AgentAppOptions): AgentApp
         const named: ConnectResult = { ...result, agent: { name: picker.nameOf(result.provider) ?? result.agent?.name ?? result.provider, version: result.agent?.version ?? '' } };
         connection = named;
         chat = mountChat(agentHost, sidecar, bus, named, say, () => courseDir);
-        stages.setConnection(result);
+        stages.setConnection(named);
         picker.setState({ connected: result.provider, chosen: result.provider });
         remember.set(REMEMBER.agent, result.provider);
         showAgentLine();
@@ -254,6 +344,7 @@ export function mountAgentApp(host: EngineHost, opts: AgentAppOptions): AgentApp
     },
   });
   picker.setState({ chosen: remember.get(REMEMBER.agent) });
+  void picker.ready.then(showAgentLine);
 
   // ---- the steps ---------------------------------------------------------------
   // The runner gets a client whose newSession carries the chat pane's
@@ -267,22 +358,24 @@ export function mountAgentApp(host: EngineHost, opts: AgentAppOptions): AgentApp
       return r;
     },
   };
-  const openDeck = async (dir: string): Promise<void> => {
-    show('deck');
-    await deck.open(dir);
-  };
   const stages: Stages = mountStages($<HTMLOListElement>(rail, '#stages'), bar, gate, {
     sidecar: runnerClient,
     courseDir: () => courseDir,
     deckName: () => deckInput.value.trim(),
     say,
     showAgentView: () => show('agent'),
-    openDeck,
+    openDeck: async (dir) => {
+      show('deck');
+      await deck.open(dir);
+    },
     exportDeck: async () => (courseDir ? deck.export(courseDir) : null),
     prepareMaterials: async (dir) => {
       await extractMaterials(sidecar, host, dir, say);
+      await refreshMaterials();
     },
     openSettings: () => show('settings'),
+    hasMaterials: () => materials.count() > 0,
+    addFiles: askForFiles,
   });
 
   // ---- start -------------------------------------------------------------------
@@ -290,10 +383,12 @@ export function mountAgentApp(host: EngineHost, opts: AgentAppOptions): AgentApp
   show('home');
   showAgentLine();
   void (async () => {
-    // The folder the host was opened on, else the one from last time.
-    const first = host.courseRoot() ?? remember.get(REMEMBER.course);
-    if (first && !(await setCourseDir(first))) {
-      remember.set(REMEMBER.course, null);
+    // The folder the host was opened on (ape-bridge's argument), else the deck from last time.
+    const given = host.courseRoot();
+    const last = remember.get(REMEMBER.deck);
+    const first = given ?? last;
+    if (first && !(await openWorkspace(first, basename(first)))) {
+      remember.set(REMEMBER.deck, null);
       show('home');
     }
     showAgentLine();
@@ -307,11 +402,12 @@ export function mountAgentApp(host: EngineHost, opts: AgentAppOptions): AgentApp
 
   return {
     courseDir: () => courseDir,
-    setCourseDir,
-    openDeck,
+    addPaths,
+    addFiles,
     say,
     dispose,
   };
 }
 
 export { EngineError, esc };
+export type { DeckSummary };

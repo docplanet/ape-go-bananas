@@ -49,6 +49,10 @@ export interface StageHost {
   /** Extracts text and page images beside every PDF that has none yet; runs before the extract stage. */
   prepareMaterials(courseDir: string): Promise<void>;
   openSettings(): void;
+  /** Whether the deck has any material to read; extract has nothing to do without it. */
+  hasMaterials(): boolean;
+  /** Opens the shell's way of adding files (a picker). */
+  addFiles(): void;
 }
 
 function esc(s: string): string {
@@ -164,6 +168,7 @@ export function mountStages(rail: HTMLOListElement, bar: HTMLElement, gate: HTML
     };
     if (!has.deck) {
       if (!has.plan) {
+        if (!has.inventory && !host.hasMaterials()) return { stage: 'extract', button: 'Add files…', hint: 'Add the lecture\'s files first: slides as PDF, the transcript, the objectives.', go: async () => host.addFiles() };
         if (!has.inventory) return writing('extract');
         if (!reviewed.has('inventory review')) return review('inventory review');
         return writing('organize');
@@ -286,6 +291,10 @@ export function mountStages(rail: HTMLOListElement, bar: HTMLElement, gate: HTML
     // Not an error: the previous click is still working. Saying which, and
     // where to watch it, is the whole of what the person needed to know.
     if (busy) return host.say(`${busy} is still running — watch the agent below, or press Stop in the bar`);
+    if (stage === 'extract' && !host.hasMaterials()) {
+      host.say('add the lecture files first', true);
+      return host.addFiles();
+    }
     const writing = WRITING_STAGES.find((w) => w.id === stage);
     if ((writing || stage === 'audit') && !runner) {
       host.say('no agent is connected — set one up in Settings', true);

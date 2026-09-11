@@ -141,25 +141,17 @@ void (async () => {
     view: $('view-agent'),
     deck,
     keys: secrets,
-    pickFolder: async () => {
-      const picked = await open({ directory: true, multiple: false });
-      return typeof picked === 'string' ? picked : null;
+    pickFiles: async () => {
+      const picked = await open({ multiple: true, directory: false, title: 'Add lecture files' });
+      return Array.isArray(picked) ? picked : typeof picked === 'string' ? [picked] : null;
     },
   });
 
-  // A drop anywhere in the window: a folder becomes the course; a deck.json
-  // makes its folder the course and opens the deck.
+  // A drop anywhere in the window: files, or a folder of them, into the deck.
   void getCurrentWebview().onDragDropEvent((event) => {
-    const drop = $('drop');
-    drop.classList.toggle('hover', event.payload.type === 'over');
-    if (event.payload.type !== 'drop' || !event.payload.paths[0]) return;
-    const p = event.payload.paths[0];
-    if (p.endsWith('.json')) {
-      const dir = p.replace(/[\\/][^\\/]+$/, '');
-      void app.setCourseDir(dir).then((ok) => (ok ? app.openDeck(dir) : undefined));
-    } else {
-      void app.setCourseDir(p);
-    }
+    document.body.classList.toggle('dropping', event.payload.type === 'over');
+    if (event.payload.type !== 'drop' || event.payload.paths.length === 0) return;
+    void app.addPaths(event.payload.paths);
   });
 
   void offerUpdate($('main'), app.say);
