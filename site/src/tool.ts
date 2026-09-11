@@ -431,7 +431,7 @@ document.addEventListener('drop', (e) => {
   if (!json && rest.length > 0 && !rest.every(isMediaFile)) {
     showError(
       `This box takes a finished deck.json. To build a deck from lecture files (${rest.map((f) => f.name).join(', ')}), ` +
-        `use the desktop app, or put them in a folder and start the bridge on it — see "Want to build a deck" below.`,
+        `use the desktop app — the link below.`,
     );
     return;
   }
@@ -446,16 +446,6 @@ document.addEventListener('drop', (e) => {
 });
 
 $('pick').addEventListener('click', () => ($('file') as HTMLInputElement).click());
-$('copy').addEventListener('click', () => {
-  const button = $('copy') as HTMLButtonElement;
-  void navigator.clipboard.writeText($('cmd').textContent ?? '').then(
-    () => {
-      button.textContent = 'Copied';
-      setTimeout(() => (button.textContent = 'Copy'), 1500);
-    },
-    () => showError('Could not copy — select the command and copy it by hand.'),
-  );
-});
 $('file').addEventListener('change', (e) => {
   const file = (e.target as HTMLInputElement).files?.[0];
   if (file) void loadDeck(file);
@@ -471,7 +461,9 @@ $('export').addEventListener('click', () => void exportApkg());
 // When `ape-bridge` opened this page -- its details are in the fragment --
 // the page becomes the app: the same shell the desktop app runs
 // (app/src/agent/app.ts), over the bridge instead of Tauri, with this page's
-// in-tab engine as the deck view. Nothing here is fetched until then.
+// in-tab engine as the deck view. A developer's route: the shell can be
+// driven in a browser without building the Tauri app. The page does not
+// advertise it; the front door is the app. Nothing here is fetched until then.
 import { Bridge, locateBridge } from './engine/bridge-transport.js';
 {
   const locator = locateBridge();

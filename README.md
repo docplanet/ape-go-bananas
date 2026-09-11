@@ -9,22 +9,20 @@ of this repo's code, comments, or docs do either.
 
 ## Use it
 
-Lecture files in, an Anki deck out, with an agent you already pay for. Two
-steps, in this order:
+Download the desktop app from <https://docplanet.github.io/ape-go-bananas/>
+(`docs/APP.md`). Make a deck, drop the lecture's files on the window —
+slides as PDF, the transcript, the objectives — pick an agent you already
+pay for once in Settings (a Claude, Gemini or Codex subscription, or any
+model with an OpenRouter key), and run the steps in order: extract,
+organize, cards, audit, export. Each result is shown before the next step
+runs. Nothing is uploaded; the agent runs on your computer, in the deck's
+folder. The browser tool at `/tool/` checks a finished `deck.json` and
+exports the `.apkg` with nothing installed.
 
-```sh
-npx -p github:docplanet/ape-go-bananas ape-bridge "/path/to/lecture folder"
-```
-
-then open the link it prints. That link is the page at
-<https://docplanet.github.io/ape-go-bananas/tool/> attached to the bridge on
-your machine: the folder is filled in, you choose an agent (a Claude, Gemini
-or Codex subscription, or any model with an OpenRouter key) and run the
-steps in order — extract, organize, cards, audit, export. Nothing is
-uploaded; the bridge listens on this computer only. Needs Node ≥ 20; the
-first run builds the bridge (npm runs `prepare` on a git install), after
-that it starts in a second. The same page on its own, with nothing
-installed, checks a finished `deck.json` and exports the `.apkg`.
+For development, the same shell runs in a browser without building the
+app: `npx -p github:docplanet/ape-go-bananas ape-bridge` starts the engine
+on this machine and opens the tool page attached to it (`src/bridge/`,
+Node ≥ 20). It is a developer route, not advertised on the pages.
 
 ## Requirements
 

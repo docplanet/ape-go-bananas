@@ -52,25 +52,7 @@
 
   <section id="view-agent" hidden></section>
 
-  <!-- The whole pipeline, from this page: only when ape-bridge opened it. A
-       developer's route and a fallback; the front door is the desktop app. -->
-  <details id="build" class="steps">
-    <summary>Want to build a deck from lecture files?</summary>
-    <p>Get the <a href="../">desktop app</a>: point it at a folder of course material, pick an agent you already pay for, and run the steps — extract, organize, cards, audit, export — reviewing each result before the next.</p>
-    <p>The same thing runs inside this page against a bridge on your own machine, if you would rather not install the app:</p>
-    <ol>
-    <li>
-      <h2>Start the bridge</h2>
-      <p>In a terminal — with <a href="https://nodejs.org/">Node.js</a> 20 or newer installed — run this, with your lecture folder in the quotes:</p>
-      <pre class="cmd"><code id="cmd">npx -p github:docplanet/ape-go-bananas ape-bridge "/path/to/lecture folder"</code><button type="button" id="copy" class="ghost">Copy</button></pre>
-      <p class="small">The first run builds the bridge, about a minute; after that it starts in a second. It listens on this computer only, and stops when you close the terminal.</p>
-    </li>
-    <li>
-      <h2>Open the link it prints</h2>
-      <p>That link is this page, attached to your bridge: the folder is filled in, you choose an agent — a Claude, Gemini or Codex subscription, or any model with an OpenRouter key — and run the steps in order. Each step's result is shown to you before the next.</p>
-    </li>
-    </ol>
-  </details>
+  <p id="build" class="small">Want to build a deck from lecture files? That is the <a href="../">desktop app</a>: point it at the lecture's files, pick an agent you already pay for, and run the steps — extract, organize, cards, audit, export — reviewing each result before the next.</p>
 
   <p id="error" class="error" hidden></p>
 

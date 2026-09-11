@@ -57,8 +57,12 @@ imports `dist/pipeline` and spawns `dist/sidecar`). Decks live under
 (`ape.name:<path>`), the folder name is derived from it once; the site's
 bridge tier still works but is only a developer route.
 
-**Still open from §7.6:** Apple signing ($99/yr, removes the "unidentified
-developer" wall), and whether `ape-bridge` stays.
+**§7.6, decided 2026-09-11:** `ape-bridge` stays as a developer route --
+the shell can be driven in a browser without building the app, which is how
+everything above was verified -- and is off the public pages (the tool page
+points at the app; the download page and README no longer lead with it).
+Still open: Apple signing ($99/yr, removes the "unidentified developer"
+wall).
 
 ---
 

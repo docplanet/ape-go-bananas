@@ -26,21 +26,9 @@ body {
 }
 main { max-width: 1100px; margin: 0 auto; padding: 40px 24px 64px; }
 
-/* Building a deck is the desktop app's job; the bridge steps are the fallback, folded away. */
-#build { margin-top: 32px; border-top: 1px solid var(--line); padding-top: 18px; }
-#build summary { cursor: pointer; color: var(--muted); }
-#build[open] summary { margin-bottom: 12px; }
-
-/* The two steps on the landing page. Numbered, because they are in order. */
-.steps ol { padding-left: 1.4em; margin: 0; }
-.steps li { margin: 0 0 26px; }
-.steps li::marker { color: var(--accent); font-weight: 600; }
-.steps h2 { font-size: 19px; margin: 0 0 6px; }
-.steps p { margin: 0 0 8px; max-width: 70ch; }
-.cmd { display: flex; align-items: center; gap: 12px; margin: 10px 0; padding: 10px 12px; background: var(--panel);
-  border: 1px solid var(--line); border-radius: 8px; font: 13px/1.5 Menlo, ui-monospace, monospace; overflow-x: auto; }
-.cmd code { flex: 1; white-space: pre; }
-.cmd button { flex: none; font: inherit; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+/* Building a deck is the desktop app's job; the page says so once, below the checker. */
+#build { margin-top: 32px; border-top: 1px solid var(--line); padding-top: 18px; max-width: 70ch; }
+#build a { color: var(--accent); }
 h1 { font-size: 32px; letter-spacing: .04em; margin: 0 0 6px; font-weight: 600; }
 h1 .sep { color: var(--line); }
 h1 .what { font-size: 20px; letter-spacing: normal; color: var(--muted); font-weight: 400; }
