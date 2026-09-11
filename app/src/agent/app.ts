@@ -16,7 +16,7 @@
 // of that in the tab on the engine it already carries.
 
 import { toBase64 } from '../engine/bytes.js';
-import { EngineError, makeSidecarClient, type ConnectResult, type DeckSummary, type EngineHost, type SidecarClient } from '../engine/client.js';
+import { EngineError, makeSidecarClient, type ConnectResult, type DeckSummary, type EngineHost, type SidecarClient, type SendToAnkiResult } from '../engine/client.js';
 import { makeBus } from './bus.js';
 import { mountChat, type Chat } from './chat.js';
 import { extractMaterials } from './extract.js';
@@ -35,6 +35,8 @@ export interface DeckView {
   open(courseDir: string): Promise<void>;
   /** Exports `<courseDir>/deck.json`; the path written, or null when it was saved some other way (a download) or failed. Reports its own failures. */
   export(courseDir: string): Promise<string | null>;
+  /** Puts `<courseDir>/deck.json` into the running Anki; null when it failed (Anki closed, most often). Reports its own failures. */
+  sendToAnki(courseDir: string): Promise<SendToAnkiResult | null>;
 }
 
 export interface AgentAppOptions {
@@ -369,6 +371,7 @@ export function mountAgentApp(host: EngineHost, opts: AgentAppOptions): AgentApp
       await deck.open(dir);
     },
     exportDeck: async () => (courseDir ? deck.export(courseDir) : null),
+    sendToAnki: async () => (courseDir ? deck.sendToAnki(courseDir) : null),
     prepareMaterials: async (dir) => {
       await extractMaterials(sidecar, host, dir, say);
       await refreshMaterials();

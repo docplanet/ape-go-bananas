@@ -154,6 +154,23 @@ export interface PermissionRequest {
 }
 
 
+export interface AnkiStatus {
+  url: string;
+  reachable: boolean;
+  version: number | null;
+  error: string | null;
+}
+
+export interface SendToAnkiResult {
+  decks: string[];
+  total: number;
+  added: number;
+  skipped: number;
+  media: number;
+  unresolvedMedia: string[];
+  createdModel: boolean;
+}
+
 export type SidecarClient = ReturnType<typeof makeSidecarClient>;
 
 /** Every method of the sidecar, bound to one host. Satisfies PipelineClient. */
@@ -169,6 +186,10 @@ export function makeSidecarClient(host: EngineHost) {
       call<{ html: string; count: number; outPath: string | null }>('deck/review', { path, ...opts }),
     export: (path: string, opts: { outPath?: string; deckName?: string; mediaDir?: string } = {}) =>
       call<{ outPath: string; count: number; unresolvedMedia: string[] }>('deck/export', { path, ...opts }),
+    /** Whether Anki is open with AnkiConnect answering. */
+    ankiStatus: () => call<AnkiStatus>('anki/status'),
+    /** Puts the deck straight into the running Anki: note type, deck, media, notes. */
+    sendToAnki: (path: string, deckName?: string) => call<SendToAnkiResult>('anki/send', deckName ? { path, deckName } : { path }),
     readFlags: (path: string) => call<{ flags: Flag[]; flagsPath: string }>('flags/read', { path }),
     writeFlags: (path: string, flags: Flag[]) => call<{ flagsPath: string; count: number }>('flags/write', { path, flags }),
 

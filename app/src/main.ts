@@ -7,7 +7,7 @@
 import { open } from '@tauri-apps/plugin-dialog';
 import { getCurrentWebview } from '@tauri-apps/api/webview';
 import { mountAgentApp, type DeckView } from './agent/app.js';
-import { EngineError, makeSidecarClient, type Flag, type SidecarClient } from './engine/client.js';
+import { EngineError, makeSidecarClient, type Flag, type SidecarClient, type SendToAnkiResult } from './engine/client.js';
 import { TauriHost, secrets, sidecarStatus } from './engine/tauri-host.js';
 import { mountPreview } from './preview.js';
 import { offerUpdate } from './updater.js';
@@ -24,7 +24,7 @@ root.innerHTML = `
         <button type="button" id="open">Open…</button>
       </section>
       <section class="work" id="work" hidden>
-        <header class="bar"><span id="deckname"></span><span class="grow"></span><button type="button" id="export">Export .apkg</button></header>
+        <header class="bar"><span id="deckname"></span><span class="grow"></span><button type="button" id="send">Send to Anki</button><button type="button" id="export" class="quiet">Export .apkg</button></header>
         <div class="split">
           <div class="preview" id="preview"></div>
           <div class="side">
@@ -100,6 +100,22 @@ function makeDeckView(sidecar: SidecarClient, say: (text: string, isError?: bool
     }
   }
 
+  async function sendPath(path: string): Promise<SendToAnkiResult | null> {
+    try {
+      const r = await sidecar.sendToAnki(path);
+      const bits = [`${r.added} of ${r.total} added to ${r.decks.join(', ')}`];
+      if (r.skipped) bits.push(`${r.skipped} already there`);
+      if (r.media) bits.push(`${r.media} image${r.media === 1 ? '' : 's'} stored`);
+      if (r.createdModel) bits.push('note type created');
+      if (r.unresolvedMedia.length) bits.push(`missing media: ${r.unresolvedMedia.join(', ')}`);
+      say(`Anki: ${bits.join(' · ')}`, r.unresolvedMedia.length > 0);
+      return r;
+    } catch (err) {
+      say(err instanceof EngineError ? err.message : String(err), true);
+      return null;
+    }
+  }
+
   $('open').addEventListener('click', () => {
     void open({ multiple: false, filters: [{ name: 'deck.json', extensions: ['json'] }] }).then((picked) => {
       if (typeof picked === 'string') void openPath(picked);
@@ -108,6 +124,9 @@ function makeDeckView(sidecar: SidecarClient, say: (text: string, isError?: bool
   $('export').addEventListener('click', () => {
     if (deckPath) void exportPath(deckPath);
   });
+  $('send').addEventListener('click', () => {
+    if (deckPath) void sendPath(deckPath);
+  });
 
   return {
     show(visible) {
@@ -115,6 +134,7 @@ function makeDeckView(sidecar: SidecarClient, say: (text: string, isError?: bool
     },
     open: (dir) => openPath(`${dir.replace(/[\\/]$/, '')}/deck.json`),
     export: (dir) => exportPath(`${dir.replace(/[\\/]$/, '')}/deck.json`),
+    sendToAnki: (dir) => sendPath(`${dir.replace(/[\\/]$/, '')}/deck.json`),
   };
 }
 

@@ -97,8 +97,8 @@ export function makeTmpDir(prefix = 'ape-sidecar-'): string {
  * explicitly -- to `mediaDir`, or to a fresh empty temp dir -- so nothing
  * here depends on the developer's real Anki profile.
  */
-export function spawnSidecar(opts: { mediaDir?: string; cwd?: string } = {}): Sidecar {
-  const env: NodeJS.ProcessEnv = { ...process.env, ANKI_MEDIA: opts.mediaDir ?? makeTmpDir('ape-sidecar-media-') };
+export function spawnSidecar(opts: { mediaDir?: string; cwd?: string; env?: NodeJS.ProcessEnv } = {}): Sidecar {
+  const env: NodeJS.ProcessEnv = { ...process.env, ANKI_MEDIA: opts.mediaDir ?? makeTmpDir('ape-sidecar-media-'), ...(opts.env ?? {}) };
   const child = spawn(process.execPath, [SIDECAR_ENTRY], { cwd: opts.cwd ?? process.cwd(), env, stdio: ['pipe', 'pipe', 'pipe'] });
   live.push(child);
 

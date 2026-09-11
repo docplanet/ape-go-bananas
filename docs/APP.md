@@ -534,3 +534,14 @@ next and runs it (`agent/stages.ts`); a later artifact implies the earlier
 steps, so a reopened deck resumes where it was, and the deck list says so
 before it is opened. The last deck reopens on launch. Verified over the
 bridge: new deck, drop, tiles, remove, resume with the agent reconnecting.
+
+**Send to Anki (2026-09-11).** The deliver step's first button puts the deck
+straight into the running Anki over AnkiConnect (`anki/send`, course-protocol
+§2b: the note type if the collection lacks it, the deck, every image from the
+deck's own media list, then the notes with duplicates refused); Export .apkg
+is the second button, for the person who would rather import by hand. Anki
+closed, or the add-on missing, is one sentence naming the add-on code. No MCP
+server is involved: the sidecar is a program and POSTs to localhost. The same
+day's other fix: the exporter, the check and the review all read that media
+list, which the writer had been producing and nothing had been reading, so
+the first desktop export went out with every image missing.

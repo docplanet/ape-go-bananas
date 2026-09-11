@@ -12,6 +12,7 @@
 import { type DecodedLine, type RequestId, encodeErrorResponse, encodeNotification, encodeRequest, encodeSuccessResponse } from '../acp/framing.js';
 import { AgentBridge } from './agent.js';
 import { courseMethods } from './course.js';
+import { ankiMethods } from './anki.js';
 import { InvalidParams, buildMethods, type MethodHandler, type SidecarInfo } from './methods.js';
 
 export interface DispatcherOptions {
@@ -56,6 +57,7 @@ export function createDispatcher(options: DispatcherOptions): Dispatcher {
   const methods: Record<string, MethodHandler> = {
     ...buildMethods(info, options.onShutdown),
     ...courseMethods(),
+    ...ankiMethods(),
     ...bridge.methods(),
   };
 

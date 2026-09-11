@@ -92,6 +92,33 @@ with the folder name derived from the deck name (separators and characters
 a filesystem refuses become `-`; `Anatomy::Lecture 3` → `Anatomy-Lecture 3`)
 and numbered on a clash.
 
+## 2b. Anki, through AnkiConnect (added 2026-09-11)
+
+The method's own insertion route is the AnkiConnect add-on's JSON endpoint
+on `localhost:8765` (3-cards.md, "Getting the notes in"); the sidecar
+speaks to it directly (`src/sidecar/anki.ts`), so the app needs neither an
+agent nor the MCP server to put a deck into Anki. Env `APE_ANKI_CONNECT`
+overrides the URL (tests point it at `test/sidecar/fake-anki.ts`).
+
+### `anki/status`
+params none → `{ url, reachable, version, error }`. `reachable: false`
+carries the sentence the app shows: "Anki is not open, or the AnkiConnect
+add-on (code 2055492159) is not installed. Open Anki and try again."
+
+### `anki/send`
+params `{ path, deckName? }` → `{ decks, total, added, skipped, media,
+unresolvedMedia, createdModel }`. In order: `version` (unreachable →
+`-32000` with the sentence above), `modelNames` and `createModel` for
+`Custom Cloze` only when the collection lacks it (the same fields,
+templates and CSS the .apkg exporter writes), `createDeck` for every
+distinct deck name (`deckName` overrides every note's own), `storeMediaFile`
+for every image a field references, resolved through the deck's own media
+list then the Anki media directory then the deck's folder (a name found
+nowhere is listed in `unresolvedMedia` and the send goes on), then one
+`addNotes` with `allowDuplicate: false, duplicateScope: "deck"` — a `null`
+id counts as `skipped`. An AnkiConnect error string → `-32000`
+`"AnkiConnect: <error>"`.
+
 ## 3. What the oracle must prove
 
 - `method/list`/`read` against a temp dir with three `.md` files (one with

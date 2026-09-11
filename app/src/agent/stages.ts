@@ -19,7 +19,7 @@ import {
   type Runner,
   type StageId,
 } from '../../../dist/pipeline/index.js';
-import { EngineError, type ConnectResult, type Flag, type SidecarClient } from '../engine/client.js';
+import { EngineError, type ConnectResult, type Flag, type SidecarClient, type SendToAnkiResult } from '../engine/client.js';
 
 export const STAGES: readonly StageId[] = ['extract', 'inventory review', 'organize', 'plan review', 'cards', 'deck preview', 'audit', 'deliver'];
 
@@ -46,6 +46,8 @@ export interface StageHost {
   openDeck(courseDir: string): Promise<void>;
   /** Exports the deck; the path written, or null when the shell saved it some other way (a download) or failed. */
   exportDeck(): Promise<string | null>;
+  /** Puts the deck into the running Anki; null when it failed (Anki closed, most often). */
+  sendToAnki(): Promise<SendToAnkiResult | null>;
   /** Extracts text and page images beside every PDF that has none yet; runs before the extract stage. */
   prepareMaterials(courseDir: string): Promise<void>;
   openSettings(): void;
@@ -94,6 +96,7 @@ export function mountStages(rail: HTMLOListElement, bar: HTMLElement, gate: HTML
   const reviewed = new Set<StageId>();
   let previewed = false;
   let exportedTo: string | null = null;
+  let sentToAnki: string | null = null; // what landed in Anki, once it has
   /** The artifact the gate is showing, if any. */
   let showing: string | null = null;
 
@@ -194,14 +197,24 @@ export function mountStages(rail: HTMLOListElement, bar: HTMLElement, gate: HTML
         go: applyVerdicts,
         secondary: { label: 'Re-adjudicate', go: adjudicate },
       };
+    const toAnki = { label: 'Send to Anki', go: send };
+    if (sentToAnki !== null)
+      return {
+        stage: 'deliver',
+        button: 'Send again',
+        hint: `Done. ${sentToAnki} — open Anki and study.`,
+        go: send,
+        secondary: { label: 'Export .apkg', go: () => run('deliver') },
+      };
     if (exportedTo !== null)
       return {
         stage: 'deliver',
         button: 'Export again',
-        hint: `Done. ${exportedTo} is beside your material — double-click it to import into Anki.`,
+        hint: `Done. ${exportedTo} is beside your material — double-click it to import into Anki, or send it straight in.`,
         go: () => run('deliver'),
+        secondary: toAnki,
       };
-    return { stage: 'deliver', button: 'Export .apkg', hint: ABOUT.deliver, go: () => run('deliver') };
+    return { stage: 'deliver', button: 'Send to Anki', hint: `${ABOUT.deliver} Anki must be open with the AnkiConnect add-on; Export writes an .apkg to import by hand instead.`, go: send, secondary: { label: 'Export .apkg', go: () => run('deliver') } };
   }
 
   function renderBar(): void {
@@ -364,6 +377,16 @@ export function mountStages(rail: HTMLOListElement, bar: HTMLElement, gate: HTML
       setBusy(null);
       await refresh();
     }
+  }
+
+  /** Send to Anki: no agent runs, so it is not a busy stage; it either lands or says why not. */
+  async function send(): Promise<void> {
+    if (busy) return host.say(`${busy} is still running — watch the agent below`);
+    host.say('sending to Anki…');
+    const r = await host.sendToAnki();
+    if (r === null) return renderBar();
+    sentToAnki = `${r.added} of ${r.total} card${r.total === 1 ? '' : 's'} in ${r.decks.join(', ')}`;
+    renderBar();
   }
 
   async function adjudicate(): Promise<void> {
