@@ -265,11 +265,16 @@ fn bundled(resource_dir: Option<&PathBuf>) -> (Option<PathBuf>, Option<PathBuf>,
 
 pub fn resolve_paths(resource_dir: Option<PathBuf>) -> Result<Paths, String> {
     let (bundled_node, bundled_script, bundled_npm) = bundled(resource_dir.as_ref());
+    // A dev build runs the engine as it is in the repo. The staged copy under
+    // src-tauri/resources is whatever prepare-bundle last wrote, and preferring
+    // it here once ran a weeks-old sidecar under a freshly built window
+    // ("method not found: decks/create").
+    let repo_dist = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../dist/sidecar/index.js");
     let script = match std::env::var_os("APE_SIDECAR") {
         Some(p) => PathBuf::from(p),
         None => match bundled_script {
+            _ if cfg!(debug_assertions) && repo_dist.exists() => repo_dist,
             Some(p) => p,
-            None if cfg!(debug_assertions) => PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../dist/sidecar/index.js"),
             None => {
                 return Err(format!(
                     "no bundled engine (looked for engine/sidecar/index.js under {}; exe {}) and APE_SIDECAR is not set",
@@ -286,13 +291,13 @@ pub fn resolve_paths(resource_dir: Option<PathBuf>) -> Result<Paths, String> {
         .or(bundled_node)
         .unwrap_or_else(|| PathBuf::from("node"));
     let npm_cli = std::env::var_os("APE_NPM_CLI").map(PathBuf::from).or(bundled_npm);
+    // Same for the method files: in dev, the method repo beside this checkout
+    // (staged with SETUP.md by prepare-bundle for a real bundle).
+    let dev_method = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../Anki/method");
     let method_dir = std::env::var_os("APE_METHOD_DIR")
         .map(PathBuf::from)
-        .or_else(|| resource_dir.as_ref().map(|r| r.join("method")).filter(|p| p.join("1-extract.md").exists()))
-        .or_else(|| {
-            let dev = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../Anki/method");
-            if cfg!(debug_assertions) && dev.is_dir() { dev.canonicalize().ok() } else { None }
-        });
+        .or_else(|| if cfg!(debug_assertions) && dev_method.is_dir() { dev_method.canonicalize().ok() } else { None })
+        .or_else(|| resource_dir.as_ref().map(|r| r.join("method")).filter(|p| p.join("1-extract.md").exists()));
     let out = std::process::Command::new(&node)
         .arg("--version")
         .output()
