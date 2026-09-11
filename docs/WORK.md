@@ -86,7 +86,8 @@ once (see `git notes show b383e7a`).
 | live from the published site in Chrome 152; Brave's localhost block named in the error; `SETUP.md` fetched and attached to extract; permission policy answers reads and in-folder edits (`permission-policy.ts`, 6 tests) | `80f8e2c` `6f95273` |
 | PDFs read in the tab: pdf.js text + one JPEG per page under `_extracted/`, `course/write` and `course/list.extracted` (11 course tests), `describeExtracted` in the prompt (5 pipeline tests), deadlines on a dead worker; run live on a 41-page lecture | `819b765` |
 | the engine runs in the tab: the sidecar mounted into WebContainer, `EngineHost` over two transports, wrapper + base64 framing (8 tests), COOP/COEP service worker; cold page to a ready engine and a 41-provider picker in 2.7 s | `2dad160` |
-| upload into the container's course folder, pinned Claude Code 2.1.112 fetched on demand, `claude setup-token` relayed as a console; lecture uploaded and the OAuth URL reached in the tab | _this commit_ |
+| upload into the container's course folder, pinned Claude Code 2.1.112 fetched on demand, `claude setup-token` relayed as a console; lecture uploaded and the OAuth URL reached in the tab | `1691073` |
+| the rail says what it is: steps are buttons, the running one is marked where the status line cannot overwrite it, "already running" stops being an error, sign-in hides once connected | _this commit_ |
 | `[hidden]` means hidden (the plain tool page was blank in two browsers); the page leads with the two steps and `npx -p github:… ape-bridge` works from the repo (`prepare`), verified on Node 20 | `a39d67f` `258bcf3` |
 | tiering rule written into the method (no count; signal, then time) — method repo `548036d`; Muscle deck re-tiered 122 core / 53 plus | _method repo_ |
 

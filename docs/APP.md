@@ -390,6 +390,31 @@ Claude Code 2.1.112 fetched into the container in ~8 s, and `setup-token`
 printing its authorise URL and waiting for the code. The token it writes
 lands in the container's HOME -- the sandbox -- and does not outlive the tab.
 
+**What the first person through the screen could not find.** They signed in,
+connected Claude and uploaded a lecture, and then asked how to start the
+process. Three separate failures, all fixed:
+
+- **The steps were not buttons.** `<li>extract</li>` in a list reads as a
+  progress display, not a control. Each step is now `role="button"`,
+  keyboard-operable, hover-lit, with a `▶` on hover, under the heading
+  "Steps — click one to run"; the status line after an upload or a
+  connection now names the next click rather than saying "when you are
+  ready".
+- **"a stage is already running" was shown in red, as an error.** It was
+  not one: extract reads the PDFs and then an agent writes, which takes
+  minutes, and the second click was simply early. It now names what is
+  running and where to watch it, in the ordinary colour.
+- **Nothing said a stage was running.** The status line is one line and
+  anything can overwrite it -- the error had already replaced
+  "running extract…". The step itself now carries the state (`setBusy`
+  marks it "running…" in the rail), where it cannot be clobbered, and the
+  flag became a label so the refusal can say which.
+
+Also: the "Sign in to Claude" button stayed visible after connecting, a
+second door to a room the user was already in; it hides on connect and
+returns with the picker. And `Agent` / `Deck` now sit under a "View"
+heading with titles saying what each holds.
+
 **Not done, deliberately or not yet.** No stage has been run on the in-tab
 tier: sign-in was taken as far as the URL and deliberately not completed,
 because finishing it is the account holder's action, not this session's.

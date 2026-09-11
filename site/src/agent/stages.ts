@@ -56,14 +56,30 @@ export interface Stages {
 export function mountStages(rail: HTMLOListElement, gate: HTMLElement, host: StageHost): Stages {
   const { sidecar } = host;
   let runner: Runner | null = null;
-  let running = false;
+  /** What is running, or null. Named rather than a flag so the rail can mark it and the refusal can say which. */
+  let busy: string | null = null;
   /** Stages the user asked to run again despite an artifact already existing. */
   const force = new Set<StageId>();
 
-  rail.innerHTML = STAGES.map((s) => `<li data-stage="${s}">${s}</li>`).join('');
+  // Each step is a button, and says so: the first person through this screen
+  // read the list as a progress display and asked how to start the process.
+  rail.innerHTML = STAGES.map(
+    (s) => `<li data-stage="${s}" role="button" tabindex="0" title="Run ${esc(s)}"><span class="sname">${esc(s)}</span><span class="sstate"></span></li>`,
+  ).join('');
 
   function setStage(name: StageId): void {
     rail.querySelectorAll<HTMLLIElement>('li').forEach((li) => li.classList.toggle('on', li.dataset.stage === name));
+  }
+
+  /**
+   * A stage takes minutes -- the PDFs are read, then an agent writes -- and
+   * the status line is one line that anything else can overwrite. So the step
+   * itself carries the state, where it cannot be clobbered.
+   */
+  function setBusy(label: string | null): void {
+    busy = label;
+    rail.querySelectorAll<HTMLLIElement>('li').forEach((li) => li.classList.toggle('running', li.dataset.stage === label));
+    rail.setAttribute('aria-busy', label === null ? 'false' : 'true');
   }
 
   async function refreshMarks(): Promise<void> {
@@ -98,13 +114,15 @@ export function mountStages(rail: HTMLOListElement, gate: HTMLElement, host: Sta
       if (stage === 'deliver') return void host.exportDeck();
       return host.say('connect an agent first', true);
     }
-    if (running) return host.say('a stage is already running', true);
+    // Not an error: the previous click is still working. Saying which, and
+    // where to watch it, is the whole of what the person needed to know.
+    if (busy) return host.say(`${busy} is still running — watch the chat on the right, or press Stop there to cancel it`);
     setStage(stage);
     host.showView('agent');
     const writing = WRITING_STAGES.find((w) => w.id === stage);
     try {
       if (writing) {
-        running = true;
+        setBusy(stage);
         if (stage === 'extract') await host.prepareMaterials(dir);
         host.say(`running ${stage}…`);
         const r = await runner.run(writing);
@@ -134,7 +152,7 @@ export function mountStages(rail: HTMLOListElement, gate: HTMLElement, host: Sta
         // The method's run-sheet: an auditor who wrote none of the cards reads
         // the whole deck first; its findings and the owner's flags then go to
         // a separate adjudicator. The owner sees the report before that step.
-        running = true;
+        setBusy(stage);
         host.say('auditing the whole deck in a fresh session…');
         const a = await runner.audit();
         const deckPath = `${dir}/deck.json`;
@@ -154,7 +172,7 @@ export function mountStages(rail: HTMLOListElement, gate: HTMLElement, host: Sta
     } catch (err) {
       host.say(err instanceof BridgeError ? err.message : String(err), true);
     } finally {
-      running = false;
+      setBusy(null);
       void refreshMarks();
     }
   }
@@ -164,7 +182,8 @@ export function mountStages(rail: HTMLOListElement, gate: HTMLElement, host: Sta
     if (!dir || !runner) return;
     const { flags } = await sidecar.readFlags(`${dir}/deck.json`);
     if (flags.length === 0) return host.say('nothing is flagged', true);
-    running = true;
+    if (busy) return host.say(`${busy} is still running — watch the chat on the right`);
+    setBusy('adjudicate');
     host.say(`adjudicating ${flags.length} flag(s) in a fresh session…`);
     try {
       const r = await runner.adjudicate(flags);
@@ -175,14 +194,15 @@ export function mountStages(rail: HTMLOListElement, gate: HTMLElement, host: Sta
     } catch (err) {
       host.say(err instanceof BridgeError ? err.message : String(err), true);
     } finally {
-      running = false;
+      setBusy(null);
     }
   }
 
   async function applyVerdicts(): Promise<void> {
     const dir = host.courseDir();
     if (!dir || !runner) return;
-    running = true;
+    if (busy) return host.say(`${busy} is still running — watch the chat on the right`);
+    setBusy('applying verdicts');
     host.say('writer applying verdicts…');
     try {
       const r = await runner.applyVerdicts();
@@ -197,7 +217,7 @@ export function mountStages(rail: HTMLOListElement, gate: HTMLElement, host: Sta
     } catch (err) {
       host.say(err instanceof BridgeError ? err.message : String(err), true);
     } finally {
-      running = false;
+      setBusy(null);
       void refreshMarks();
     }
   }
@@ -205,6 +225,13 @@ export function mountStages(rail: HTMLOListElement, gate: HTMLElement, host: Sta
   rail.addEventListener('click', (e) => {
     const li = (e.target as HTMLElement).closest<HTMLLIElement>('li[data-stage]');
     if (li) void run(li.dataset.stage as StageId);
+  });
+  rail.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    const li = (e.target as HTMLElement).closest<HTMLLIElement>('li[data-stage]');
+    if (!li) return;
+    e.preventDefault();
+    void run(li.dataset.stage as StageId);
   });
 
   gate.addEventListener('click', async (e) => {
