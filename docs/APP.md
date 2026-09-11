@@ -353,6 +353,19 @@ wrapper ages, and the failure mode to expect is an auth or minimum-version
 change rather than a missing feature. That is what the bridge remains for:
 it runs whatever Claude Code the user has, native and current.
 
+The first visible cost of the pin is the model dropdown, and it is worth
+being exact about whose limit it is. The page does not filter that list --
+`chat.ts` renders every option the adapter reports -- so what shows is
+whatever the CLI knows. Checked against the builds' own strings: 2.1.112
+tops out at **Opus 4.7 / Sonnet 4.6** and contains no reference to the
+Claude 5 family at all, while the native 2.1.263 installed on this machine
+carries **Sonnet 5** and **Opus 4.8**. So the in-tab tier is a generation
+behind by construction, the bridge is current, and the rail now says so
+under the sign-in button rather than leaving it to be discovered. (Also
+corrected while looking: our own OpenRouter default was still
+`anthropic/claude-sonnet-4.5`; OpenRouter lists `anthropic/claude-sonnet-5`,
+so that is now the preferred id.)
+
 **What the search found.** Every other ACP web client solves this the way
 the bridge does -- [acp-ui](https://github.com/formulahendry/acp-ui) states
 plainly that its web build "omits local stdio agents", and

@@ -60,7 +60,7 @@ const EXPECTED_CONFIG_OPTIONS: SelectOption[] = [
     name: 'Model',
     // Filtered to tools + image (drops beta/chatty and gamma/text-tools),
     // sorted by name: "Alpha: ..." before "Zeta: ...". The spec's default
-    // `anthropic/claude-sonnet-4.5` is not listed, so the first is current.
+    // `anthropic/claude-sonnet-5` is not listed, so the first is current.
     currentValue: MODEL_VISION.id,
     options: [
       { value: MODEL_VISION.id, name: optionName(MODEL_VISION) },

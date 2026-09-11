@@ -118,9 +118,9 @@ export function modelOptionName(m: OpenRouterModel): string {
   return `${m.name} · $${perMillion(m.pricing.prompt)}/M in · $${perMillion(m.pricing.completion)}/M out`;
 }
 
-export const PREFERRED_MODEL_ID = 'anthropic/claude-sonnet-4.5';
+export const PREFERRED_MODEL_ID = 'anthropic/claude-sonnet-5';
 
-/** `anthropic/claude-sonnet-4.5` when the usable list has it, else the first usable model. Throws when the list is empty -- there is nothing to default to. */
+/** `anthropic/claude-sonnet-5` when the usable list has it, else the first usable model. Throws when the list is empty -- there is nothing to default to. */
 export function defaultModelId(usable: OpenRouterModel[]): string {
   const preferred = usable.find((m) => m.id === PREFERRED_MODEL_ID);
   if (preferred) return preferred.id;

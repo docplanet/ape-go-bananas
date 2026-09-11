@@ -148,6 +148,7 @@ body.with-rail main { max-width: none; padding: 24px; min-width: 0; }
 .stages li.done .sstate::before { content: "\2713"; color: var(--accent); }
 .stages li.running { color: var(--fg); }
 .stages li.running .sstate::before { content: "running…"; color: var(--warn); }
+.railnote { margin: 6px 0 0; font-size: 11px; line-height: 1.45; color: var(--muted); }
 .railhead { margin: 16px 0 2px; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
 .railhead .muted { text-transform: none; letter-spacing: 0; }
 .views { display: flex; gap: 6px; }

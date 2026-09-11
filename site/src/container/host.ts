@@ -21,8 +21,8 @@ import { LineSplitter, decodeLine, encodeIn } from './framing.js';
 import { engineFileCount, engineTree, put, type FileTree } from './engine-files.js';
 import { WRAPPER_PATH, WRAPPER_SOURCE } from './wrapper.js';
 
-/** The last Claude Code with a JavaScript build; 2.1.113 onward is a native binary. */
-export const CLAUDE_JS_VERSION = '2.1.112';
+export { CLAUDE_JS_VERSION } from './pinned.ts';
+import { CLAUDE_JS_VERSION } from './pinned.ts';
 
 const METHOD_RAW = 'https://raw.githubusercontent.com/docplanet/anki-process-engine-live/main/';
 const METHOD_FILES: { name: string; from: string }[] = [

@@ -119,7 +119,7 @@ key`). `session.configOptions` is
 ```
 built from `GET /api/v1/models` filtered to models whose
 `supported_parameters` includes `tools` and whose `input_modalities`
-includes `image`, sorted by name; `<default>` is `anthropic/claude-sonnet-4.5`
+includes `image`, sorted by name; `<default>` is `anthropic/claude-sonnet-5`
 if listed else the first. `modes` is
 `{ currentModeId: "default", availableModes: [{id:"default",name:"Manual",description:"Always ask before writing files"},{id:"acceptEdits",name:"Accept edits",description:"Write files without asking"}] }`.
 `commands` is `[]`. The base URL is `https://openrouter.ai/api/v1` unless env

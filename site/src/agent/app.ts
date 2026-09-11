@@ -18,6 +18,7 @@ import { mountFallbackPermissions } from './permission-any.js';
 import { extractMaterials } from './extract.js';
 import { mountPicker } from './picker.js';
 import { mountSignIn } from './signin.js';
+import { CLAUDE_JS_TOP_MODELS, CLAUDE_JS_VERSION } from '../container/pinned.ts';
 import { mountStages, type Stages } from './stages.js';
 
 /** Appended to the review page: a Flag button per card, and an outline on flagged ones. */
@@ -325,6 +326,13 @@ export async function mountAgentApp(host: EngineHost): Promise<void> {
       })();
     });
     $('rail').querySelector('.views')!.after(button);
+    // The pinned build's model list stops where its release did. That is the
+    // first visible cost of pinning, and someone who sees a stale dropdown
+    // deserves to know why rather than guess at it.
+    const note = document.createElement('p');
+    note.className = 'railnote';
+    note.textContent = `Claude here is a pinned build (${CLAUDE_JS_VERSION}) — the last that runs in a tab. Its models stop at ${CLAUDE_JS_TOP_MODELS}. For the newest, use the bridge.`;
+    button.after(note);
   }
 
   showView('agent');
