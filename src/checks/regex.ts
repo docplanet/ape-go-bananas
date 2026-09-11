@@ -11,6 +11,10 @@
 /** {{cN::BODY}} - BODY stops at the first "}}", so a cloze can never straddle the next one. */
 export const CLOZE_RE = /\{\{c(\d+)::((?:(?!\}\})[\s\S])*)\}\}/g;
 
+/** A hint that is a question of its own, not a slot: opens with a question word and carries its
+ *  own verb ("what is it?", "what happens?"). Non-global, one-shot .test(). Contract §3.1 / rule 10b. */
+export const CLAUSE_HINT_RE = /^(?:what|which|who|where|when|why|how)\b[\s\S]*\b(?:is|are|was|were|do|does|did|happen|happens|happened)\b/i;
+
 /** One <img ...> opening tag. Global: safe via .match()/.replace() (see file header). */
 export const IMAGE_TAG_RE = /<img\b[^>]*>/g;
 /** The same pattern, non-global, for a one-shot boolean "does this contain an <img>" test. */

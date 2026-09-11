@@ -47,7 +47,7 @@ function renderBoth(notes: DeckNote[], mediaDir: string): { py: string; ts: stri
 test('a three-note deck spanning all three shapes matches byte-for-byte', () => {
   const mediaDir = makeMediaDir(['slide.jpg', 'slide5.jpg']);
   const notes: DeckNote[] = [
-    note('{{c1::<b>Osteoid</b>::what?}} is {{c2::<i>unmineralized bone matrix</i>::what is it?}}', {
+    note('{{c1::<b>Osteoid</b>::what?}} is {{c2::<i>unmineralized bone matrix</i>::what?}}', {
       source: 'Slide 1',
       tags: ['reference', 'ref-01'],
     }),

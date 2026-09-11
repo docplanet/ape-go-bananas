@@ -10,6 +10,7 @@ import {
   ANY_TAG_RE,
   BOLD_RUN_RE,
   BOLD_SPAN_NONGREEDY_RE,
+  CLAUSE_HINT_RE,
   HAS_ROLE_TAG_RE,
   IMAGE_SRC_RE,
   IMAGE_TAG_RE,
@@ -151,6 +152,9 @@ export function checkNote(note: DeckNote, opts: CheckNoteOptions = {}): string[]
         problems.push(`c${number} hint does not end in '?': ${pyRepr(hint)}`);
       } else if (hint.includes(',') || pySplit(pyRStrip(hint, '?')).length > 3) {
         problems.push(`c${number} hint is not one to three words: ${pyRepr(hint)}`);
+      } else if (CLAUSE_HINT_RE.test(hint)) {
+        // Rule 10b: a question of its own in the slot ("what is it?") - the front stops reading.
+        problems.push(`c${number} hint is a sentence, not a slot: ${pyRepr(hint)}`);
       }
     }
   }

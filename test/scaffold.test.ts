@@ -47,7 +47,7 @@ test('reference-cards.json Text fields are verbatim against the canonical source
   const { notes } = loadFixture();
   const text = (i: number) => notes[i].fields.Text;
 
-  assert.equal(text(0), '{{c1::<b>Osteoid</b>::what?}} is {{c2::<i>unmineralized bone matrix</i>::what is it?}}');
+  assert.equal(text(0), '{{c1::<b>Osteoid</b>::what?}} is {{c2::<i>unmineralized bone matrix</i>::what?}}');
   assert.equal(
     text(1),
     '{{c1::<b>Osteoclasts</b>::which cells?}} <u>function</u> to {{c2::<i>resorb bone matrix</i>::do what?}}',

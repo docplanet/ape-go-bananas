@@ -4,7 +4,7 @@
       "deckName": "Fixtures::Reference Cards",
       "modelName": "Custom Cloze",
       "fields": {
-        "Text": "{{c1::<b>Osteoid</b>::what?}} is {{c2::<i>unmineralized bone matrix</i>::what is it?}}",
+        "Text": "{{c1::<b>Osteoid</b>::what?}} is {{c2::<i>unmineralized bone matrix</i>::what?}}",
         "Extra": "",
         "Source": "Slide 1"
       },

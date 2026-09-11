@@ -362,7 +362,7 @@ The seven cards, verbatim (Appendix A has them with the annotations that explain
 pinning down):
 
 ```
-ref-01  {{c1::<b>Osteoid</b>::what?}} is {{c2::<i>unmineralized bone matrix</i>::what is it?}}
+ref-01  {{c1::<b>Osteoid</b>::what?}} is {{c2::<i>unmineralized bone matrix</i>::what?}}
 ref-02  {{c1::<b>Osteoclasts</b>::which cells?}} <u>function</u> to {{c2::<i>resorb bone matrix</i>::do what?}}
 ref-03  {{c1::<b>Calcitonin</b>::which hormone?}} acts on bone to {{c2::<u>lower</u>::raise or lower?}} {{c3::<i>blood calcium levels</i>::which levels?}}
 ref-04  {{c1::<b>Connective tissue</b>::which tissue?}} is <u>classified</u> into {{c2::<i>embryonic, proper, and specialized types</i>::which three classes?}}

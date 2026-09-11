@@ -139,7 +139,7 @@ const CASES: Case[] = [
   {
     name: 'rule 4: a quoted fragment not present in the transcript, in order',
     notes: [
-      note('{{c1::<b>Capsule</b>::what?}} is {{c2::<i>a fibrous covering</i>::what is it?}}', {
+      note('{{c1::<b>Capsule</b>::what?}} is {{c2::<i>a fibrous covering</i>::what?}}', {
         extra:
           'Source: "the outer layer here is the capsule surrounding the organ, ' +
           'and this part was never spoken at all"',
@@ -152,7 +152,7 @@ const CASES: Case[] = [
   {
     name: 'rule 4: a fully-verified quote reports nothing',
     notes: [
-      note('{{c1::<b>Capsule</b>::what?}} is {{c2::<i>a fibrous covering</i>::what is it?}}', {
+      note('{{c1::<b>Capsule</b>::what?}} is {{c2::<i>a fibrous covering</i>::what?}}', {
         extra: 'Source: "the outer layer here is the capsule surrounding the organ"',
         source: 'Lecture transcript',
       }),
@@ -163,7 +163,7 @@ const CASES: Case[] = [
   {
     name: 'rule 4: the gate is the Source FIELD, not Extra - an unverifiable quote is skipped when Source omits "transcript"',
     notes: [
-      note('{{c1::<b>Capsule</b>::what?}} is {{c2::<i>a fibrous covering</i>::what is it?}}', {
+      note('{{c1::<b>Capsule</b>::what?}} is {{c2::<i>a fibrous covering</i>::what?}}', {
         extra: 'Source: "words that are definitely not anywhere in the transcript at all"',
         source: 'Slide 12',
       }),
@@ -174,7 +174,7 @@ const CASES: Case[] = [
   {
     name: 'rule 4: multiple --transcript sources are concatenated in the given order',
     notes: [
-      note('{{c1::<b>Capsule</b>::what?}} is {{c2::<i>a fibrous covering</i>::what is it?}}', {
+      note('{{c1::<b>Capsule</b>::what?}} is {{c2::<i>a fibrous covering</i>::what?}}', {
         extra:
           'Source: "the outer layer here is the capsule ... it surrounds the whole organ completely"',
         source: 'Lecture transcript',
@@ -191,7 +191,7 @@ const CASES: Case[] = [
   {
     name: 'rule 5a: no fact:: tag at all when an inventory is given',
     notes: [
-      note('{{c1::<b>Osteoid</b>::what?}} is {{c2::<i>unmineralized bone matrix</i>::what is it?}}', {
+      note('{{c1::<b>Osteoid</b>::what?}} is {{c2::<i>unmineralized bone matrix</i>::what?}}', {
         tags: [],
       }),
     ],
@@ -211,7 +211,7 @@ const CASES: Case[] = [
   {
     name: 'rule 5: a valid, backed fact:: tag alongside an unbacked-tag and a no-tag note, in one deck',
     notes: [
-      note('{{c1::<b>Osteoid</b>::what?}} is {{c2::<i>unmineralized bone matrix</i>::what is it?}}', {
+      note('{{c1::<b>Osteoid</b>::what?}} is {{c2::<i>unmineralized bone matrix</i>::what?}}', {
         tags: ['fact::F1'],
       }),
       note('{{c1::<b>Osteoclasts</b>::which cells?}} do {{c2::<i>resorb bone matrix</i>::what?}}', {
@@ -292,6 +292,33 @@ const CASES: Case[] = [
   {
     name: 'rule 10: rstrip strips every trailing "?", not just one - both hints stay clean',
     notes: [note('{{c1::<b>Bone</b>::which??}} is {{c2::<i>hard</i>::how hard??}}')],
+    noMedia: true,
+  },
+
+  // ---- Rule 10b: a hint that is a sentence, not a slot ----
+  {
+    name: 'rule 10b: "what is it?" and "what happens?" are questions of their own, not slots',
+    notes: [
+      note('{{c1::<b>Osteoid</b>::what?}} is {{c2::<i>unmineralized bone matrix</i>::what is it?}}'),
+      note('{{c1::<b>High glucose</b>::which condition?}} <u>lowers cAMP</u>, so the operon {{c2::<i>is not transcribed</i>::what happens?}}'),
+      note('{{c1::<b>Calcitonin</b>::which is it?}} acts on bone to {{c2::<i>lower calcium</i>::where does it act?}}'),
+    ],
+    noMedia: true,
+  },
+  {
+    name: 'rule 10b: slot-shaped hints pass - "does what?", "which two?", "why?", "what joins what?", "raise or lower?"',
+    notes: [
+      note('{{c1::<b>Osteoclasts</b>::which cells?}} <u>function</u> to {{c2::<i>resorb bone matrix</i>::does what?}}'),
+      note('The {{c1::<b>basal transcription</b>::which?}} <b>complex</b> binds <u>promoter elements</u> such as {{c2::<i>the TATA box or the Inr</i>::which two?}}'),
+      note('{{c1::<b>Vertebral arches</b>::which structures?}} keep <u>cartilage through infancy</u> {{c2::<i>so the canal can widen</i>::why?}}'),
+      note('The {{c1::<b>cloaca</b>::what?}} is <u>the dilated region</u> where {{c2::<i>the allantois joins the hindgut</i>::what joins what?}}'),
+      note('{{c1::<b>Calcitonin</b>::which hormone?}} acts to {{c2::<u>lower</u>::raise or lower?}} {{c3::<i>calcium</i>::which ion?}}'),
+    ],
+    noMedia: true,
+  },
+  {
+    name: 'rule 10b: a four-word clause hint fails rule 10 first, never 10b (elif chain)',
+    notes: [note('{{c1::<b>Bone</b>::what?}} is {{c2::<i>hard</i>::what does it do?}}')],
     noMedia: true,
   },
 
@@ -403,7 +430,7 @@ const CASES: Case[] = [
   // ---- Rules 17a/17b: <b> presence is required on prose, forbidden on a recognition card ----
   {
     name: 'rule 17a: no <b> at all on a prose-shaped card',
-    notes: [note('Osteoid is {{c1::<i>unmineralized bone matrix</i>::what is it?}}')],
+    notes: [note('Osteoid is {{c1::<i>unmineralized bone matrix</i>::what?}}')],
     noMedia: true,
   },
   {
@@ -508,7 +535,7 @@ const CASES: Case[] = [
   {
     name: '§7: a foreign word (absent from the WHOLE inventory) vs. a merely-novel one (present elsewhere in it)',
     notes: [
-      note('{{c1::<b>Osteoid</b>::what?}} is {{c2::<i>calcified glorptonium matrix</i>::what is it?}}', {
+      note('{{c1::<b>Osteoid</b>::what?}} is {{c2::<i>calcified glorptonium matrix</i>::what?}}', {
         tags: ['fact::F1'],
       }),
     ],
@@ -529,7 +556,7 @@ const CASES: Case[] = [
   {
     name: 'ordering: a clean note, a "no cloze at all" note, and another clean note, in one deck',
     notes: [
-      note('{{c1::<b>Osteoid</b>::what?}} is {{c2::<i>unmineralized bone matrix</i>::what is it?}}', {
+      note('{{c1::<b>Osteoid</b>::what?}} is {{c2::<i>unmineralized bone matrix</i>::what?}}', {
         source: 'S1',
       }),
       note('No cloze here at all.', { source: 'S2' }),

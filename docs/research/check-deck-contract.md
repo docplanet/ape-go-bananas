@@ -6,7 +6,14 @@ refers to that file. This document is the differential-testing spec: a port is c
 produces byte-identical stdout/stderr and the same exit code as the Python original, for every
 input the original can be run against, including the failure paths.
 
-Companion source for the reference cards: `.claude/skills/anki-cards/SKILL.md`, lines 32–46.
+Companion source for the reference cards: `method/3-cards.md` in the Anki repo (the skill file
+is a symlink to it).
+
+**Amended 2026-09-11:** rule 10b (a hint that is a sentence, not a slot) was added to the original
+and the port together, and ref-01's second hint changed from `what is it?` to `what?` in the
+method — the old hint fails the method's own fluency test and was copied into thirty-two live
+cards. Line numbers below still refer to the original as first contracted; the added rule is
+marked where it lands.
 
 Where the original's behavior is itself ambiguous, unspecified, or non-deterministic, that is
 called out explicitly in **§11 Porting hazards** rather than papered over — a silent "reasonable"
@@ -215,6 +222,17 @@ absence of a note means no flags. `re.search`/`re.match`/`re.finditer`/`re.finda
 distinctions matter and are called out per use — they are not interchangeable.
 
 ### 3.1 Module-level compiled patterns
+
+**`CLAUSE_HINT`** (added 2026-09-11, directly after `CLOZE`)
+```
+^(?:what|which|who|where|when|why|how)\b[\s\S]*\b(?:is|are|was|were|do|does|did|happen|happens|happened)\b
+```
+Compiled with `re.I`. A hint that opens with a question word and carries its own verb anywhere
+after it: `what is it?`, `what happens?`, `which is it?`, `where does it go?`. Slot-shaped hints
+never match: `what?`, `does what?` (opens with the verb, not a question word), `which two?`,
+`raise or lower?`, `why?`, `what joins what?` (no listed verb). Used once, via `.search(hint)` on
+the raw hint (trailing `?` included). Hints are ASCII English, so Python's Unicode `\b`/`\w` and
+JS's ASCII ones agree; the port uses the same pattern with the `i` flag.
 
 **`CLOZE`** (line 40)
 ```
@@ -562,6 +580,7 @@ executes them** — this order is what a differential test's per-note message or
 | 8 | Cloze carries no hint | Same loop; `hint is None` **and not** (this cloze number has >1 span **and** the *first* span with this number has a truthy hint) | `f"c{number} carries no hint"` | all | The parenthetical is the ref-05 shared-hint exemption — see §5.2 |
 | 9 | Hint doesn't end in `?` | `hint is not None` and `not hint.endswith("?")` | `f"c{number} hint does not end in '?': {hint!r}"` | all | `elif` sibling of rule 10 — only one of 9/10 can fire per cloze |
 | 10 | Hint not 1–3 words | `hint is not None`, hint *does* end in `?`, and (`"," in hint` **or** `len(hint.rstrip("?").split()) > 3`) | `f"c{number} hint is not one to three words: {hint!r}"` | all | `.rstrip("?")` strips **all** trailing `?` chars, not just one; `.split()` is whitespace-run split |
+| 10b | Hint is a sentence, not a slot (added 2026-09-11) | `hint is not None`, ends in `?`, rule 10 did not fire, and `CLAUSE_HINT.search(hint)` matches | `f"c{number} hint is a sentence, not a slot: {hint!r}"` | all | Third `elif` in the 9/10 chain — at most one of 9/10/10b fires per cloze |
 | 11 | Too many distinct cloze numbers | `len(numbers) > 3` | `f"{len(numbers)} cloze numbers; never more than three"` | all | Counts **distinct numbers**, not spans (see §5.0) |
 | 12 | Text after the final cloze | `tail` (below) is non-empty after `.strip()` | `f"text after the final cloze: {tail[:48]!r}"` | all | `tail = html.unescape(re.sub(r"<[^>]+>", "", text[text.rfind("}}") + 2:])).strip()` — tags stripped to **empty string**, then entities decoded, then trimmed; first 48 chars of the result, `repr()`'d |
 | 13 | Role tag wraps a cloze | `re.search(r"<[biu]>[^<]*\{\{c\d", text)` | `"a role tag wraps a cloze; the tag must sit directly on the text"` | all | |
@@ -1017,14 +1036,15 @@ emitted, and the process exits before reaching any of this stdout script.
 
 ## 10. The seven reference cards, verbatim
 
-Copied exactly from `.claude/skills/anki-cards/SKILL.md`, lines 33–45 (verified byte-for-byte,
-including the double space after each `ref-0N` label and the absence of any trailing whitespace).
+Copied exactly from the method's `3-cards.md` reference block (verified byte-for-byte,
+including the double space after each `ref-0N` label and the absence of any trailing whitespace;
+ref-01's second hint is `what?` since 2026-09-11).
 These are the differential test's non-negotiable fixture set: **the standing project rule is that
 any check must pass all seven before it is allowed to fail anything else** — a port that flags any
 one of these seven has a bug, full stop, regardless of what else it gets right.
 
 ```
-ref-01  {{c1::<b>Osteoid</b>::what?}} is {{c2::<i>unmineralized bone matrix</i>::what is it?}}
+ref-01  {{c1::<b>Osteoid</b>::what?}} is {{c2::<i>unmineralized bone matrix</i>::what?}}
 
 ref-02  {{c1::<b>Osteoclasts</b>::which cells?}} <u>function</u> to {{c2::<i>resorb bone matrix</i>::do what?}}
 
@@ -1047,7 +1067,7 @@ fixture form and none reference real media.
 
 - **ref-01**: `shape_of` → not `{{c1::<img` and not `<img` at the very start → `"prose"`. Two
   clozes, `numbers=["1","2"]`. Every cloze has a role tag (`<b>`, `<i>`) and a `?`-ending 1–3-word
-  hint. No text after the final `}}`. No role tag wraps a cloze. `bare` (subject bolded-out) has no
+  hint that is not clause-shaped (`what?` twice — rule 10b does not fire). No text after the final `}}`. No role tag wraps a cloze. `bare` (subject bolded-out) has no
   `\w's\s`. Exactly two `<b>` runs total but only one (`Osteoid`'s) — the two-bold-run check needs
   **two or more** bold runs to even form a pair, so it never fires here. No cloze value has 4+
   commas. `"<b>"` is present (prose requires it) → clean.
@@ -1269,6 +1289,7 @@ for (number, value, hint) in spans:
     if hint is not None:
         if hint doesn't end in "?": emit (rule 9)
         elif hint has a comma or > 3 words: emit (rule 10)
+        elif CLAUSE_HINT matches: emit (rule 10b)
 
 if len(numbers) > 3: emit (rule 11)
 if text after final "}}" (tag-stripped, unescaped, trimmed) is non-empty: emit (rule 12)

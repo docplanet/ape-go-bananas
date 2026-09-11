@@ -81,7 +81,7 @@ function bySource(rows: NoteRow[]): Map<string, NoteRow> {
 
 test('notes: field separator is exactly one 0x1F byte between fields, never a substitute character', async () => {
   const shared = loadSharedNotes();
-  const ref01 = shared[0]; // '{{c1::<b>Osteoid</b>::what?}} is {{c2::<i>unmineralized bone matrix</i>::what is it?}}'
+  const ref01 = shared[0]; // '{{c1::<b>Osteoid</b>::what?}} is {{c2::<i>unmineralized bone matrix</i>::what?}}'
   const { rows } = await buildNotes([ref01]);
   assert.equal(rows.length, 1);
   const row = rows[0];
@@ -143,8 +143,8 @@ test('notes: sfld and csum are computed from field 0 (Text) with HTML stripped, 
   const bySrc = bySource(rows);
 
   const row01 = bySrc.get('Slide 1')!;
-  assert.equal(row01.sfld, '{{c1::Osteoid::what?}} is {{c2::unmineralized bone matrix::what is it?}}');
-  assert.equal(row01.csum, 2417530761);
+  assert.equal(row01.sfld, '{{c1::Osteoid::what?}} is {{c2::unmineralized bone matrix::what?}}');
+  assert.equal(row01.csum, 3109972713);
 
   const row03 = bySrc.get('Slide 3')!;
   assert.equal(
