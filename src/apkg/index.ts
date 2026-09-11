@@ -9,7 +9,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import type { DeckNote } from '../types.js';
 import { buildApkg } from './build.js';
-import { nodeMediaReader } from './media-node.js';
+import { mappedMediaReader, nodeMediaReader, type MediaMapEntry } from './media-node.js';
 import { openNodeSqlite } from './sqlite-node.js';
 import { nodeZipCodec } from './zlib-node.js';
 
@@ -22,6 +22,14 @@ export interface WriteApkgOptions {
   outPath: string;
   /** Must exist; referenced media files are read from here (doc §10). */
   mediaDir: string;
+  /**
+   * The deck's own media list (deck-json.ts DeckMediaRef): a referenced
+   * filename is read from its mapped path first, then from mediaDir, then
+   * from each of `fallbackDirs`. The app's decks carry one, since their
+   * images sit under _extracted/ under working names.
+   */
+  media?: MediaMapEntry[];
+  fallbackDirs?: string[];
   /**
    * epoch-ms "now". Defaults to real time in production. Every id,
    * mod/crt/scm timestamp, and note guid this exporter writes is derived
@@ -54,7 +62,7 @@ export interface WriteApkgResult {
 export function writeApkg(notes: DeckNote[], options: WriteApkgOptions): WriteApkgResult {
   const { bytes, unresolvedMedia } = buildApkg(notes, {
     deckName: options.deckName,
-    readMedia: nodeMediaReader(options.mediaDir),
+    readMedia: options.media?.length || options.fallbackDirs?.length ? mappedMediaReader(options.media ?? [], [options.mediaDir, ...(options.fallbackDirs ?? [])]) : nodeMediaReader(options.mediaDir),
     openSqlite: openNodeSqlite,
     zipCodec: nodeZipCodec,
     clock: options.clock,

@@ -3,7 +3,7 @@
 // sidecar-protocol.md (message text via check-deck-contract.md §1.6, whose
 // templates the loader owes) only -- see helpers.ts's header.
 import assert from 'node:assert/strict';
-import { existsSync, mkdirSync, readFileSync, readdirSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import test, { after } from 'node:test';
@@ -271,4 +271,47 @@ test('media/dir reports the ANKI_MEDIA override and whether it exists (§4)', { 
   assert.deepEqual((await no.request(1, 'media/dir')).result, { mediaDir: absent, exists: false });
   assert.equal(await yes.end(), 0);
   assert.equal(await no.end(), 0);
+});
+
+test('deck/check, deck/review and deck/export read images through the deck\'s own media list (apkg-format §3 note)', { timeout: TIMEOUT }, async () => {
+  // The app's shape: the field names the image as the method asks, the file
+  // sits under _extracted/ as pNNN.jpg, and no Anki media directory holds it.
+  const dir = makeTmpDir('ape-sidecar-media-map-');
+  const extracted = join(dir, '_extracted', 'Lecture 9.pdf');
+  mkdirSync(extracted, { recursive: true });
+  const page = join(extracted, 'p003.jpg');
+  writeFileSync(page, readFileSync(join(import.meta.dirname, '..', 'apkg', 'fixtures', 'slide.jpg')));
+  const deckPath = join(dir, 'deck.json');
+  writeFileSync(
+    deckPath,
+    JSON.stringify({
+      deckName: 'Fixtures::Media Map',
+      modelName: 'Custom Cloze',
+      media: [{ filename: 'isf-biochem-09-slide-03.jpg', path: '_extracted/Lecture 9.pdf/p003.jpg' }],
+      notes: [
+        {
+          deckName: 'Fixtures::Media Map',
+          modelName: 'Custom Cloze',
+          fields: { Text: '{{c1::<b>E. coli</b>::which bacterium?}} has {{c2::<i>one circular chromosome</i>::what chromosome?}}', Extra: '<img src="isf-biochem-09-slide-03.jpg"><br>Source: "…" &mdash; Slide 3', Source: 'Slide 3' },
+          tags: ['fixture'],
+        },
+      ],
+    }),
+  );
+  const absent = join(dir, 'no-such-collection.media');
+  const s = spawnSidecar({ mediaDir: absent });
+  await s.ready;
+
+  const check = (await s.request(1, 'deck/check', { path: deckPath })).result as { clean: boolean; mediaNote: unknown; report: string };
+  assert.equal(check.mediaNote, null, 'the deck has its own list, so the media check runs without an Anki directory');
+  assert.equal(check.clean, true, check.report);
+
+  const review = (await s.request(2, 'deck/review', { path: deckPath })).result as { html: string };
+  assert.ok(review.html.includes(`file://${page}`), 'the review points at the page image where it is');
+
+  const out = (await s.request(3, 'deck/export', { path: deckPath })).result as { outPath: string; unresolvedMedia: string[] };
+  assert.deepEqual(out.unresolvedMedia, []);
+  const manifest = JSON.parse(readZipMember(out.outPath, 'media').toString('utf8'));
+  assert.deepEqual(manifest, { '0': 'isf-biochem-09-slide-03.jpg' });
+  assert.equal(await s.end(), 0);
 });

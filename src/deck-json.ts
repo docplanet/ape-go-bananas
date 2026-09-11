@@ -34,6 +34,46 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
  * and not part of what a port owes byte-identically); index.ts's top-level
  * catch turns any such Error into that message on stderr and exit 1.
  */
+/**
+ * One entry of the deck's own media list: the name a field references
+ * (`<img src="filename">`) and where the bytes are on disk. The writer
+ * records these when it names slide images the way the method asks
+ * (`<course>-<slug>-slide-NN.jpg`) while the files sit under `_extracted/`
+ * as `pNNN.jpg`; the app packs, checks and renders from this list, since
+ * there is no collection.media to stage into. `path` may be relative to
+ * the deck file. Same shape as AnkiConnect's storeMediaFile params.
+ */
+export interface DeckMediaRef {
+  filename: string;
+  path: string;
+}
+
+/**
+ * The top-level (or params-level) `media` list of a deck.json, validated:
+ * absent means empty; present, it must be an array of {filename, path}
+ * with both strings and the filename bare (no directory part).
+ */
+export function parseDeckMedia(raw: string, label: string): DeckMediaRef[] {
+  let data: unknown;
+  try {
+    data = JSON.parse(raw);
+  } catch (err) {
+    throw new Error(`${label} is not valid JSON: ${(err as Error).message}`);
+  }
+  if (!isPlainObject(data)) return [];
+  const params = 'params' in data && isPlainObject(data.params) ? data.params : data;
+  if (!('media' in params) || params.media === undefined || params.media === null) return [];
+  const media = params.media;
+  if (!Array.isArray(media)) throw new Error(`${label}: media is present but is not a list`);
+  return media.map((entry, i) => {
+    if (!isPlainObject(entry) || typeof entry.filename !== 'string' || typeof entry.path !== 'string') {
+      throw new Error(`${label}: media entry ${i + 1} is not {filename, path}`);
+    }
+    if (/[\\/]/.test(entry.filename)) throw new Error(`${label}: media entry ${i + 1} filename is not bare: ${JSON.stringify(entry.filename)}`);
+    return { filename: entry.filename, path: entry.path };
+  });
+}
+
 export function parseDeckNotes(raw: string, label: string): DeckNote[] {
   let data: unknown;
   try {

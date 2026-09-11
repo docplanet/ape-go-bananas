@@ -10,6 +10,8 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { renderReview } from '../checks/index.js';
+import { resolveMediaFile } from '../apkg/media-node.js';
+import { loadDeckMedia } from './deck-loader.js';
 import { requireOnePositional, takeSingle } from './args.js';
 import { loadDeckNotes } from './deck-loader.js';
 import { resolveMediaDir } from './media-dir.js';
@@ -35,7 +37,9 @@ export function runReview(argv: string[]): number {
 
   // render_review.py always resolves media against MEDIA_DIR -- there is no
   // flag to turn this off, unlike check_deck.py's --no-media.
-  const html = renderReview(notes, { mediaDir: resolveMediaDir() });
+  const media = loadDeckMedia(deckPath);
+  const mediaDir = resolveMediaDir();
+  const html = renderReview(notes, { mediaDir, resolveMedia: (filename) => resolveMediaFile(filename, media, [mediaDir, dirname(deckPath)]) });
   mkdirSync(dirname(outPath), { recursive: true });
   writeFileSync(outPath, html, 'utf8');
   console.log(`wrote ${outPath} (${notes.length} notes)`);

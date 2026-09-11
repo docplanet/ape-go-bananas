@@ -40,15 +40,21 @@ function renderFace(text: string, blank: string | null): string {
  *  data: URI, an already-built file: URL) fails to match past the colon and is left
  *  completely untouched - a side effect of the character class, not a scheme check, but
  *  one the port must reproduce exactly (docs/research §1.5). */
-function localImages(markup: string, mediaDir: string): string {
+function localImages(markup: string, mediaDir: string, resolve?: (filename: string) => string | undefined): string {
   return markup.replace(RENDER_IMAGE_SRC_RE, (_match, prefix: string, filename: string) => {
-    return `${prefix}"file://${pyOsPathJoin(mediaDir, filename)}"`;
+    return `${prefix}"file://${resolve?.(filename) ?? pyOsPathJoin(mediaDir, filename)}"`;
   });
 }
 
 export interface RenderReviewOptions {
   /** Used verbatim via a plain join, no expanduser/absolutize - like ANKI_MEDIA itself. */
   mediaDir?: string;
+  /**
+   * Where an image actually is, when the deck carries its own media list
+   * (the app's decks do): consulted first; undefined falls back to the
+   * mediaDir join above. Not part of render_review.py's contract.
+   */
+  resolveMedia?: (filename: string) => string | undefined;
 }
 
 const PAGE_PART_0 = '<!doctype html><meta charset="utf-8"><title>';
@@ -63,6 +69,7 @@ const PAGE_PART_5 =
 
 export function renderReview(notes: DeckNote[], opts: RenderReviewOptions = {}): string {
   const mediaDir = opts.mediaDir ?? '';
+  const resolveMedia = opts.resolveMedia;
 
   const articles = notes.map((note, i) => {
     const position = i + 1;
@@ -70,14 +77,14 @@ export function renderReview(notes: DeckNote[], opts: RenderReviewOptions = {}):
     const text = fields.Text;
     const numbers = [...new Set(clozes(text).map((s) => s.number))].sort((a, b) => Number(a) - Number(b));
     const fronts = numbers
-      .map((n) => `<div class="face"><span class="cn">c${n}</span>${localImages(renderFace(text, n), mediaDir)}</div>`)
+      .map((n) => `<div class="face"><span class="cn">c${n}</span>${localImages(renderFace(text, n), mediaDir, resolveMedia)}</div>`)
       .join('');
-    const backs = `<div class="face">${localImages(renderFace(text, null), mediaDir)}</div>`;
+    const backs = `<div class="face">${localImages(renderFace(text, null), mediaDir, resolveMedia)}</div>`;
     const extra = fields.Extra ?? '';
     return (
       `<article><div class="idx">${position} &middot; ${htmlEscape(fields.Source ?? '')}</div>` +
       `<div class="fronts">${fronts}</div><div class="backs">${backs}</div>` +
-      `<div class="extra">${localImages(extra, mediaDir)}</div></article>`
+      `<div class="extra">${localImages(extra, mediaDir, resolveMedia)}</div></article>`
     );
   });
 

@@ -15,7 +15,8 @@ import {
   type CheckDeckOptions,
 } from '../checks/index.js';
 import { nodeMediaExists } from '../checks/media-exists-node.js';
-import { loadDeckNotes } from '../cli/deck-loader.js';
+import { mappedMediaExists, resolveMediaFile } from '../apkg/media-node.js';
+import { loadDeckMedia, loadDeckNotes, type DeckMediaRef } from '../cli/deck-loader.js';
 import { isExistingDirectory, resolveMediaDir } from '../cli/media-dir.js';
 import { readFileOrThrow } from '../cli/read-file.js';
 
@@ -41,6 +42,12 @@ export interface Flag {
 }
 
 type Params = Record<string, unknown>;
+
+
+/** Where a referenced image is: the deck's own list, the Anki media directory, the deck's folder; undefined when nowhere. */
+function mediaResolver(media: DeckMediaRef[], mediaDir: string, deckPath: string): (filename: string) => string | undefined {
+  return (filename) => resolveMediaFile(filename, media, [mediaDir, dirname(deckPath)]);
+}
 
 function asParams(params: unknown): Params {
   if (params === undefined || params === null) return {};
@@ -134,7 +141,12 @@ export function buildMethods(info: SidecarInfo, onShutdown: () => void): Record<
       const wantMedia = optionalBoolean(params, 'checkMedia', true);
       const mediaDir = optionalString(params, 'mediaDir') ?? resolveMediaDir();
 
-      const checkMedia = wantMedia && isExistingDirectory(mediaDir);
+      // A deck that carries its own media list (the app's do: the images sit
+      // under _extracted/ under working names) is checked against that list
+      // and its own folder, whether or not an Anki media directory exists.
+      const media = loadDeckMedia(path);
+      const own = media.length > 0;
+      const checkMedia = wantMedia && (own || isExistingDirectory(mediaDir));
       const mediaNote = wantMedia && !checkMedia ? `note: ${mediaDir} not found - skipping the media check` : null;
 
       const transcript = transcriptPaths.length > 0 ? transcriptPaths.flatMap((p) => loadTranscript(readFileOrThrow(p))) : undefined;
@@ -148,7 +160,7 @@ export function buildMethods(info: SidecarInfo, onShutdown: () => void): Record<
       const notes = loadDeckNotes(path);
       if (notes.length === 0) throw new Error(`${path} contains no notes`);
 
-      const opts: CheckDeckOptions = { checkMedia, mediaDir, mediaExists: nodeMediaExists, transcript, inventory };
+      const opts: CheckDeckOptions = { checkMedia, mediaDir, mediaExists: own ? mappedMediaExists(media, [dirname(path)]) : nodeMediaExists, transcript, inventory };
       const result = checkDeck(notes, opts);
       return {
         result,
@@ -165,7 +177,8 @@ export function buildMethods(info: SidecarInfo, onShutdown: () => void): Record<
       const mediaDir = optionalString(params, 'mediaDir') ?? resolveMediaDir();
       const outPath = optionalString(params, 'outPath') ?? null;
       const notes = loadDeckNotes(path);
-      const html = renderReview(notes, { mediaDir });
+      const media = loadDeckMedia(path);
+      const html = renderReview(notes, { mediaDir, resolveMedia: mediaResolver(media, mediaDir, path) });
       if (outPath !== null) {
         mkdirSync(dirname(outPath), { recursive: true });
         writeFileSync(outPath, html, 'utf8');
@@ -186,7 +199,7 @@ export function buildMethods(info: SidecarInfo, onShutdown: () => void): Record<
       // already has. Every other method here runs on Node 20; only an actual
       // export asks for more -- and the page can do that one itself.
       const { writeApkg } = await import('../apkg/index.js');
-      const { unresolvedMedia } = writeApkg(notes, { deckName, outPath, mediaDir });
+      const { unresolvedMedia } = writeApkg(notes, { deckName, outPath, mediaDir, media: loadDeckMedia(path), fallbackDirs: [dirname(path)] });
       return { outPath, count: notes.length, unresolvedMedia };
     },
 

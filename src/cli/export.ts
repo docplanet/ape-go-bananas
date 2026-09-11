@@ -10,6 +10,7 @@
 // render_review.py uses for its own default.
 import { basename, dirname, extname, join } from 'node:path';
 import { writeApkg } from '../apkg/index.js';
+import { loadDeckMedia } from './deck-loader.js';
 import { requireOnePositional, takeSingle } from './args.js';
 import { loadDeckNotes } from './deck-loader.js';
 import { isExistingDirectory, resolveMediaDir } from './media-dir.js';
@@ -47,7 +48,7 @@ export function runExport(argv: string[]): number {
     console.error(`note: ${mediaDir} not found - media references will be packaged unresolved`);
   }
 
-  const { unresolvedMedia } = writeApkg(notes, { deckName, outPath, mediaDir });
+  const { unresolvedMedia } = writeApkg(notes, { deckName, outPath, mediaDir, media: loadDeckMedia(deckPath), fallbackDirs: [dirname(deckPath)] });
   console.log(`wrote ${outPath} (${notes.length} notes)`);
   if (unresolvedMedia.length > 0) {
     console.error(`media not found in ${mediaDir}, packaged without: ${unresolvedMedia.join(', ')}`);

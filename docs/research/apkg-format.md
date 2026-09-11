@@ -236,6 +236,17 @@ zip member name.
 
 ## 3. The `media` manifest
 
+> **The deck's own media list (added 2026-09-11).** A `deck.json` may carry a top-level
+> `"media": [{"filename", "path"}, …]` — the name a field references, and where the bytes are
+> (absolute, or relative to the deck file). The app's decks always do: the writer names slide
+> images as the method asks (`<course>-<slug>-slide-NN.jpg`) while the files sit under
+> `_extracted/<source>/pNNN.jpg`, and nothing copies or renames them. `deck/export`,
+> `deck/check` (rule 2) and `deck/review` resolve a referenced filename through that list first,
+> then the Anki media directory, then the deck's own folder (`src/apkg/media-node.ts`
+> `resolveMediaFile`). The manifest below is unchanged: the mapped bytes go in under the
+> referenced name. *The first desktop export shipped with 25 images missing because the list was
+> written and nothing read it.*
+
 One JSON object per legacy package, mapping the numbered zip member name (as a string
 key) to the real filename Anki should use in `collection.media` on import:
 

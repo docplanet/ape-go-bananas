@@ -69,7 +69,7 @@ export const WRITING_STAGES: WritingStage[] = [
     id: 'cards',
     method: '3-cards.md',
     artifact: 'deck.json',
-    ask: 'Run this step on the course folder below: plan.md and inventory.md are already there. Write deck.json beside them and stop there -- this app runs the structural checks and renders the review itself, and nothing is inserted into Anki from here.',
+    ask: 'Run this step on the course folder below: plan.md and inventory.md are already there. Write deck.json beside them and stop there -- this app runs the structural checks and renders the review itself, and nothing is inserted into Anki from here. Slide images: reference each one in Extra by the name the method gives it, and list every such name once in a top-level "media" array in deck.json as {"filename": "<that name>", "path": "<absolute path of the page image under _extracted/>"} -- this app packs, checks and renders the images from that list; there is no collection.media here to stage into, and no file is copied or renamed.',
   },
 ];
 

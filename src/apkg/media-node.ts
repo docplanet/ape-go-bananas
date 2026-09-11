@@ -13,7 +13,7 @@
 // filesystem paths -- see isBareFilename below for why a name is validated
 // before it's ever joined onto mediaDir.
 
-import { readFileSync, readdirSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import type { MediaReader } from './media.js';
 
@@ -80,4 +80,62 @@ function tryReadMediaBytes(mediaDir: string, filename: string): Uint8Array | und
 /** A MediaReader over a real media directory. */
 export function nodeMediaReader(mediaDir: string): MediaReader {
   return (filename) => tryReadMediaBytes(mediaDir, filename);
+}
+
+/** One {filename, path} of a deck's own media list (deck-json.ts DeckMediaRef, without the import cycle). */
+export interface MediaMapEntry {
+  filename: string;
+  path: string;
+}
+
+/**
+ * Where the bytes for `filename` are: the deck's own media list first (the
+ * name the field uses, mapped to the file under _extracted/ or wherever the
+ * writer put it), then each directory in order. Undefined when nowhere.
+ * Only the list's own paths may leave a directory; a filename with a
+ * directory part is refused, as tryReadMediaBytes refuses it.
+ */
+export function resolveMediaFile(filename: string, media: MediaMapEntry[], dirs: string[]): string | undefined {
+  if (!isBareFilename(filename)) {
+    throw new Error(`media reference is not a bare filename, refusing to read outside mediaDir: ${JSON.stringify(filename)}`);
+  }
+  const mapped = media.find((m) => m.filename === filename || m.filename.normalize('NFC') === filename.normalize('NFC'));
+  if (mapped !== undefined && existsSync(mapped.path)) return mapped.path;
+  for (const dir of dirs) {
+    const direct = join(dir, filename);
+    if (existsSync(direct)) return direct;
+    let entries: string[];
+    try {
+      entries = readdirSync(dir);
+    } catch (err) {
+      if (!isNotFoundError(err)) throw err;
+      continue;
+    }
+    const match = entries.find((entry) => entry.normalize('NFC') === filename.normalize('NFC'));
+    if (match !== undefined) return join(dir, match);
+  }
+  return undefined;
+}
+
+/** A MediaReader over the deck's own media list, then the given directories in order. */
+export function mappedMediaReader(media: MediaMapEntry[], dirs: string[]): MediaReader {
+  return (filename) => {
+    const path = resolveMediaFile(filename, media, dirs);
+    if (path === undefined) return undefined;
+    try {
+      return readFileSync(path);
+    } catch (err) {
+      if (!isNotFoundError(err)) throw err;
+      return undefined;
+    }
+  };
+}
+
+/**
+ * The media-existence predicate for checkDeck (rule 2) when a deck carries
+ * its own media list: the rule asks about `join(mediaDir, filename)`; the
+ * answer is yes when the list, that path, or any of `dirs` has the file.
+ */
+export function mappedMediaExists(media: MediaMapEntry[], dirs: string[]): (path: string) => boolean {
+  return (path) => existsSync(path) || resolveMediaFile(basename(path), media, dirs) !== undefined;
 }
