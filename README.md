@@ -179,12 +179,17 @@ file agree there too.
   browser page. Prints a URL with a per-run token in the fragment, opens it,
   fetches the method files once, and binds 127.0.0.1 only. The one command
   a subscriber runs; needs Node ≥ 20, which Claude Code needs too.
+- `app/` — the desktop app (Tauri), its own npm project; `docs/APP.md`.
+  `src/agent/` is the shell — the rail, the picker, the chat, the eight
+  stages, the gates, the permission policy — over the `EngineHost` seam in
+  `src/engine/host.ts`, which `tauri-host.ts` implements for the app and
+  the site's bridge transport implements for the page. `src/engine/pdf-extract.ts`
+  reads PDFs in the webview so the agent never asks for tooling.
 - `site/` — the website, its own npm project like `app/`. `/` is the
   download page; `/tool/` runs the engine in the tab (checks, review,
   `.apkg` export, nothing installed, nothing uploaded) and, when opened by
-  `ape-bridge`, becomes the full app: agent picker, sign-in, chat, the eight
-  stages, flags, adjudication. Carries sql.js and fflate so the engine keeps
-  its zero-dependency rule.
+  `ape-bridge`, becomes the app's shell over the bridge. Carries sql.js and
+  fflate so the engine keeps its zero-dependency rule.
 - `test/integration/` — drives the built CLI as a real child process
   (never `checkDeck`/`renderReview`/`writeApkg` called directly) through
   the full check → review → export pipeline on the seven reference cards,

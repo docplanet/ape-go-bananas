@@ -53,25 +53,30 @@ jobs:
           APE_ENGINE_REPO: ${{ github.workspace }}/Anki
         run: npm test
 
-      # The site is a separate npm project (it has the browser's sql.js and
-      # fflate; the engine keeps its zero-dependency rule). Its suite is what
-      # pins the browser build against the Node one, so a change to either
-      # side of the platform seam fails here.
-      - name: site — typecheck and test
-        working-directory: APE/site
-        run: |
-          npm ci
-          npm run build
-          npm test
-
       # The desktop app's frontend. No Rust here: `npm run build` is
       # `tsc --noEmit && vite build`, which is where a change to the engine's
       # surface or to src/pipeline breaks the app -- and until this step
       # existed nothing ran it short of a `v*` tag (release.yml). That is how
       # app/src/pipeline.ts rotted into a fork for three weeks unnoticed.
       # The engine's dist/ from the typecheck step above is what it imports.
-      - name: app — typecheck and build
+      # Its tests are the pure parts of the shell: the permission policy and
+      # the PDF text layout.
+      - name: app — typecheck, build and test
         working-directory: APE/app
         run: |
           npm ci
           npm run build
+          npm test
+
+      # The site is a separate npm project (it has the browser's sql.js and
+      # fflate; the engine keeps its zero-dependency rule). Its suite is what
+      # pins the browser build against the Node one, so a change to either
+      # side of the platform seam fails here. It runs after the app because
+      # its bridge tier imports the app's shell (app/src/agent), and pdf.js
+      # with it, from app/node_modules.
+      - name: site — typecheck and test
+        working-directory: APE/site
+        run: |
+          npm ci
+          npm run build
+          npm test

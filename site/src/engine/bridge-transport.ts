@@ -13,6 +13,8 @@
 // JSON-RPC in a POST body, acknowledged 202; the answer comes down the
 // stream and is matched to its promise by id.
 
+import { EngineError, type EngineHost, type EngineInfo, type ReverseRequest } from '../../../app/src/engine/host.js';
+
 export interface BridgeLocator {
   /** e.g. http://127.0.0.1:9100 */
   origin: string;
@@ -23,29 +25,6 @@ export interface BridgeLocator {
   courseDir: string | null;
 }
 
-export interface BridgeInfo {
-  engine: string;
-  version: string;
-  node: string;
-  transport: string;
-}
-
-export class BridgeError extends Error {
-  constructor(
-    readonly code: number,
-    message: string,
-    readonly data?: unknown,
-  ) {
-    super(message);
-    this.name = 'BridgeError';
-  }
-}
-
-export interface ReverseRequest {
-  id: number;
-  method: string;
-  params: unknown;
-}
 
 type Pending = { resolve: (v: unknown) => void; reject: (e: Error) => void };
 
@@ -59,9 +38,9 @@ export function locateBridge(hash: string = location.hash): BridgeLocator | null
   return { origin, token, dataDir, courseDir: params.get('course') };
 }
 
-export class Bridge {
+export class Bridge implements EngineHost {
   /** What the sidecar said about itself; filled in by health(). */
-  info: BridgeInfo = { engine: 'ape', version: '0', node: '0', transport: 'http' };
+  info: EngineInfo = { engine: 'ape', version: '0', node: '0', transport: 'http' };
   private nextId = 1;
   private readonly pending = new Map<number, Pending>();
   private events: EventSource | null = null;
@@ -81,10 +60,10 @@ export class Bridge {
   }
 
   /** Confirms a bridge is there and is ours. */
-  async health(): Promise<BridgeInfo> {
+  async health(): Promise<EngineInfo> {
     const res = await fetch(this.url('/health'));
-    if (!res.ok) throw new BridgeError(-32000, `the bridge answered ${res.status} ${res.statusText}`);
-    this.info = (await res.json()) as BridgeInfo;
+    if (!res.ok) throw new EngineError(-32000, `the bridge answered ${res.status} ${res.statusText}`);
+    this.info = (await res.json()) as EngineInfo;
     return this.info;
   }
 
@@ -129,7 +108,7 @@ export class Bridge {
         // bridge is not there or refused us, and that is the one to surface.
         if (!ready) {
           source.close();
-          reject(new BridgeError(-32000, 'could not reach the bridge -- is `ape-bridge` still running?'));
+          reject(new EngineError(-32000, 'could not reach the bridge -- is `ape-bridge` still running?'));
         }
       };
     });
@@ -139,7 +118,7 @@ export class Bridge {
     this.events?.close();
     this.events = null;
     this.failure = 'the bridge connection was closed';
-    for (const p of this.pending.values()) p.reject(new BridgeError(-32000, this.failure));
+    for (const p of this.pending.values()) p.reject(new EngineError(-32000, this.failure));
     this.pending.clear();
   }
 
@@ -165,7 +144,7 @@ export class Bridge {
     this.pending.delete(Number(message.id));
     if ('error' in message) {
       const error = message.error as { code: number; message: string; data?: unknown };
-      slot.reject(new BridgeError(error.code, error.message, error.data));
+      slot.reject(new EngineError(error.code, error.message, error.data));
     } else {
       slot.resolve(message.result);
     }
@@ -173,11 +152,11 @@ export class Bridge {
 
   private async post(lines: string): Promise<void> {
     const res = await fetch(this.url('/rpc'), { method: 'POST', body: lines });
-    if (!res.ok) throw new BridgeError(-32000, `the bridge refused the request: ${res.status}`);
+    if (!res.ok) throw new EngineError(-32000, `the bridge refused the request: ${res.status}`);
   }
 
   async call<T>(method: string, params?: unknown): Promise<T> {
-    if (this.failure !== null) throw new BridgeError(-32000, this.failure);
+    if (this.failure !== null) throw new EngineError(-32000, this.failure);
     const id = this.nextId++;
     const line = `${JSON.stringify(params === undefined ? { jsonrpc: '2.0', id, method } : { jsonrpc: '2.0', id, method, params })}\n`;
     const result = new Promise<unknown>((resolve, reject) => this.pending.set(id, { resolve, reject }));

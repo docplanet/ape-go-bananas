@@ -1,4 +1,4 @@
-// One events stream, many listeners. The bridge transport holds a single
+// One events stream, many listeners. The host holds a single
 // notification handler and a single request handler; the picker, the chat
 // pane and the stage runner each need to hear some of it. This fans out.
 //
@@ -7,7 +7,7 @@
 // and the first taker wins. A request nobody takes is refused, so the
 // sidecar never waits on an answer that will not come.
 
-import type { ReverseRequest, SidecarClient } from '../engine/bridge-client.js';
+import type { ReverseRequest, SidecarClient } from '../engine/client.js';
 
 export interface Bus {
   onNotification(handler: (method: string, params: unknown) => void): () => void;

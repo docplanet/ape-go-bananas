@@ -1,20 +1,17 @@
-// The page's typed door to the sidecar, over the bridge -- the browser's
-// counterpart of app/src/sidecar.ts. One function per protocol method
-// (docs/research/sidecar-protocol.md, agent-protocol.md); the shapes below
-// are the desktop app's, unchanged, because they are the protocol's. What
-// differs is only how a call travels: bridge-transport.ts, not Tauri.
+// The shell's typed door to the sidecar, over whichever host is running it.
+// One function per protocol method (docs/research/sidecar-protocol.md,
+// agent-protocol.md); the shapes below are the protocol's. How a call
+// travels is the host's business (host.ts): Tauri's invoke in the desktop
+// app, loopback HTTP from the tool page.
 //
-// Not here: `secrets`. The desktop app kept API keys in the OS keychain
-// through Rust; a page has no keychain, and the bridge has no store yet. An
-// OpenRouter key entered on the page is passed to agent/connect for that
-// connection and otherwise held only in memory -- see docs/APP.md.
+// Not here: where an API key is kept. The desktop app has the OS keychain
+// through Rust; the tool page has only the tab. The picker takes a store
+// (agent/picker.ts, KeyStore) and hands the key to agent/connect either way.
 
-import { BridgeError, type ReverseRequest } from './bridge-transport.js';
-import type { EngineHost } from './host.js';
+import { EngineError, type EngineHost, type ReverseRequest } from './host.js';
 import type { PipelineClient } from '../../../dist/pipeline/index.js';
 
-export { Bridge, BridgeError, locateBridge, type BridgeLocator, type BridgeInfo, type ReverseRequest } from './bridge-transport.js';
-export type { EngineHost } from './host.js';
+export { EngineError, type EngineHost, type EngineInfo, type ReverseRequest } from './host.js';
 
 export interface DeckNote {
   deckName: string;
@@ -147,9 +144,9 @@ export interface PermissionRequest {
 
 export type SidecarClient = ReturnType<typeof makeSidecarClient>;
 
-/** Every method of the sidecar, bound to one bridge. Satisfies PipelineClient. */
-export function makeSidecarClient(bridge: EngineHost) {
-  const call = <T>(method: string, params?: unknown) => bridge.call<T>(method, params);
+/** Every method of the sidecar, bound to one host. Satisfies PipelineClient. */
+export function makeSidecarClient(host: EngineHost) {
+  const call = <T>(method: string, params?: unknown) => host.call<T>(method, params);
   const client = {
     ping: () => call<{ engine: string; version: string; node: string }>('sidecar/ping'),
     mediaDir: () => call<{ mediaDir: string; exists: boolean }>('media/dir'),
@@ -169,11 +166,11 @@ export function makeSidecarClient(bridge: EngineHost) {
      * a second call replaces the first. UI code goes through agent/bus.ts,
      * which owns this slot and fans out.
      */
-    onNotification: (handler: (method: string, params: unknown) => void) => bridge.onNotification(handler),
-    /** Requests the sidecar makes of the page (agent-protocol.md §3). One handler, same rule; see agent/bus.ts. */
-    onRequest: (handler: (request: ReverseRequest) => void) => bridge.onRequest(handler),
-    answer: (id: number, result: unknown) => bridge.answer(id, result),
-    refuse: (id: number, message: string) => bridge.refuse(id, message),
+    onNotification: (handler: (method: string, params: unknown) => void) => host.onNotification(handler),
+    /** Requests the sidecar makes of the shell (agent-protocol.md §3). One handler, same rule; see agent/bus.ts. */
+    onRequest: (handler: (request: ReverseRequest) => void) => host.onRequest(handler),
+    answer: (id: number, result: unknown) => host.answer(id, result),
+    refuse: (id: number, message: string) => host.refuse(id, message),
 
     // agents/* and agent/*
     listProviders: (dataDir: string, refresh = false) =>
@@ -199,7 +196,7 @@ export function makeSidecarClient(bridge: EngineHost) {
     disconnect: (connectionId: string) => call<Record<string, never>>('agent/disconnect', { connectionId }),
 
     /** PipelineClient: a sidecar-reported failure, as opposed to a bug. */
-    isRpcError: (err: unknown): boolean => err instanceof BridgeError,
+    isRpcError: (err: unknown): boolean => err instanceof EngineError,
   } satisfies PipelineClient & Record<string, unknown>;
   return client;
 }

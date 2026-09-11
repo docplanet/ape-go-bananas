@@ -1,9 +1,10 @@
-// A PDF's text and pages, in the tab. The method's first step wants the
+// A PDF's text and pages, in the webview. The method's first step wants the
 // words of the lecture and one image per slide, and the agent used to get
 // them by looking for pdftotext or pypdf on the machine -- a permission
 // prompt on the first run from the website, and nothing at all on a laptop
-// without them. pdf.js reads the same file here, with nothing installed,
-// and the result goes beside the material through the bridge (extract.ts).
+// without them. pdf.js reads the same file here, with nothing installed --
+// the desktop app's webview and the browser tab alike -- and the result goes
+// beside the material through the sidecar (agent/extract.ts).
 
 export interface TextPiece {
   str: string;
@@ -66,7 +67,7 @@ export async function extractPdf(name: string, data: Uint8Array, sink: ExtractSi
   const task = pdfjs.getDocument({ data });
   const doc = await deadline(`opening ${name}`, task.promise, LOAD_DEADLINE_MS);
   const pages = doc.numPages;
-  const parts: string[] = [`# ${name}\n\nExtracted in the browser by A.P.E.: ${pages} page${pages === 1 ? '' : 's'}. One image per page sits beside this file as ${pageStem(1)}.jpg … ${pageStem(pages)}.jpg.\n`];
+  const parts: string[] = [`# ${name}\n\nExtracted by A.P.E.: ${pages} page${pages === 1 ? '' : 's'}. One image per page sits beside this file as ${pageStem(1)}.jpg … ${pageStem(pages)}.jpg.\n`];
   const canvas = document.createElement('canvas');
   try {
     for (let n = 1; n <= pages; n += 1) {

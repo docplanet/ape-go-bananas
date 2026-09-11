@@ -5,6 +5,12 @@ what was learned, why the browser direction was abandoned, and what the next
 session should do. Nothing here is deleted work — read "What to keep" before
 touching anything.
 
+> **Status, later the same day.** §7 steps 1–5 are done — see `docs/APP.md`,
+> Stage 5, for what landed and how it was verified. Remaining: §7.6 (Apple
+> signing; whether `ape-bridge` stays). §4's "demote or delete" was resolved
+> as delete. §5's fork is gone. Paths named below under `site/src/agent` and
+> `site/src/engine` now live under `app/src/`.
+
 ---
 
 ## 1. Where this started

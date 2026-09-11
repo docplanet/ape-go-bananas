@@ -14,17 +14,21 @@
     "tauri": "tauri",
     "app:dev": "APE_NODE=\"$(command -v node)\" tauri dev",
     "app:build": "tauri build",
-    "prepare-bundle": "node scripts/prepare-bundle.mjs"
+    "prepare-bundle": "node scripts/prepare-bundle.mjs",
+    "pretest": "npm --prefix .. run check-node",
+    "test": "node --test \"test/**/*.test.ts\""
   },
   "dependencies": {
     "@tauri-apps/api": "2.11.1",
     "@tauri-apps/plugin-dialog": "2.7.3",
     "@tauri-apps/plugin-process": "^2.3.1",
-    "@tauri-apps/plugin-updater": "^2.11.0"
+    "@tauri-apps/plugin-updater": "^2.11.0",
+    "pdfjs-dist": "^6.3.289"
   },
   "devDependencies": {
     "@tauri-apps/cli": "2.11.4",
     "typescript": "6.0.3",
-    "vite": "8.2.2"
+    "vite": "8.2.2",
+    "@types/node": "26.4.1"
   }
 }

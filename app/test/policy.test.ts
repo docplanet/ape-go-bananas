@@ -5,7 +5,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { decide, inside } from '../src/agent/permission-policy.ts';
-import type { PermissionRequest } from '../src/engine/bridge-client.ts';
+import type { PermissionRequest } from '../src/engine/client.ts';
 
 const COURSE = '/Users/someone/Desktop/ape-test';
 const OPTS = [

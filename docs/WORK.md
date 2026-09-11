@@ -13,8 +13,10 @@ messages.
 > (running the agent in the tab on WebContainer) was tried, proved, and then
 > abandoned: it pins a discontinued Claude Code build and keeps no state
 > across a reload. The desktop app in `app/` is the direction again. The
-> handoff says what to keep, what to demote, and the one fork to fix first
-> (`app/src/pipeline.ts`).
+> handoff's plan (§7) is done through step 5 as of the same evening: the
+> fork is gone, the browser shell is the app's (`app/src/agent`), PDFs are
+> read in the webview, the container tier is deleted (`docs/APP.md`, Stage
+> 5). What remains is §7.6: Apple signing, and whether `ape-bridge` stays.
 
 ## Protocol
 

@@ -1,17 +1,16 @@
-// Signing in to a subscription, in the tab.
+// Signing in to a subscription, as a console.
 //
 // The ACP adapters advertise `authMethods: []` -- Claude's sign-in is not a
 // protocol method, it is a command the CLI owns (`claude setup-token`, which
 // its own help describes as "Set up a long-lived authentication token
-// (requires Claude subscription)"). So the page runs that command in the
-// container and relays its console verbatim: whatever it prints is shown,
+// (requires Claude subscription)"). So the shell runs that command and relays its console verbatim: whatever it prints is shown,
 // and whatever the user types goes back to its stdin. Nothing here knows the
 // shape of the flow, which is the point -- when Anthropic changes it, this
 // keeps working because it was never a reimplementation.
 //
-// The token the command writes lands in the container's HOME, which is the
-// sandbox: it is not sent anywhere by this page, and it does not outlive the
-// tab.
+// Written for the in-tab host, which had no browser to hand the OAuth step
+// to; kept for any host that provides `signIn` (engine/host.ts). Neither
+// current one does.
 
 import type { EngineHost } from '../engine/host.js';
 

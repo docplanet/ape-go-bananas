@@ -2,13 +2,33 @@
 // agent's own config options and modes as selectors, and the permission
 // prompt answered over the reverse channel. Same code for an ACP agent and
 // for the embedded OpenRouter loop -- the sidecar hides which is which.
-import { sidecar, SidecarError, type ConfigOption, type ConnectResult, type ModeState, type PermissionRequest, type SessionUpdate } from './sidecar';
+//
+// A host carries one events stream, so the notification and request
+// handlers here are registered through a small multiplexer (bus.ts) rather
+// than replacing whatever the picker registered.
 
-function esc(s: string) {
+import { EngineError, type ConfigOption, type ConnectResult, type ModeState, type PermissionRequest, type SessionUpdate, type SidecarClient } from '../engine/client.js';
+import type { Bus } from './bus.js';
+import { decide } from './permission-policy.js';
+
+function esc(s: string): string {
   return s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
 }
 
-export function mountChat(host: HTMLElement, conn: ConnectResult, say: (t: string, e?: boolean) => void) {
+export interface Chat {
+  dispose(): Promise<void>;
+  /**
+   * Applies this pane's current model / effort / mode selections to another
+   * session. The auditor and adjudicator run in fresh sessions, and a fresh
+   * session gets the agent's defaults -- which is how an audit the user
+   * started on Sonnet ran on Opus at default effort, silently, for minutes.
+   * The choice a user made in the selectors should hold for the sessions the
+   * method spins up on their behalf.
+   */
+  applyConfigTo(sessionId: string): Promise<void>;
+}
+
+export function mountChat(host: HTMLElement, sidecar: SidecarClient, bus: Bus, conn: ConnectResult, say: (t: string, e?: boolean) => void, courseDir: () => string | null): Chat {
   const session = conn.session!;
   let busy = false;
   let cost = 0;
@@ -31,7 +51,7 @@ export function mountChat(host: HTMLElement, conn: ConnectResult, say: (t: strin
 
   let current: HTMLElement | null = null;
   let currentKind = '';
-  function append(kind: string, text: string, asBlock = false) {
+  function append(kind: string, text: string, asBlock = false): void {
     if (!asBlock && current && currentKind === kind) {
       current.textContent += text;
     } else {
@@ -44,7 +64,7 @@ export function mountChat(host: HTMLElement, conn: ConnectResult, say: (t: strin
     messages.scrollTop = messages.scrollHeight;
   }
 
-  function renderSelectors() {
+  function renderSelectors(): void {
     const parts: string[] = [];
     for (const o of configOptions) {
       if (o.type !== 'select' || !o.options) continue;
@@ -69,17 +89,17 @@ export function mountChat(host: HTMLElement, conn: ConnectResult, say: (t: strin
       }
       renderSelectors();
     } catch (err) {
-      say(err instanceof SidecarError ? err.message : String(err), true);
+      say(err instanceof EngineError ? err.message : String(err), true);
     }
   });
 
-  function onUpdate(update: SessionUpdate) {
+  function onUpdate(update: SessionUpdate): void {
     switch (update.sessionUpdate) {
       case 'agent_message_chunk':
-        append('agent', ((update.content as { text?: string })?.text) ?? '');
+        append('agent', (update.content as { text?: string })?.text ?? '');
         break;
       case 'agent_thought_chunk':
-        append('thought', ((update.content as { text?: string })?.text) ?? '');
+        append('thought', (update.content as { text?: string })?.text ?? '');
         break;
       case 'user_message_chunk':
         break;
@@ -121,19 +141,22 @@ export function mountChat(host: HTMLElement, conn: ConnectResult, say: (t: strin
     }
   }
 
-  const unlisten = sidecar.onNotification((method, params) => {
+  const offUpdate = bus.onNotification((method, params) => {
     if (method !== 'agent/update') return;
     const p = params as { sessionId: string; update: SessionUpdate };
     if (p.sessionId === session.sessionId) onUpdate(p.update);
   });
 
-  const unlistenReq = sidecar.onRequest((req) => {
-    if (req.method !== 'agent/requestPermission') {
-      void sidecar.refuse(req.id, `unknown request ${req.method}`);
-      return;
+  const offRequest = bus.onRequest((req) => {
+    if (req.method !== 'agent/requestPermission') return false;
+    const r = req as unknown as PermissionRequest;
+    if (r.params.sessionId !== session.sessionId) return false; // another pane's
+    const auto = decide(r, courseDir());
+    if (auto) {
+      append('tool', `${String(r.params.toolCall.title ?? 'permission')} — ${auto.reason}`);
+      void sidecar.answer(r.id, { outcome: { outcome: 'selected', optionId: auto.optionId } });
+      return true;
     }
-    const r = req as PermissionRequest;
-    if (r.params.sessionId !== session.sessionId) return; // another pane's
     const where = r.params.toolCall.locations?.map((l) => l.path).join(', ') ?? '';
     permission.classList.remove('hidden');
     permission.innerHTML = `<div class="ptitle">${esc(String(r.params.toolCall.title ?? 'The agent asks permission'))}</div>${where ? `<div class="muted">${esc(where)}</div>` : ''}
@@ -145,6 +168,7 @@ export function mountChat(host: HTMLElement, conn: ConnectResult, say: (t: strin
       permission.onclick = null;
       void sidecar.answer(r.id, { outcome: { outcome: 'selected', optionId: b.dataset.opt } });
     };
+    return true;
   });
 
   host.querySelector<HTMLFormElement>('#composer')!.onsubmit = async (e) => {
@@ -160,7 +184,7 @@ export function mountChat(host: HTMLElement, conn: ConnectResult, say: (t: strin
       const r = await sidecar.prompt(session.sessionId, [{ type: 'text', text }]);
       if (r.stopReason !== 'end_turn') append('tool', `(stopped: ${r.stopReason})`, true);
     } catch (err) {
-      append('tool', `error: ${err instanceof SidecarError ? err.message : String(err)}`, true);
+      append('tool', `error: ${err instanceof EngineError ? err.message : String(err)}`, true);
     } finally {
       busy = false;
       current = null;
@@ -171,9 +195,16 @@ export function mountChat(host: HTMLElement, conn: ConnectResult, say: (t: strin
 
   return {
     async dispose() {
-      (await unlisten)();
-      (await unlistenReq)();
+      offUpdate();
+      offRequest();
       await sidecar.disconnect(conn.connectionId).catch(() => undefined);
+    },
+    async applyConfigTo(sessionId) {
+      for (const o of configOptions) {
+        if (o.type !== 'select' || typeof o.currentValue !== 'string') continue;
+        await sidecar.setConfigOption(sessionId, o.id, o.currentValue).catch(() => undefined);
+      }
+      if (modes?.currentModeId) await sidecar.setMode(sessionId, modes.currentModeId).catch(() => undefined);
     },
   };
 }

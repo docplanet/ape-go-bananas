@@ -1,14 +1,10 @@
-// The stage rail and what each stage does -- app/src/main.ts's stage half,
-// over the bridge. Writing stages run the method through the agent and show
+// The stage rail and what each stage does, over whichever host is running
+// the engine. Writing stages run the method through the agent and show
 // the artifact behind a gate; review stages show an existing artifact; the
 // audit stage runs the whole-deck auditor in a fresh session, merges its
 // findings with the owner's flags, and hands them to an adjudicator; the
 // writer then applies the verdicts verbatim. Nothing here decides what a
 // card says; the method text and the agent do.
-//
-// One thing the desktop placeholder left dangling is wired here: its
-// "Adjudicate" button had no handler, so the flags -> adjudicator -> apply
-// loop the method's run-sheet describes never ran from the UI.
 
 import {
   WRITING_STAGES,
@@ -17,7 +13,7 @@ import {
   type Runner,
   type StageId,
 } from '../../../dist/pipeline/index.js';
-import { BridgeError, type ConnectResult, type Flag, type SidecarClient } from '../engine/bridge-client.js';
+import { EngineError, type ConnectResult, type Flag, type SidecarClient } from '../engine/client.js';
 
 export const STAGES: readonly StageId[] = ['extract', 'inventory review', 'organize', 'plan review', 'cards', 'deck preview', 'audit', 'deliver'];
 
@@ -33,8 +29,6 @@ export interface StageHost {
   exportDeck(): Promise<void>;
   /** Extracts text and page images beside every PDF that has none yet; runs before the extract stage. */
   prepareMaterials(courseDir: string): Promise<void>;
-  /** The flags the owner has put on the open deck, in note-index order. */
-  currentFlags(): Flag[];
 }
 
 function esc(s: string): string {
@@ -170,7 +164,7 @@ export function mountStages(rail: HTMLOListElement, gate: HTMLElement, host: Sta
         await host.exportDeck();
       }
     } catch (err) {
-      host.say(err instanceof BridgeError ? err.message : String(err), true);
+      host.say(err instanceof EngineError ? err.message : String(err), true);
     } finally {
       setBusy(null);
       void refreshMarks();
@@ -192,7 +186,7 @@ export function mountStages(rail: HTMLOListElement, gate: HTMLElement, host: Sta
         <pre class="artifact">${r.verdicts === null ? '(no verdicts.md was written)' : esc(r.verdicts)}</pre>`);
       host.say(r.stopReason === 'end_turn' ? 'verdicts in — review them, then apply' : `adjudicator stopped: ${r.stopReason}`, r.stopReason !== 'end_turn');
     } catch (err) {
-      host.say(err instanceof BridgeError ? err.message : String(err), true);
+      host.say(err instanceof EngineError ? err.message : String(err), true);
     } finally {
       setBusy(null);
     }
@@ -215,7 +209,7 @@ export function mountStages(rail: HTMLOListElement, gate: HTMLElement, host: Sta
       if (r.stopReason === 'end_turn') await sidecar.writeFlags(`${dir}/deck.json`, []).catch(() => undefined);
       await host.openDeck(dir);
     } catch (err) {
-      host.say(err instanceof BridgeError ? err.message : String(err), true);
+      host.say(err instanceof EngineError ? err.message : String(err), true);
     } finally {
       setBusy(null);
       void refreshMarks();

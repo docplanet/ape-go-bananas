@@ -307,6 +307,10 @@ the steps disappear and the checker is the deck view.
 
 ## Stage 4: the engine runs in the tab, and the bridge becomes the exception
 
+> Retired the same day it was proven; see Stage 5 and `docs/HANDOFF.md` §3.
+> Kept as the record of what was learned. The file paths below are as they
+> were then; the surviving modules now live under `app/src/`.
+
 The bridge was the wrong front door. A first-time visitor with lecture PDFs
 met a terminal command, and the answer to "why am I opening a terminal" is
 not a good one: a page cannot start a process, so *something* local has to.
@@ -455,3 +459,60 @@ resume its agent connection; reconnecting spawns a fresh adapter while the
 old one lives until the bridge exits (`session/load` is the open item in
 WORK.md). The agent's stderr is drained and discarded by design (`src/acp/
 transport.ts`). Safari has not been tried against loopback from https.
+
+## Stage 5: back to the desktop app, and the two shells become one
+
+The in-tab tier of Stage 4 worked and was retired the same day: it pinned a
+discontinued Claude Code build with an invisible termination date, kept no
+state across a reload, and stood on a licence with unknown cost
+(`docs/HANDOFF.md` §3 has the full reasoning). The desktop app is the front
+door again. What Stage 3 and 4 built for the page was mostly not about the
+page, so it moved:
+
+**One pipeline.** `app/src/pipeline.ts` was a fork that had missed
+`companions` and `describeExtracted`; the app now imports `src/pipeline`
+through the engine's `dist/`, the way the site does ("Where it lives",
+above), and `ci.yml` builds and tests `app/` on every push.
+
+**One shell.** The rail, the picker, the chat pane, the stage runner, the
+gates, the permission policy and the fallback prompt are `app/src/agent/*`
+now; the `EngineHost` seam is `app/src/engine/host.ts`, with
+`makeSidecarClient` beside it in `client.ts`. The desktop app runs the shell
+over a `TauriHost` (`app/src/engine/tauri-host.ts`: `invoke('sidecar_call')`,
+the two Tauri events, `course/read` with `encoding: "base64"` for file
+bytes) and the tool page runs the same shell over the bridge
+(`site/src/engine/bridge-transport.ts`, which now imports its types from
+the app). The one thing the two shells do differently is the deck view --
+the app loads, checks, renders and exports through `deck/*` on the Node
+engine; the page does it in the tab on sql.js -- so `mountAgentApp` takes a
+`DeckView` and each shell supplies its own (`app/src/main.ts`,
+`site/src/bridge-deck.ts`). The picker takes a `KeyStore` for the same
+reason: the OS keychain on the desktop, `sessionStorage` on the page.
+
+**PDFs are read in the webview.** `pdf-extract.ts` moved to
+`app/src/engine/` unchanged: a Tauri webview has a canvas and a Web Worker
+like any tab, so the extract stage in the app now writes `_extracted/…`
+beside the material before the agent runs, and the agent is told so. The
+`pdftotext` / `pypdf` probe that the first live run watched is gone from
+both shells. (`'wasm-unsafe-eval'` joined the app's CSP for pdf.js's image
+codecs.)
+
+**SETUP.md is bundled.** `prepare-bundle` stages it beside the method
+files -- it sits at the method repo's root, not in `method/`, which is why
+the bundle never had it and the extract stage's companion had nothing to
+attach.
+
+**The container tier is deleted**, not demoted: `site/src/container/*`,
+`site/public/coi.js`, the wrapper, the framing, the pin. It is in the
+history (`2dad160`, `1691073`) if the ground it stood on ever changes. The
+tool page opens on the deck checker again with a link to the app, and the
+bridge steps are a folded section under "Want to build a deck from lecture
+files?" -- a developer's route and a fallback, not the front door.
+
+**Verified 2026-09-10**: 345 engine tests, 8 app tests (policy, PDF text
+layout), the site's parity test; the tool page plain and over a live bridge
+(rail, picker from the registry, deck view on the seven reference cards,
+a stage click refused without an agent); and `tauri dev` bringing the same
+shell up over the sidecar Rust spawned. Not yet run in the app: a full
+stage with a connected agent -- the same code ran the whole method live from
+the page on the 10th, over the same sidecar methods.

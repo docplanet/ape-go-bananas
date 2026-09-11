@@ -10,7 +10,7 @@ name: pages
 on:
   push:
     branches: [main]
-    paths: ['site/**', 'src/**', 'package.json', '.github/workflows/pages.yml']
+    paths: ['site/**', 'src/**', 'app/src/**', 'app/package.json', 'package.json', '.github/workflows/pages.yml']
   workflow_dispatch:
 permissions:
   contents: read
@@ -34,6 +34,11 @@ jobs:
         run: |
           npm ci
           npm run build
+      # The tool page's bridge tier is the desktop app's shell (app/src/agent)
+      # over HTTP, and pdf.js comes from app/node_modules with it.
+      - name: app — install (the shell the site imports)
+        working-directory: app
+        run: npm ci
       - name: site — build
         working-directory: site
         run: |

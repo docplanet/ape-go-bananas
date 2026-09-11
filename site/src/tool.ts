@@ -416,8 +416,9 @@ for (const event of ['dragleave', 'drop'] as const) {
 }
 
 // The first thing a student did on the landing page was try to give it a
-// lecture PDF. The page cannot take one -- only the bridge can reach a
-// folder -- so say that, and point at the step, instead of ignoring the drop.
+// lecture PDF. The page cannot take one -- building a deck is the desktop
+// app's job, or the bridge's -- so say that, and point there, instead of
+// ignoring the drop.
 function isMediaFile(file: File): boolean {
   return file.type.startsWith('image/') || file.type.startsWith('audio/');
 }
@@ -429,7 +430,7 @@ document.addEventListener('drop', (e) => {
   if (!json && rest.length > 0 && !rest.every(isMediaFile)) {
     showError(
       `This box takes a finished deck.json. To build a deck from lecture files (${rest.map((f) => f.name).join(', ')}), ` +
-        `put them in a folder and start the bridge on it — step 1 above; the page then works from that folder.`,
+        `use the desktop app, or put them in a folder and start the bridge on it — see "Want to build a deck" below.`,
     );
     return;
   }
@@ -466,61 +467,23 @@ $('mediafile').addEventListener('change', (e) => {
 $('export').addEventListener('click', () => void exportApkg());
 
 // ---- agent mode --------------------------------------------------------------
-// The engine can run in one of two places, and the page is the same either
-// way (site/src/engine/host.ts). In this tab: WebContainer runs the sidecar
-// on Node compiled to WebAssembly, so nothing is installed and nothing is
-// downloaded -- the default. On the user's machine: `ape-bridge` opens this
-// page with its details in the fragment, which is how the newest Claude Code
-// (a native binary, which cannot run in a tab) is reached. Neither module is
-// fetched until one of them is chosen.
+// When `ape-bridge` opened this page -- its details are in the fragment --
+// the page becomes the app: the same shell the desktop app runs
+// (app/src/agent/app.ts), over the bridge instead of Tauri, with this page's
+// in-tab engine as the deck view. Nothing here is fetched until then.
 import { Bridge, locateBridge } from './engine/bridge-transport.js';
-import type { EngineHost } from './engine/host.js';
 {
-  const enterAgentView = (): void => {
-    $('start').hidden = true;
-    const checker = $('checker') as HTMLDetailsElement;
-    checker.open = true;
-    (checker.querySelector('summary') as HTMLElement).hidden = true;
-  };
-
-  const mount = async (host: EngineHost): Promise<void> => {
-    enterAgentView();
-    const { mountAgentApp } = await import('./agent/app.js');
-    await mountAgentApp(host);
-  };
-
-  const startInTab = async (): Promise<void> => {
-    const button = $('startdeck') as HTMLButtonElement;
-    const line = $('startstatus');
-    if (!crossOriginIsolated) {
-      showError('This browser could not isolate the page, which the in-tab runtime needs. Reload once; if it persists, use the bridge below.');
-      return;
-    }
-    button.disabled = true;
-    clearError();
-    try {
-      const { startContainerHost } = await import('./container/host.js');
-      const host = await startContainerHost((step) => {
-        line.textContent = `${step}…`;
-      });
-      line.textContent = '';
-      await mount(host);
-    } catch (err) {
-      button.disabled = false;
-      line.textContent = '';
-      showError(err instanceof Error ? err.message : String(err));
-    }
-  };
-
   const locator = locateBridge();
   if (locator) {
     void (async () => {
       const bridge = new Bridge(locator);
+      $('build').hidden = true;
+      document.body.classList.add('with-rail');
+      $('rail').hidden = false;
       try {
         await bridge.health();
         await bridge.connect();
       } catch {
-        enterAgentView();
         showError(
           `This page was opened by ape-bridge, but the bridge cannot be reached. ` +
             `Is it still running in your terminal? If your browser asked to allow access to your local network, it needs a yes. ` +
@@ -528,9 +491,28 @@ import type { EngineHost } from './engine/host.js';
         );
         return;
       }
-      await mount(bridge);
+      const [{ mountAgentApp }, { makeSidecarClient }, { makeBridgeDeckView }] = await Promise.all([
+        import('../../app/src/agent/app.js'),
+        import('../../app/src/engine/client.js'),
+        import('./bridge-deck.js'),
+      ]);
+      const rail = $('rail');
+      const say = (text: string, isError = false): void => {
+        const status = rail.querySelector<HTMLElement>('#status');
+        if (!status) return;
+        status.textContent = text;
+        status.classList.toggle('error', isError);
+      };
+      mountAgentApp(bridge, {
+        rail,
+        view: $('view-agent'),
+        deck: makeBridgeDeckView(makeSidecarClient(bridge), bridge, say),
+        // This tab, until it closes: a page has no keychain.
+        keys: {
+          get: async (id) => sessionStorage.getItem(`ape.key.${id}`),
+          set: async (id, value) => sessionStorage.setItem(`ape.key.${id}`, value),
+        },
+      });
     })();
-  } else {
-    $('startdeck').addEventListener('click', () => void startInTab());
   }
 }

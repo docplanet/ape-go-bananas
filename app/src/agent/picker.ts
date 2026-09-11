@@ -1,14 +1,13 @@
-// The provider picker, over the bridge: every agent the public registry
-// knows, installable in place, plus the API-key slot. Sign-in runs the
-// vendor's own flow from a button -- the bridge spawns it on the user's
-// machine and a browser tab opens for the OAuth step, exactly as the desktop
-// app did (docs/research/claude-adapter-auth.md §4).
+// The provider picker: every agent the public registry knows, installable
+// in place, plus the API-key slot. Sign-in runs the vendor's own flow from a
+// button -- the sidecar spawns it on the user's machine and a browser opens
+// for the OAuth step (docs/research/claude-adapter-auth.md §4).
 //
-// This is app/src/providers.ts with one change: there is no OS keychain here.
-// An OpenRouter key entered on the page is kept in sessionStorage -- this
-// tab, until it closes -- and handed to agent/connect. Nothing else sees it.
+// An API key entered here goes to agent/connect and to the store the shell
+// provides: the OS keychain in the desktop app, sessionStorage on the tool
+// page (this tab, until it closes). Nothing else sees it.
 
-import { BridgeError, type ConnectResult, type Provider, type SidecarClient } from '../engine/bridge-client.js';
+import { EngineError, type ConnectResult, type Provider, type SidecarClient } from '../engine/client.js';
 import type { Bus } from './bus.js';
 
 export interface PickerCallbacks {
@@ -20,12 +19,13 @@ function esc(s: string): string {
   return s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
 }
 
-const keys = {
-  get: (id: string): string | null => sessionStorage.getItem(`ape.key.${id}`),
-  set: (id: string, value: string): void => sessionStorage.setItem(`ape.key.${id}`, value),
-};
+/** Where an API key lives between sessions. Names are provider ids. */
+export interface KeyStore {
+  get(id: string): Promise<string | null>;
+  set(id: string, value: string): Promise<void>;
+}
 
-export function mountPicker(host: HTMLElement, sidecar: SidecarClient, bus: Bus, dataDir: string, courseDir: () => string | null, cb: PickerCallbacks): void {
+export function mountPicker(host: HTMLElement, sidecar: SidecarClient, bus: Bus, dataDir: string, courseDir: () => string | null, keys: KeyStore, cb: PickerCallbacks): void {
   let providers: Provider[] = [];
   let pending: ConnectResult | null = null; // a connection waiting on sign-in
   const progress = new Map<string, string[]>();
@@ -59,8 +59,12 @@ export function mountPicker(host: HTMLElement, sidecar: SidecarClient, bus: Bus,
       })
       .join('');
     for (const input of list.querySelectorAll<HTMLInputElement>('input[data-key]')) {
-      const v = keys.get(input.dataset.key!);
-      if (v && !input.value) input.value = v;
+      void keys.get(input.dataset.key!).then(
+        (v) => {
+          if (v && !input.value) input.value = v;
+        },
+        () => undefined,
+      );
     }
   }
 
@@ -100,7 +104,7 @@ export function mountPicker(host: HTMLElement, sidecar: SidecarClient, bus: Bus,
         return;
       }
       params.apiKey = key;
-      keys.set(id, key);
+      await keys.set(id, key).catch(() => undefined);
     }
     cb.say(`connecting to ${id}…`);
     try {
@@ -112,7 +116,7 @@ export function mountPicker(host: HTMLElement, sidecar: SidecarClient, bus: Bus,
       }
       cb.onConnected(result);
     } catch (err) {
-      cb.say(err instanceof BridgeError ? err.message : String(err), true);
+      cb.say(err instanceof EngineError ? err.message : String(err), true);
     }
   }
 
@@ -128,7 +132,7 @@ export function mountPicker(host: HTMLElement, sidecar: SidecarClient, bus: Bus,
         const r = await sidecar.installProvider(dataDir, install);
         cb.say(`installed ${r.package} ${r.version}`);
       } catch (err) {
-        cb.say(err instanceof BridgeError ? err.message : String(err), true);
+        cb.say(err instanceof EngineError ? err.message : String(err), true);
       }
       progress.delete(install);
       await load();
@@ -151,7 +155,7 @@ export function mountPicker(host: HTMLElement, sidecar: SidecarClient, bus: Bus,
           cb.say(`sign-in did not complete (exit ${r.exitCode})`, true);
         }
       } catch (err) {
-        cb.say(err instanceof BridgeError ? err.message : String(err), true);
+        cb.say(err instanceof EngineError ? err.message : String(err), true);
       }
     } else if (skip && pending?.session) {
       cb.onConnected(pending);

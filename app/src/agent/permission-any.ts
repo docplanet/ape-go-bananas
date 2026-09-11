@@ -12,7 +12,7 @@
 // This is the fallback: a prompt for any session that nothing else claimed,
 // registered at low priority so a chat pane's own handler still wins.
 
-import type { PermissionRequest, SidecarClient } from '../engine/bridge-client.js';
+import type { PermissionRequest, SidecarClient } from '../engine/client.js';
 import type { Bus } from './bus.js';
 import { decide } from './permission-policy.js';
 
