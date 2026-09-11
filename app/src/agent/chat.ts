@@ -68,6 +68,9 @@ export function mountChat(host: HTMLElement, sidecar: SidecarClient, bus: Bus, c
     const parts: string[] = [];
     for (const o of configOptions) {
       if (o.type !== 'select' || !o.options) continue;
+      // Claude's "agent" option lists the coding sub-agents installed on this
+      // computer (claude-code-guide, plugin agents); none of them makes cards.
+      if (/^agent$/i.test(o.id) || /^agent$/i.test(o.name)) continue;
       parts.push(`<label>${esc(o.name)} <select data-config="${o.id}">${o.options.map((x) => `<option value="${esc(x.value)}" ${x.value === o.currentValue ? 'selected' : ''}>${esc(x.name)}</option>`).join('')}</select></label>`);
     }
     if (modes) {
