@@ -5,6 +5,35 @@ what was learned, why the browser direction was abandoned, and what the next
 session should do. Nothing here is deleted work — read "What to keep" before
 touching anything.
 
+## Pick-up note, written 2026-09-11 afternoon (read this first)
+
+**v0.1.1 is released** (tag `v0.1.1`, all four builds green, updater feed
+at 0.1.1). The full flow ran end to end in the desktop app on a real
+lecture: extract → organize → cards → audit → adjudicate → apply verdicts
+→ Send to Anki, 136 notes and 36 images landed in the owner's Anki over
+AnkiConnect. What changed today, all on `main` in both repos:
+
+- **Cloze hints are slots that jog memory** (method `3-cards.md`, audit
+  `4-audit.md`, both checkers, rule 10b): no "[what is it?]", no bare
+  "what?" after has/contains/uses, hints say the count and shape, an
+  absence is asked as polarity ("[do or do not?]"). List cards with one
+  cloze over several items are fine *sometimes* — the owner said so.
+- **A recognition objective is a recognition component** (`2-organize.md`):
+  "when shown the structure, name…" plans `IMAGE | ANSWER` rows even with
+  no practical. Unverified on a fresh deck — the next run should show it.
+- **Send to Anki** (`src/sidecar/anki.ts`, `anki/status`, `anki/send`),
+  **Run to audit**, the deck's **media list** contract, the audit stage
+  writing **review.html**, flags **merged per card** before adjudication,
+  **Auto mode** default, one Mode selector, the WebKit extract fix.
+- **A dev build's engine respawns itself** when `dist/` is rebuilt under
+  the app (`sidecar.rs`, `stale`) — "method not found: anki/send" was a
+  sidecar two hours older than the engine. Still: do not edit `app/src/**`
+  or rebuild `dist/` while a stage runs; the reload ends the agent's turn.
+
+**Deferred, on purpose:** Apple signing (the owner is not concerned yet;
+downloads work with Open Anyway). **Next:** run a fresh deck through and
+read the plan for image rows; watch the adjudicator with merged flags.
+
 ## Pick-up note, written 2026-09-11 (read this first)
 
 **Where things are.** The desktop app in `app/` is the product; everything
