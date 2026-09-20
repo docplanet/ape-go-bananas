@@ -10,7 +10,13 @@ import { mountAgentApp, type DeckView } from './agent/app.js';
 import { EngineError, makeSidecarClient, type Flag, type SidecarClient, type SendToAnkiResult } from './engine/client.js';
 import { TauriHost, secrets, sidecarStatus } from './engine/tauri-host.js';
 import { mountPreview } from './preview.js';
+import { applyTheme, readTheme } from './theme.js';
 import { offerUpdate } from './updater.js';
+
+// Before anything is drawn, so a pinned theme does not flash the other one.
+// It cannot be an inline script in index.html: the window's CSP allows
+// script-src 'self' only.
+applyTheme(readTheme());
 
 const root = document.getElementById('app')!;
 root.innerHTML = `
@@ -24,10 +30,26 @@ root.innerHTML = `
         <button type="button" id="open">Open…</button>
       </section>
       <section class="work" id="work" hidden>
-        <header class="bar"><span id="deckname"></span><span class="grow"></span><button type="button" id="send">Send to Anki</button><button type="button" id="export" class="quiet">Export .apkg</button></header>
+        <header class="bar">
+          <span id="deckname"></span><span class="grow"></span>
+          <div class="cardnav" id="cardnav" hidden>
+            <button type="button" id="cardprev" class="quiet" aria-label="Previous card">&#8592;</button>
+            <span id="cardat" aria-live="polite"></span>
+            <button type="button" id="cardnext" class="quiet" aria-label="Next card">&#8594;</button>
+          </div>
+          <button type="button" id="flagthis" class="quiet">Flag this card</button>
+          <button type="button" id="send">Send to Anki</button>
+          <button type="button" id="export" class="quiet">Export .apkg</button>
+        </header>
         <div class="split">
           <div class="preview" id="preview"></div>
           <div class="side">
+            <form class="flagsheet" id="flagsheet" hidden>
+              <div class="fs-head">Flagging card <strong id="fs-card"></strong></div>
+              <label for="fs-note">What is wrong with it?</label>
+              <textarea id="fs-note" rows="3" placeholder="The hint gives the answer away"></textarea>
+              <div class="fs-actions"><button type="submit">Flag it</button><button type="button" id="fs-cancel" class="quiet">Cancel</button></div>
+            </form>
             <h2>Checks</h2><pre id="report"></pre>
             <h2>Flags <small id="flagcount"></small></h2><ul id="flags" class="flags"></ul>
           </div>
@@ -47,6 +69,55 @@ function makeDeckView(sidecar: SidecarClient, say: (text: string, isError?: bool
   let deckPath: string | null = null;
   let flags: Flag[] = [];
   let preview: ReturnType<typeof mountPreview> | null = null;
+  // Where the review is: how many cards it holds, and which one is at the top.
+  // The count comes from the load; the position comes from the frame, so
+  // scrolling by hand keeps the counter honest.
+  let cards = 0;
+  let at = 0;
+
+  function renderAt(): void {
+    $('cardat').textContent = cards ? `card ${at + 1} / ${cards}` : '';
+    $<HTMLButtonElement>('cardprev').disabled = at <= 0;
+    $<HTMLButtonElement>('cardnext').disabled = at >= cards - 1;
+  }
+  function goto(index: number): void {
+    at = Math.min(Math.max(index, 0), Math.max(cards - 1, 0));
+    preview?.goto(at);
+    renderAt();
+  }
+  $('cardprev').addEventListener('click', () => goto(at - 1));
+  $('cardnext').addEventListener('click', () => goto(at + 1));
+
+  // Flagging a card: a sheet in the panel the flags live in, rather than the
+  // browser's prompt -- which also flagged the card when it was cancelled,
+  // because a cancelled prompt and an empty note look the same.
+  let flagging: number | null = null;
+  const sheet = $<HTMLFormElement>('flagsheet');
+  const note = $<HTMLTextAreaElement>('fs-note');
+  function openFlagSheet(noteIndex: number): void {
+    flagging = noteIndex;
+    $('fs-card').textContent = `#${noteIndex + 1}`;
+    note.value = '';
+    sheet.hidden = false;
+    note.focus();
+  }
+  function closeFlagSheet(): void {
+    flagging = null;
+    sheet.hidden = true;
+  }
+  sheet.addEventListener('submit', (e) => {
+    e.preventDefault();
+    if (flagging === null) return;
+    flags.push({ noteIndex: flagging, note: note.value.trim(), at: new Date().toISOString() });
+    closeFlagSheet();
+    renderFlags();
+    void persistFlags();
+  });
+  $('fs-cancel').addEventListener('click', () => closeFlagSheet());
+  sheet.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closeFlagSheet();
+  });
+  $('flagthis').addEventListener('click', () => openFlagSheet(at));
 
   function renderFlags(): void {
     $('flagcount').textContent = flags.length ? `(${flags.length})` : '';
@@ -75,12 +146,17 @@ function makeDeckView(sidecar: SidecarClient, say: (text: string, isError?: bool
       $('report').classList.toggle('clean', check.clean);
       $('drop').hidden = true;
       $('work').hidden = false;
-      preview = mountPreview($('preview'), review.html, (noteIndex) => {
-        // A stand-in for a designed flag sheet (docs/APP.md).
-        const note = window.prompt(`Flag card #${noteIndex + 1}. What is wrong?`) ?? '';
-        flags.push({ noteIndex, note, at: new Date().toISOString() });
-        renderFlags();
-        void persistFlags();
+      cards = loaded.count;
+      at = 0;
+      closeFlagSheet();
+      $('cardnav').hidden = cards === 0;
+      renderAt();
+      preview = mountPreview($('preview'), review.html, {
+        onFlag: openFlagSheet,
+        onAt: (index) => {
+          at = index;
+          renderAt();
+        },
       });
       renderFlags();
       say(check.clean ? 'checks clean' : `${check.result.findings.length} finding(s)`, !check.clean);

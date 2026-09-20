@@ -3,6 +3,7 @@
 // course folder is chosen. picker.ts renders into the agent slot.
 
 import type { EngineHost } from '../engine/client.js';
+import { readTheme, setTheme, type Theme } from '../theme.js';
 import { mountSignIn } from './signin.js';
 
 export interface SettingsOptions {
@@ -30,6 +31,15 @@ export function mountSettings(host: HTMLElement, engine: EngineHost, opts: Setti
       <div id="set-signin"></div>
     </section>
     <section class="set-section">
+      <h3>Appearance</h3>
+      <p class="hint">Follow the system, or pin it.</p>
+      <div class="set-theme" id="set-theme" role="group" aria-label="Appearance">
+        <button type="button" data-theme="system">System</button>
+        <button type="button" data-theme="light">Light</button>
+        <button type="button" data-theme="dark">Dark</button>
+      </div>
+    </section>
+    <section class="set-section">
       <h3>This app</h3>
       <dl class="facts">
         <dt>Engine</dt><dd>${esc(engine.info.engine)} ${esc(engine.info.version)} on Node ${esc(engine.info.node)}, over ${esc(engine.info.transport)}</dd>
@@ -40,6 +50,21 @@ export function mountSettings(host: HTMLElement, engine: EngineHost, opts: Setti
     </section>`;
   const $ = <T extends HTMLElement>(sel: string): T => host.querySelector<T>(sel)!;
   $<HTMLButtonElement>('#set-done').addEventListener('click', () => opts.onDone());
+
+  // Appearance. The pressed one is the one in force; the banana marks it.
+  const themeGroup = $<HTMLElement>('#set-theme');
+  const showTheme = (theme: Theme): void => {
+    themeGroup.querySelectorAll<HTMLButtonElement>('button[data-theme]').forEach((b) => {
+      b.setAttribute('aria-pressed', String(b.dataset.theme === theme));
+    });
+  };
+  themeGroup.addEventListener('click', (e) => {
+    const picked = (e.target as HTMLElement).closest<HTMLButtonElement>('button[data-theme]')?.dataset.theme;
+    if (picked !== 'system' && picked !== 'light' && picked !== 'dark') return;
+    setTheme(picked);
+    showTheme(picked);
+  });
+  showTheme(readTheme());
 
   // Signing in is the CLI's own flow, so a host that runs it offers it as a
   // console rather than a form (signin.ts). Neither current host does.

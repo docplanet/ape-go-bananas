@@ -239,7 +239,11 @@ export function mountStages(rail: HTMLOListElement, bar: HTMLElement, gate: HTML
     rail.querySelectorAll<HTMLLIElement>('li').forEach((li) => li.classList.toggle('next', li.dataset.stage === a.stage));
     // Run to audit: offered wherever a stage is still ahead of the audit and an agent can run it.
     const canThrough = !!runner && !needsAgent && nextAuto() !== null && !(a.stage === 'extract' && !has.inventory && !host.hasMaterials());
-    bar.innerHTML = `<div class="nb-text"><span class="nb-k">${exportedTo !== null && a.stage === 'deliver' ? 'Done' : 'Next'}</span><strong>${n} · ${esc(a.stage)}</strong><span class="nb-hint">${esc(a.hint)}</span></div>
+    // The number belongs to the kicker, with how many there are -- "step 4 of
+    // 8" says where a run is; "4 ·" in front of the name only crowds it.
+    bar.innerHTML = `<div class="nb-text"><span class="nb-k">${
+      exportedTo !== null && a.stage === 'deliver' ? 'Done' : `Next · step ${n} of ${STAGES.length}`
+    }</span><strong>${esc(a.stage)}</strong><span class="nb-hint">${esc(a.hint)}</span></div>
       <div class="nb-actions">${
         canThrough ? `<button type="button" data-through="1" class="quiet" title="Extract, organize, cards and audit in a row, with no stops; come back to the findings.">Run to audit</button>` : ''
       }${a.secondary ? `<button type="button" data-secondary="1" class="quiet">${esc(a.secondary.label)}</button>` : ''}${

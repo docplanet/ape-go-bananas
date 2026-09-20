@@ -33,6 +33,17 @@ export function deckStatus(d: DeckSummary): string {
   return 'empty — add files';
 }
 
+/** How many of the eight steps this deck has finished, from the artifacts on
+ *  disk. It counts what was written, not what was reviewed -- a review leaves
+ *  nothing behind, so the rail is the only place that knows about those. */
+export function deckSteps(d: DeckSummary): number {
+  const a = d.artifacts;
+  if (a.deck) return 5; // extract, inventory review, organize, plan review, cards
+  if (a.plan) return 3; // through organize
+  if (a.inventory) return 1; // extract
+  return 0;
+}
+
 function material(d: DeckSummary): string {
   if (d.files === 0) return 'no files yet';
   const other = d.files - d.pdfs;
@@ -94,10 +105,11 @@ export function mountHome(host: HTMLElement, opts: HomeOptions): Home {
       decks = d;
       list.innerHTML = decks.length
         ? decks
-            .map(
-              (deck) =>
-                `<li data-path="${esc(deck.path)}" role="button" tabindex="0"><strong>${esc(deck.name)}</strong><span class="dmeta">${esc(material(deck))} · ${esc(deckStatus(deck))}</span></li>`,
-            )
+            .map((deck) => {
+              const steps = deckSteps(deck);
+              const state = steps === 0 ? '' : steps >= 5 ? ' finished' : ' started';
+              return `<li data-path="${esc(deck.path)}" role="button" tabindex="0"><strong>${esc(deck.name)}</strong><span class="dmeta">${esc(material(deck))}</span><span class="dstate">${esc(deckStatus(deck))}</span><span class="dsteps${state}"><span class="dtrack"><i style="width:${(steps / 8) * 100}%"></i></span><span class="dmark"></span><span class="dcount">${steps} / 8</span></span></li>`;
+            })
             .join('')
         : '<li class="empty">No decks yet.</li>';
     },

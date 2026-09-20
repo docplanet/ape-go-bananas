@@ -1,58 +1,211 @@
-/* The desktop window. Same palette as the site (site/src/tool.css), so the
-   app and the page it shares its shell with read as one thing; the shell's
-   own styles are agent/shell.css, shared. The deck view (drop / work /
-   split) is this shell's own. */
+/* The desktop window: the family, the palette both modes are drawn from, and
+   this shell's own deck view (drop / work / split). The shell's components
+   are agent/shell.css, shared with the tool page over the bridge
+   (site/src/tool.css) -- that page supplies its own palette, and shell.css
+   defaults every token added here to the older one it replaces, so the page
+   keeps working untouched. */
 @import './agent/shell.css';
+
+/* One variable family doing three jobs: the UI voice, the mono of the
+   engine's own output, and the display weight of the wordmark. MONO and CASL
+   are Recursive's own axes -- see the voices below.
+
+   It is local, not a CDN, for two reasons that both decide it on their own:
+   the window's CSP is `default-src 'self'` with no font-src, so a remote
+   stylesheet and font are both refused; and the app does the work on this
+   computer, so it should not need the network to draw itself. public/ is
+   copied as-is by vite and an absolute url is left alone, so a missing file
+   falls back to the system stack instead of failing the build. */
+@font-face {
+  font-family: 'Recursive';
+  src: url('/fonts/Recursive-VF.woff2') format('woff2');
+  font-weight: 300 1000;
+  font-style: normal;
+  font-display: swap;
+}
 
 :root {
   color-scheme: light dark;
-  --fg: #1d2329; --muted: #5b6672; --bg: #f7f8f9; --panel: #fff;
-  --line: #dde2e7; --accent: #2a8f8f; --warn: #9a6b00; --bad: #a03535;
+
+  --font: Recursive, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-mono: Recursive, ui-monospace, SFMono-Regular, Menlo, monospace;
+  /* The four voices. One family, four settings: body prose leans a little
+     casual, anything the engine names (a stage, a file, a path, its output)
+     is mono, the wordmark and the step title are display, buttons sit
+     between. Set font-variation-settings *after* any `font:` shorthand --
+     the shorthand resets it. */
+  --voice-body: 'CASL' 0.4, 'MONO' 0;
+  --voice-mono: 'MONO' 1, 'CASL' 0;
+  --voice-display: 'CASL' 1, 'MONO' 0;
+  --voice-button: 'CASL' 0.7, 'MONO' 0;
+
+  /* Light. The grounds are warm rather than neutral grey: yellow turns sour
+     against grey and sits right against cream. */
+  --bg: #FFF9E3; --panel: #FFFFFF; --raised: #FFF3C9; --stage: #EFE6CB;
+  --fg: #241F0E; --muted: #6E6243; --line: #EADFAE; --line-strong: #D3C48C;
+  --banana: #FFD029; --on-banana: #241F0E; --banana-edge: #E0B81C;
+  --wordmark: var(--fg);
+  --dim: #E2D3A2;              /* a step not yet earned */
+  --accent: #9A6400;           /* the yellow, dark enough to be text */
+  --good: #167A44; --info: #0E7C8A; --bad: #C0402A; --extra: #6D4FC2;
+  --warn: #9A6400;
 }
+
+/* Dark, twice: once for the system preference (unless light is pinned), once
+   for a pinned dark. The banana itself does not change -- it is the one
+   colour that reads the same either way, which is why the next-step bar
+   keeps the same face in both modes. */
 @media (prefers-color-scheme: dark) {
-  :root {
-    --fg: #d7dee9; --muted: #98a4b0; --bg: #1d2329; --panel: #252c34;
-    --line: #3d4753; --accent: #5eb3b3; --warn: #e8c07d; --bad: #e08585;
+  :root:not([data-theme='light']) {
+    --bg: #14120B; --panel: #1D1A11; --raised: #262114; --stage: #1A1710;
+    --fg: #F7F0DA; --muted: #B6AB8B; --line: #35301E; --line-strong: #4A432B;
+    --banana: #FFD029; --on-banana: #241F0E; --banana-edge: #C79E12;
+    --wordmark: var(--banana);
+    --dim: #3F3A26;
+    --accent: #FFD029;
+    --good: #4DD97B; --info: #45D3E0; --bad: #FF8A6E; --extra: #C2A5FF;
+    --warn: #E8C07D;
   }
 }
+:root[data-theme='dark'] {
+  --bg: #14120B; --panel: #1D1A11; --raised: #262114; --stage: #1A1710;
+  --fg: #F7F0DA; --muted: #B6AB8B; --line: #35301E; --line-strong: #4A432B;
+  --banana: #FFD029; --on-banana: #241F0E; --banana-edge: #C79E12;
+  --wordmark: var(--banana);
+  --dim: #3F3A26;
+  --accent: #FFD029;
+  --good: #4DD97B; --info: #45D3E0; --bad: #FF8A6E; --extra: #C2A5FF;
+  --warn: #E8C07D;
+}
+
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
-html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg);
-  font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
-#app { display: grid; grid-template-columns: 230px 1fr; height: 100vh; }
-code { background: var(--panel); border: 1px solid var(--line); border-radius: 4px; padding: 1px 5px; font-size: 90%; }
+html, body {
+  margin: 0; height: 100%; background: var(--bg); color: var(--fg);
+  font: 14px/1.5 var(--font);
+  font-variation-settings: var(--voice-body);
+}
+#app { display: grid; grid-template-columns: 250px 1fr; height: 100vh; }
+code {
+  background: var(--raised); border: 1px solid var(--line); border-radius: 5px;
+  padding: 1px 5px; font-family: var(--font-mono); font-variation-settings: var(--voice-mono); font-size: 90%;
+}
 .muted { color: var(--muted); font-size: 12px; }
 .dead { padding: 40px; grid-column: 1 / -1; }
-.error { background: color-mix(in srgb, var(--bad) 12%, var(--panel)); border: 1px solid var(--bad); border-radius: 8px;
-  padding: 12px 14px; white-space: pre-wrap; }
+.error {
+  background: color-mix(in srgb, var(--bad) 12%, var(--panel));
+  border: 1px solid var(--bad); border-radius: 10px;
+  padding: 12px 14px; white-space: pre-wrap;
+}
 
-button { background: var(--accent); color: #fff; border: 0; border-radius: 8px; padding: 7px 14px;
-  font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
-button:hover { filter: brightness(1.08); }
-button:disabled { opacity: .5; cursor: default; }
-button.ghost { background: transparent; color: var(--accent); border: 1px solid var(--line); font-weight: 400; }
+/* The banana is the action. Every button that advances something is filled
+   with it and prints in ink; the quiet ones are outlines. */
+button {
+  background: var(--banana); color: var(--on-banana); border: 0; border-radius: 8px;
+  padding: 9px 16px; font: inherit; font-size: 13px; font-weight: 600;
+  font-variation-settings: var(--voice-button); cursor: pointer;
+}
+button:hover { filter: brightness(1.05); }
+button:disabled { opacity: .5; cursor: default; filter: none; }
+button:focus-visible { outline: 2px solid var(--fg); outline-offset: 2px; }
+button.ghost, button.quiet {
+  background: transparent; color: var(--fg);
+  border: 1px solid var(--line-strong); font-weight: 500;
+}
+button.quiet { color: var(--muted); }
+button.ghost:hover, button.quiet:hover { background: var(--raised); filter: none; }
+button.link {
+  background: none; border: 0; padding: 0; color: var(--accent);
+  font: inherit; font-variation-settings: var(--voice-body);
+  text-decoration: underline; font-weight: 400; cursor: pointer;
+}
 
-.rail { background: var(--panel); border-right: 1px solid var(--line); padding: 20px 14px; display: flex; flex-direction: column; gap: 4px; min-height: 0; overflow: auto; }
+.rail {
+  background: var(--panel); border-right: 1px solid var(--line);
+  padding: 20px 18px 18px; display: flex; flex-direction: column; gap: 4px;
+  min-height: 0; overflow: auto;
+}
 
 /* ---- the main pane ---------------------------------------------------------- */
 .main { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
 .view { flex: 1; display: flex; flex-direction: column; min-height: 0; }
-#view-agent { padding: 16px; overflow: auto; gap: 16px; }
-.update-bar { display: flex; gap: 10px; align-items: center; padding: 8px 16px; background: var(--panel); border-bottom: 1px solid var(--accent); font-size: 12px; }
+#view-agent { padding: 16px 22px; overflow: auto; gap: 14px; }
+.update-bar {
+  display: flex; gap: 10px; align-items: center; padding: 9px 22px;
+  background: var(--raised); border-bottom: 1px solid var(--banana-edge); font-size: 12px;
+}
 
 /* ---- the deck view ---------------------------------------------------------- */
-.drop { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; margin: 24px;
-  border: 2px dashed var(--line); border-radius: 12px; text-align: center; background: var(--panel); }
-.drop.hover { border-color: var(--accent); }
+.drop {
+  flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 12px; margin: 24px; border: 1px dashed var(--line-strong); border-radius: 12px;
+  text-align: center; background: var(--panel);
+}
+.drop.hover { border-color: var(--banana-edge); background: var(--raised); }
 .work { flex: 1; display: flex; flex-direction: column; min-height: 0; }
 .split { flex: 1; display: grid; grid-template-columns: 1fr 340px; min-height: 0; }
 .preview { min-height: 0; }
-.preview-frame { width: 100%; height: 100%; border: 0; background: #333b45; }
-.side { border-left: 1px solid var(--line); padding: 12px 16px; overflow: auto; }
-.side h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 12px 0 6px; font-weight: 600; }
-.side h2 small { color: var(--warn); }
-.side pre { white-space: pre-wrap; font: 12px/1.6 Menlo, ui-monospace, monospace; margin: 0; color: var(--warn); }
-.side pre.clean { color: var(--accent); }
-.flags { padding-left: 16px; margin: 0; font-size: 13px; }
-.flags li { margin: 4px 0; }
-.flags button { padding: 0 6px; font-size: 12px; margin-left: 4px; }
+/* The frame is ours; everything inside it is the engine's review page in a
+   sandboxed srcdoc iframe with no same-origin -- the card's own styling,
+   which this app must not restyle and structurally cannot reach. */
+.preview-frame { width: 100%; height: 100%; border: 0; background: var(--stage); }
+/* Moving through the deck from the app's chrome. The review is one long
+   scroll of cards, so this scrolls it and follows it. */
+.cardnav {
+  display: flex; align-items: center; gap: 8px; flex: none;
+  font-family: var(--font-mono); font-variation-settings: var(--voice-mono);
+  font-size: 12px; color: var(--muted);
+}
+.cardnav button { padding: 4px 11px; font-size: 12px; border-radius: 14px; min-width: 34px; }
+#cardat { min-width: 76px; text-align: center; }
+
+.side { border-left: 1px solid var(--line); background: var(--panel); padding: 14px 18px; overflow: auto; }
+
+/* Flagging a card: a sheet at the top of the column the flags live in. */
+.flagsheet {
+  display: grid; gap: 7px; margin: 0 0 18px; padding: 12px 14px;
+  background: var(--raised); border: 1px solid var(--banana-edge); border-radius: 10px;
+}
+.fs-head { font-size: 13.5px; }
+.fs-head strong {
+  font-family: var(--font-mono); font-variation-settings: var(--voice-mono); font-weight: 600;
+}
+.flagsheet label { font-size: 12px; color: var(--muted); }
+.flagsheet textarea {
+  background: var(--panel); color: var(--fg); border: 1px solid var(--line);
+  border-radius: 8px; padding: 8px 10px; font: inherit;
+  font-variation-settings: var(--voice-body); font-size: 13px; resize: vertical;
+}
+.flagsheet textarea:focus-visible { outline: 2px solid var(--banana-edge); outline-offset: 1px; border-color: var(--banana-edge); }
+.fs-actions { display: flex; gap: 8px; }
+.side h2 {
+  font-size: 10px; text-transform: uppercase; letter-spacing: .14em; color: var(--muted);
+  font-family: var(--font-mono); font-variation-settings: var(--voice-mono);
+  margin: 18px 0 7px; font-weight: 500;
+}
+.side h2:first-child { margin-top: 0; }
+.side h2 small { color: var(--bad); }
+.side pre {
+  white-space: pre-wrap; margin: 0; padding: 11px 13px; border-radius: 8px;
+  font-family: var(--font-mono); font-variation-settings: var(--voice-mono); font-size: 12px; line-height: 1.7;
+  color: var(--warn); background: color-mix(in srgb, var(--warn) 8%, var(--panel));
+  border: 1px solid color-mix(in srgb, var(--warn) 35%, var(--panel));
+}
+.side pre.clean {
+  color: var(--good); background: color-mix(in srgb, var(--good) 8%, var(--panel));
+  border-color: color-mix(in srgb, var(--good) 35%, var(--panel));
+}
+/* A flag is the owner's objection: coral, and it keeps its own left edge so
+   it reads as an annotation rather than a row. */
+.flags { list-style: none; padding: 0; margin: 0; display: grid; gap: 8px; font-size: 12.5px; }
+.flags li {
+  margin: 0; padding: 9px 11px; border-radius: 8px;
+  background: color-mix(in srgb, var(--bad) 7%, var(--panel));
+  border: 1px solid color-mix(in srgb, var(--bad) 28%, var(--panel));
+  border-left: 3px solid var(--bad);
+}
+.flags button {
+  padding: 0 5px; font-size: 14px; margin-left: 4px; float: right;
+  background: transparent; color: var(--muted); border: 0; font-weight: 400;
+}
+.flags button:hover { color: var(--bad); background: transparent; }

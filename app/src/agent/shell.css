@@ -1,131 +1,358 @@
 /* The shell's own styles: the rail, the next-step bar, the home and settings
    panes, the gate, the picker, the chat. Shared by the desktop app
-   (../style.css) and the tool page over the bridge (site/src/tool.css);
-   each supplies the palette variables and its own page layout. */
+   (../style.css) and the tool page over the bridge (site/src/tool.css); each
+   supplies the palette variables and its own page layout.
+
+   The look is one family (Recursive) at four settings and one accent (a
+   banana) that always means "act, or you are here". The banana itself is a
+   mask, not an image or a glyph in the markup: every mark below is a
+   pseudo-element filled with currentColor, so a step's state colours its own
+   banana and nothing in the DOM has to know about it. */
+
+:root {
+  /* Tokens this stylesheet needs, each defaulting to the older one it
+     replaces, so a shell that has not adopted the palette (the tool page)
+     keeps rendering exactly as it did. */
+  --raised: var(--panel);
+  --stage: var(--panel);
+  --line-strong: var(--line);
+  --banana: var(--accent);
+  --on-banana: #fff;
+  --banana-edge: var(--accent);
+  --wordmark: var(--fg);
+  --dim: var(--line);
+  --good: var(--accent);
+  --info: var(--accent);
+  --extra: var(--muted);
+  --font: inherit;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+  --voice-body: normal;
+  --voice-mono: normal;
+  --voice-display: normal;
+  --voice-button: normal;
+
+  /* The mark. It has to read at 14px in the rail, so the crescent is fat and
+     the stem is a stub rather than a stalk. */
+  --banana-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M4.4 2.2C3.6 12.6 11.4 20.4 21.6 20.4c1 0 1.3-1.2.4-1.7-.9-.5-1.5-1.1-1.9-1.9C14.2 15.7 9.4 11.1 8.4 5.2 8.2 4.1 7.6 3.1 6.7 2.4 5.9 1.8 4.5 1.3 4.4 2.2Z'/%3E%3C/svg%3E");
+}
+
+/* Every banana on screen. `em` sizes it to whatever it sits beside. */
+.rail h1::before, #rail h1::before,
+.stages li::before,
+.nextbar::before,
+.tile.add::before,
+.gate > .bar::before,
+.composer::before,
+.set-theme > button[aria-pressed='true']::before {
+  content: ''; flex: none; align-self: center;
+  display: inline-block; width: 1.05em; height: 1.05em;
+  background: currentColor;
+  -webkit-mask: var(--banana-mask) no-repeat center / contain;
+  mask: var(--banana-mask) no-repeat center / contain;
+}
 
 /* ---- the rail ------------------------------------------------------------- */
-.rail h1, #rail h1 { font-size: 20px; margin: 0 0 6px; letter-spacing: .04em; font-weight: 600; }
-.railhead { margin: 14px 0 4px; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); display: block; }
+.rail h1, #rail h1 {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 23px; margin: 0 0 4px; letter-spacing: -.005em; font-weight: 750;
+  font-variation-settings: var(--voice-display); color: var(--wordmark);
+}
+.rail h1::before, #rail h1::before { color: var(--banana); font-size: 26px; }
+.railhead {
+  margin: 16px 0 5px; font-size: 10px; letter-spacing: .14em; text-transform: uppercase;
+  color: var(--muted); display: block; font-weight: 500;
+  font-family: var(--font-mono); font-variation-settings: var(--voice-mono);
+}
 .course { display: grid; gap: 4px; font-size: 12px; }
-.course .path { word-break: break-all; color: var(--fg); overflow: hidden; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; }
+.course .path {
+  word-break: break-all; color: var(--fg); overflow: hidden;
+  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical;
+  font-family: var(--font-mono); font-variation-settings: var(--voice-mono);
+}
 .course .muted { font-size: 11px; }
-.course button { justify-self: start; padding: 3px 10px; font-size: 12px; margin-top: 2px; }
-#rail-deck { width: 100%; background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; font: inherit; font-size: 13px; }
-.stages { list-style: none; margin: 4px 0; padding: 0; counter-reset: s; }
-.stages li { display: flex; align-items: baseline; gap: 6px; padding: 5px 8px; color: var(--muted);
-  border-left: 2px solid transparent; border-radius: 0 6px 6px 0; cursor: pointer; font-size: 14px; }
-.stages li::before { counter-increment: s; content: counter(s); opacity: .5; }
+.course button { justify-self: start; padding: 4px 11px; font-size: 12px; margin-top: 2px; }
+/* The deck name is an identifier Anki parses -- two colons make a subdeck --
+   so it is set in mono and looks like one. */
+#rail-deck {
+  width: 100%; background: var(--bg); color: var(--fg);
+  border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px;
+  font: inherit; font-size: 13px;
+  font-family: var(--font-mono); font-variation-settings: var(--voice-mono);
+}
+#rail-deck:focus-visible { outline: 2px solid var(--banana-edge); outline-offset: 1px; border-color: var(--banana-edge); }
+
+/* The eight steps, one banana each: dim until earned, green once done, the
+   live one in banana. Eight of them in a column is the bunch. */
+.stages { list-style: none; margin: 6px 0; padding: 0; font-family: var(--font-mono); font-variation-settings: var(--voice-mono); }
+.stages li {
+  display: flex; align-items: center; gap: 9px; padding: 5px 8px; color: var(--muted);
+  border-left: 3px solid transparent; border-radius: 0 6px 6px 0; cursor: pointer; font-size: 13px;
+}
+.stages li::before { color: var(--dim); }
 .stages li .sname { flex: 1; }
-.stages li .sstate { font-size: 11px; }
-.stages li:hover { color: var(--fg); background: color-mix(in srgb, var(--accent) 12%, transparent); }
-.stages li:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
-.stages li.on { color: var(--fg); border-left-color: var(--accent); }
-.stages li.next { color: var(--fg); }
+.stages li .sstate { font-size: 10.5px; letter-spacing: .08em; }
+.stages li:hover { color: var(--fg); background: var(--raised); }
+.stages li:focus-visible { outline: 2px solid var(--banana-edge); outline-offset: -2px; }
+.stages li.done::before { color: var(--good); }
+.stages li.on { color: var(--fg); border-left-color: var(--banana); background: var(--raised); }
+.stages li.next { color: var(--fg); font-weight: 600; }
+.stages li.next::before, .stages li.on::before { color: var(--banana); }
 .stages li.next .sstate::before { content: "next"; color: var(--accent); }
-.stages li.done .sstate::before { content: "\2713"; color: var(--accent); }
 .stages li.running { color: var(--fg); }
+.stages li.running::before { color: var(--warn); }
 .stages li.running .sstate::before { content: "running…"; color: var(--warn); }
-.railfoot { margin-top: auto; display: grid; gap: 6px; font-size: 12px; }
+.railfoot { margin-top: auto; display: grid; gap: 9px; font-size: 12px; padding-top: 16px; border-top: 1px solid var(--line); }
 .railfoot button { justify-self: start; }
-.status { font-size: 12px; color: var(--muted); word-break: break-word; }
+.status {
+  font-size: 11px; color: var(--muted); word-break: break-word;
+  font-family: var(--font-mono); font-variation-settings: var(--voice-mono);
+}
 .status.error { color: var(--bad); }
 
 /* ---- the next-step bar ------------------------------------------------------ */
-.nextbar { display: flex; align-items: center; gap: 16px; padding: 12px 16px; background: var(--panel); border-bottom: 1px solid var(--line); flex: none; }
-.nb-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-.nb-k { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--accent); }
-.nb-text strong { font-size: 16px; }
-.nb-hint { color: var(--muted); font-size: 13px; }
+/* The one thing that does not change between light and dark: a banana stripe
+   with ink on it. It is the only control that advances the pipeline, so it is
+   the loudest thing in the window in either mode. */
+.nextbar {
+  display: flex; align-items: center; gap: 18px; padding: 14px 22px;
+  background: var(--banana); color: var(--on-banana);
+  border-bottom: 1px solid var(--banana-edge); flex: none;
+}
+.nextbar::before { font-size: 30px; }
+.nb-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.nb-k {
+  font-size: 10.5px; letter-spacing: .18em; text-transform: uppercase; font-weight: 600;
+  font-family: var(--font-mono); font-variation-settings: var(--voice-mono);
+  color: color-mix(in srgb, var(--on-banana) 62%, var(--banana));
+}
+.nb-text strong {
+  font-size: 21px; font-weight: 700; letter-spacing: -.01em;
+  font-variation-settings: var(--voice-display);
+}
+.nb-hint { font-size: 13px; color: color-mix(in srgb, var(--on-banana) 82%, var(--banana)); }
 .nb-actions { display: flex; gap: 8px; flex: none; }
+/* On the stripe the ink-filled button is the loud one and the banana-filled
+   default would vanish, so the roles swap here only. */
+.nextbar button { min-height: 44px; background: var(--on-banana); color: var(--banana); font-size: 14.5px; }
+.nextbar button.quiet, .nextbar button.ghost {
+  background: transparent; color: var(--on-banana); border: 1.5px solid var(--on-banana);
+}
+.nextbar button.quiet:hover, .nextbar button.ghost:hover { background: color-mix(in srgb, var(--on-banana) 12%, transparent); }
 
 /* ---- home, settings ----------------------------------------------------------- */
-.home-pane, .settings-pane { padding: 8px 4px; max-width: 72ch; }
-.home h2, .settings-pane h2 { font-size: 22px; margin: 0 0 10px; }
-.home p { margin: 0 0 14px; }
+.home-pane, .settings-pane { padding: 8px 4px; max-width: 78ch; }
+.home h2, .settings-pane h2 {
+  font-size: 28px; margin: 0 0 6px; font-weight: 700; letter-spacing: -.015em;
+  font-variation-settings: var(--voice-display);
+}
+.home p { margin: 0 0 14px; color: var(--muted); }
 .setup-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin: 6px 0 14px; }
-.setup-row input { flex: 1; min-width: 260px; background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; font: inherit; }
-.big { font-size: 16px; padding: 11px 20px; border-radius: 9px; }
+.setup-row input, .newdeck input {
+  flex: 1; min-width: 260px; background: var(--panel); color: var(--fg);
+  border: 1px solid var(--line); border-radius: 8px; padding: 11px 13px; font: inherit;
+  font-family: var(--font-mono); font-variation-settings: var(--voice-mono); font-size: 13.5px;
+}
+.setup-row input:focus-visible, .newdeck input:focus-visible {
+  outline: 2px solid var(--banana-edge); outline-offset: 1px; border-color: var(--banana-edge);
+}
+.big { font-size: 15px; padding: 12px 20px; border-radius: 9px; min-height: 44px; }
 .home-steps { margin: 18px 0 0; padding-left: 1.4em; color: var(--muted); font-size: 13px; }
 .home-steps li { margin: 4px 0; }
-.home-steps li::marker { color: var(--accent); }
-.settings-pane .bar { border-radius: 10px; margin-bottom: 8px; }
-.set-section { padding: 12px 4px; border-bottom: 1px solid var(--line); }
-.set-section h3 { font-size: 15px; margin: 0 0 4px; }
-.hint { color: var(--muted); font-size: 13px; margin: 4px 0 10px; }
-.facts { display: grid; grid-template-columns: max-content 1fr; gap: 4px 14px; font-size: 13px; margin: 0 0 8px; }
+.home-steps li::marker { color: var(--banana-edge); }
+.settings-pane .bar { border-radius: 10px; margin-bottom: 8px; background: var(--panel); }
+.set-section { padding: 16px 4px; border-top: 1px solid var(--line); }
+.set-section:first-of-type { border-top: 0; }
+.set-section h3 { font-size: 17px; margin: 0 0 4px; font-weight: 650; font-variation-settings: var(--voice-display); }
+.hint { color: var(--muted); font-size: 13px; margin: 4px 0 12px; }
+.facts {
+  display: grid; grid-template-columns: max-content 1fr; gap: 6px 18px; font-size: 12.5px; margin: 0 0 8px;
+  font-family: var(--font-mono); font-variation-settings: var(--voice-mono);
+}
 .facts dt { color: var(--muted); } .facts dd { margin: 0; word-break: break-all; }
 
-.newdeck { display: flex; gap: 8px; margin: 0 0 8px; }
-.newdeck input { flex: 1; min-width: 200px; background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; font: inherit; }
-.decks { list-style: none; padding: 0; margin: 16px 0; display: grid; gap: 8px; }
-.decks li { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px 14px; cursor: pointer; display: grid; gap: 2px; }
-.decks li:hover { border-color: var(--accent); }
-.decks li.empty { cursor: default; color: var(--muted); }
-.decks .dmeta { color: var(--muted); font-size: 13px; }
-#rail-home { justify-self: start; padding: 3px 10px; font-size: 12px; margin-bottom: 6px; }
+/* Appearance: three choices, the banana marking the one in force. */
+.set-theme { display: inline-flex; gap: 0; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 3px; }
+.set-theme > button {
+  display: inline-flex; align-items: center; gap: 7px; min-height: 36px; padding: 8px 15px;
+  background: transparent; color: var(--muted); border: 0; border-radius: 7px; font-weight: 500;
+}
+.set-theme > button:hover { background: var(--raised); filter: none; }
+.set-theme > button[aria-pressed='true'] { background: var(--banana); color: var(--on-banana); font-weight: 600; }
+
+.newdeck { display: flex; gap: 10px; margin: 0 0 10px; }
+.decks { list-style: none; padding: 0; margin: 16px 0; display: grid; gap: 10px; }
+.decks li {
+  background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+  padding: 13px 17px; cursor: pointer;
+  display: grid; grid-template-columns: 1fr max-content; align-items: center; gap: 4px 18px;
+}
+.decks li:hover { border-color: var(--banana-edge); background: var(--raised); }
+.decks li:focus-visible { outline: 2px solid var(--banana-edge); outline-offset: 1px; }
+.decks li strong { font-size: 16.5px; font-weight: 650; font-variation-settings: var(--voice-display); }
+.decks li.empty { cursor: default; color: var(--muted); grid-template-columns: 1fr; }
+.decks .dmeta {
+  grid-column: 1; color: var(--muted); font-size: 12px;
+  font-family: var(--font-mono); font-variation-settings: var(--voice-mono);
+}
+.decks .dstate { grid-column: 1; font-size: 13px; color: var(--accent); font-weight: 500; }
+/* How far through the eight this deck is, from the artifacts on disk. The
+   banana rides at the head of the track. */
+.dsteps { grid-column: 2; grid-row: 1 / span 3; display: flex; align-items: center; gap: 9px; justify-self: end; }
+.dtrack { position: relative; width: 116px; height: 6px; background: var(--dim); border-radius: 3px; }
+.dtrack > i { position: absolute; inset: 0 auto 0 0; background: var(--good); border-radius: 3px; }
+.dsteps .dmark {
+  flex: none; width: 17px; height: 17px; background: var(--dim);
+  -webkit-mask: var(--banana-mask) no-repeat center / contain;
+  mask: var(--banana-mask) no-repeat center / contain;
+}
+.dsteps.started .dmark { background: var(--banana); }
+.dsteps.finished .dmark { background: var(--good); }
+.dsteps .dcount {
+  font-size: 11.5px; color: var(--muted); width: 42px; white-space: nowrap;
+  font-family: var(--font-mono); font-variation-settings: var(--voice-mono);
+}
+#rail-home { justify-self: start; padding: 4px 11px; font-size: 11.5px; margin-bottom: 6px; border-radius: 15px; }
 
 /* ---- materials ------------------------------------------------------------------- */
+/* A chip per file rather than a card: the deck's inputs are a short list of
+   names, and names want to sit on one line. */
 .materials { flex: none; }
-.mhead { display: flex; align-items: center; gap: 10px; margin: 0 0 8px; }
-.mhead h3 { font-size: 13px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 0; font-weight: 600; }
-.mhead h3 small { text-transform: none; letter-spacing: 0; font-weight: 400; margin-left: 6px; }
-.tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 8px; }
-.tile { position: relative; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; min-height: 76px; display: grid; gap: 2px; align-content: start; }
-.tile .tkind { font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: var(--accent); }
-.tile .tname { font-weight: 600; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding-right: 18px; }
-.tile .tmeta { color: var(--muted); font-size: 12px; }
-.tile .tremove { position: absolute; top: 6px; right: 6px; background: transparent; color: var(--muted); border: 0; padding: 0 6px; font-size: 16px; line-height: 1; font-weight: 400; }
-.tile .tremove:hover { color: var(--bad); filter: none; }
-.tile.add { border-style: dashed; background: transparent; cursor: pointer; }
-.tile.add:hover, body.dropping .tile.add { border-color: var(--accent); }
-.tile.add .tname { color: var(--accent); }
+.mhead { display: flex; align-items: center; gap: 10px; margin: 0 0 9px; }
+.mhead h3 {
+  font-size: 10px; text-transform: uppercase; letter-spacing: .14em; color: var(--muted);
+  margin: 0; font-weight: 500;
+  font-family: var(--font-mono); font-variation-settings: var(--voice-mono);
+}
+.mhead h3 small { text-transform: none; letter-spacing: 0; font-weight: 400; margin-left: 8px; }
+.tiles { display: flex; flex-wrap: wrap; gap: 8px; }
+.tile {
+  position: relative; display: inline-flex; align-items: baseline; gap: 8px;
+  min-height: 32px; padding: 6px 30px 6px 12px; background: var(--panel);
+  border: 1px solid var(--line); border-radius: 16px;
+  font-family: var(--font-mono); font-variation-settings: var(--voice-mono); font-size: 12px;
+}
+/* One hue per kind, from the class materials.ts already puts on the tile. */
+.tile .tkind { font-weight: 600; color: var(--info); }
+.tile.kind-pdf .tkind { color: var(--bad); }
+.tile.kind-text .tkind { color: var(--info); }
+.tile.kind-doc .tkind, .tile.kind-slides .tkind { color: var(--extra); }
+.tile.kind-image .tkind, .tile.kind-video .tkind, .tile.kind-audio .tkind { color: var(--good); }
+.tile .tname { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 30ch; }
+.tile .tmeta { color: var(--muted); }
+.tile .tremove {
+  position: absolute; top: 50%; right: 7px; transform: translateY(-50%);
+  background: transparent; color: var(--muted); border: 0; padding: 0 4px;
+  font-size: 15px; line-height: 1; font-weight: 400; border-radius: 10px;
+}
+.tile .tremove:hover { color: var(--bad); background: transparent; filter: none; }
+/* Add is the full-width dashed row under the chips, so its sentence fits. */
+.tile.add {
+  flex-basis: 100%; border-style: dashed; border-color: var(--line-strong);
+  background: transparent; cursor: pointer; padding: 9px 14px; gap: 10px;
+  align-items: center; color: var(--accent);
+}
+.tile.add::before { color: var(--banana); font-size: 17px; }
+.tile.add:hover, body.dropping .tile.add { border-color: var(--banana-edge); background: var(--raised); }
+.tile.add .tname { font-weight: 600; max-width: none; }
+.tile.add .tmeta { font-variation-settings: var(--voice-body); }
 
 /* ---- the gate ----------------------------------------------------------------- */
-.gate { border: 1px solid var(--warn); border-radius: 10px; max-height: 45vh; display: flex; flex-direction: column; background: var(--panel); flex: none; }
-.gate .bar { border-radius: 10px 10px 0 0; }
-.gate .artifact { flex: 1; overflow: auto; margin: 0; padding: 12px 14px; font: 13px/1.6 Menlo, ui-monospace, monospace; white-space: pre-wrap; }
+/* Where a stage stops and waits for the person. Banana-edged, because it is
+   the person's turn. */
+.gate {
+  border: 1px solid var(--banana-edge); border-radius: 10px; max-height: 45vh;
+  display: flex; flex-direction: column; background: var(--panel); flex: none;
+}
+.gate > .bar { border-radius: 10px 10px 0 0; background: var(--raised); border-bottom-color: var(--line); }
+.gate > .bar::before { color: var(--banana); font-size: 15px; }
+.gate > .bar h2 { font-family: var(--font-mono); font-variation-settings: var(--voice-mono); font-size: 13px; font-weight: 600; }
+.gate .artifact {
+  flex: 1; overflow: auto; margin: 0; padding: 14px 18px;
+  font-family: var(--font-mono); font-variation-settings: var(--voice-mono);
+  font-size: 12.5px; line-height: 1.75; white-space: pre-wrap;
+}
 
 /* ---- the picker (in Settings) --------------------------------------------------- */
 .pk-current { font-size: 14px; margin: 0 0 10px; }
-.providers { list-style: none; padding: 0; margin: 8px 0; display: grid; gap: 8px; }
-.providers li { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px 14px; }
-.pname { font-weight: 600; } .pname small { color: var(--muted); font-weight: 400; margin-left: 6px; }
-.pk-badge { font-size: 11px; font-weight: 400; color: var(--muted); border: 1px solid var(--line); border-radius: 10px; padding: 0 7px; margin-left: 6px; vertical-align: middle; }
-.pk-badge.on { color: var(--accent); border-color: var(--accent); }
-.pdesc { color: var(--muted); font-size: 13px; margin: 2px 0 8px; }
+.providers { list-style: none; padding: 0; margin: 8px 0; display: grid; gap: 9px; }
+.providers li { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px 15px; }
+.providers li.on { background: var(--raised); border-color: var(--banana-edge); }
+.pname { font-weight: 650; font-size: 14.5px; font-variation-settings: var(--voice-display); }
+.pname small { color: var(--muted); font-weight: 400; margin-left: 6px; font-size: 12px; font-variation-settings: var(--voice-body); }
+.pk-badge {
+  font-size: 11px; font-weight: 500; color: var(--muted); border: 1px solid var(--line-strong);
+  border-radius: 10px; padding: 1px 8px; margin-left: 6px; vertical-align: 2px;
+  font-family: var(--font-mono); font-variation-settings: var(--voice-mono);
+}
+.pk-badge.on { color: var(--accent); border-color: var(--banana-edge); }
+.pdesc { color: var(--muted); font-size: 12.5px; margin: 2px 0 9px; }
 .pactions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-.pactions input { background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; font: inherit; min-width: 260px; }
+.pactions input {
+  background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 8px;
+  padding: 8px 10px; font: inherit; min-width: 240px;
+  font-family: var(--font-mono); font-variation-settings: var(--voice-mono); font-size: 12.5px;
+}
 .pk-more { margin: 10px 0; }
-.pk-more summary { cursor: pointer; color: var(--muted); font-size: 13px; }
-.plog, .log { font: 12px/1.5 Menlo, ui-monospace, monospace; color: var(--muted); margin: 8px 0 0; white-space: pre-wrap; max-height: 140px; overflow: auto; }
-.auth { background: var(--panel); border: 1px solid var(--warn); border-radius: 10px; padding: 10px 14px; margin: 8px 0; }
+.pk-more summary { cursor: pointer; color: var(--accent); font-size: 13px; }
+.plog, .log {
+  font-family: var(--font-mono); font-variation-settings: var(--voice-mono);
+  font-size: 11.5px; line-height: 1.6; color: var(--muted); margin: 8px 0 0;
+  white-space: pre-wrap; max-height: 140px; overflow: auto;
+}
+.auth { background: var(--raised); border: 1px solid var(--banana-edge); border-radius: 10px; padding: 11px 14px; margin: 8px 0; }
 
 /* ---- the chat ----------------------------------------------------------------- */
+/* The agent's output is a console, not a chat window: what it did is mono and
+   colour-coded, what it says to the person is prose. */
 .agent-host { display: flex; flex-direction: column; min-height: 0; flex: 1; }
-.chat-pane { flex: 1; display: flex; flex-direction: column; min-height: 40vh; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); }
-.chat-pane .bar { border-radius: 10px 10px 0 0; }
-.selectors { display: flex; gap: 6px 10px; font-size: 12px; color: var(--muted); flex-wrap: wrap; justify-content: flex-end; }
-.chat-pane .bar { flex-wrap: wrap; }
-.selectors select { background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 6px; padding: 2px 4px; font: inherit; max-width: 180px; }
-.messages { flex: 1; overflow: auto; padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; }
-.msg { white-space: pre-wrap; word-break: break-word; border-radius: 8px; padding: 8px 12px; max-width: 80ch; font-size: 14px; }
-.msg.user { background: color-mix(in srgb, var(--accent) 18%, var(--panel)); align-self: flex-end; }
-.msg.agent { background: var(--bg); }
-.msg.thought { color: var(--muted); font-size: 13px; border-left: 2px solid var(--line); padding-left: 10px; }
-.msg.tool { color: var(--warn); font: 12px/1.5 Menlo, ui-monospace, monospace; background: transparent; padding: 2px 12px; }
-.permission { margin: 0 14px 8px; background: var(--bg); border: 1px solid var(--warn); border-radius: 8px; padding: 10px 12px; }
-.ptitle { font-weight: 600; margin-bottom: 6px; }
-.composer { display: flex; gap: 8px; padding: 8px 14px 12px; border-top: 1px solid var(--line); }
-.composer textarea, .composer input { flex: 1; background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 6px; padding: 8px; font: inherit; resize: vertical; }
+.chat-pane {
+  flex: 1; display: flex; flex-direction: column; min-height: 40vh;
+  border: 1px solid var(--line); border-radius: 10px; background: var(--panel);
+}
+.chat-pane .bar { border-radius: 10px 10px 0 0; flex-wrap: wrap; }
+.selectors {
+  display: flex; gap: 6px 10px; font-size: 12px; color: var(--muted);
+  flex-wrap: wrap; justify-content: flex-end;
+}
+.selectors select {
+  background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 6px;
+  padding: 3px 5px; font: inherit; font-size: 12px; max-width: 180px;
+}
+.messages { flex: 1; overflow: auto; padding: 12px 16px; display: flex; flex-direction: column; gap: 6px; }
+.msg { white-space: pre-wrap; word-break: break-word; border-radius: 8px; padding: 7px 12px; max-width: 84ch; font-size: 13.5px; }
+.msg.user { background: var(--raised); border: 1px solid var(--banana-edge); align-self: flex-end; }
+.msg.agent { background: transparent; padding-left: 11px; border-left: 2px solid var(--banana); }
+.msg.thought { color: var(--muted); font-size: 12.5px; border-left: 2px solid var(--line); padding-left: 11px; }
+.msg.tool {
+  color: var(--info); background: transparent; padding: 1px 12px;
+  font-family: var(--font-mono); font-variation-settings: var(--voice-mono); font-size: 12px; line-height: 1.7;
+}
+.permission { margin: 0 16px 8px; background: var(--raised); border: 1px solid var(--banana-edge); border-radius: 8px; padding: 11px 13px; }
+.ptitle { font-weight: 650; margin-bottom: 6px; font-variation-settings: var(--voice-display); }
+.composer { display: flex; gap: 10px; align-items: center; padding: 9px 16px 11px; border-top: 1px solid var(--line); }
+.composer::before { color: var(--banana); font-size: 16px; }
+.composer textarea, .composer input {
+  flex: 1; background: var(--bg); color: var(--fg); border: 1px solid var(--line);
+  border-radius: 8px; padding: 9px 11px; font: inherit; resize: vertical;
+  font-family: var(--font-mono); font-variation-settings: var(--voice-mono); font-size: 13px;
+}
+.composer textarea:focus-visible, .composer input:focus-visible {
+  outline: 2px solid var(--banana-edge); outline-offset: 1px; border-color: var(--banana-edge);
+}
 
 /* sign-in console, for a host that runs the CLI's own flow */
-.signin { border: 1px solid var(--accent); border-radius: 10px; background: var(--panel); flex: none; margin: 8px 0; }
-.signin .console { margin: 0; padding: 12px 14px; max-height: 38vh; overflow: auto; white-space: pre-wrap; word-break: break-word; font: 12px/1.6 Menlo, ui-monospace, monospace; }
+.signin { border: 1px solid var(--banana-edge); border-radius: 10px; background: var(--panel); flex: none; margin: 8px 0; }
+.signin .console {
+  margin: 0; padding: 12px 15px; max-height: 38vh; overflow: auto;
+  white-space: pre-wrap; word-break: break-word;
+  font-family: var(--font-mono); font-variation-settings: var(--voice-mono); font-size: 12px; line-height: 1.7;
+}
 
 /* shared bits */
-.bar { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-bottom: 1px solid var(--line); background: var(--panel); }
-.bar h2 { font-size: 15px; margin: 0; }
+.bar {
+  display: flex; align-items: center; gap: 10px; padding: 9px 14px;
+  border-bottom: 1px solid var(--line); background: var(--panel);
+}
+.bar h2 { font-size: 15px; margin: 0; font-weight: 650; font-variation-settings: var(--voice-display); }
 .grow { flex: 1; }
 .hidden { display: none !important; }
-button.quiet { background: transparent; color: var(--muted); border: 1px solid var(--line); font-weight: 400; }
-button.link { background: none; border: 0; padding: 0; color: var(--accent); font: inherit; text-decoration: underline; font-weight: 400; cursor: pointer; }
