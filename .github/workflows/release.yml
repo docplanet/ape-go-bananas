@@ -115,3 +115,73 @@ jobs:
             x86_64-pc-windows-msvc)    copy 'release/bundle/nsis/*-setup.exe' APE-windows-x64-setup.exe ;;
             x86_64-unknown-linux-gnu)  copy 'release/bundle/appimage/*.AppImage' APE-linux-x64.AppImage; copy 'release/bundle/deb/*.deb' APE-linux-x64.deb ;;
           esac
+
+  # A release that looks complete can still be broken. The four matrix jobs all
+  # write to one release, and tauri-action can lose a race reconciling assets
+  # ("Not Found - /releases/assets"). v0.1.2 shipped that way: the arm64 job
+  # died after uploading its bundles but before merging its entry, so
+  # latest.json carried no darwin-aarch64. The release page looked right, every
+  # file was there bar one, and every Apple silicon install would have sat on
+  # the old version forever without an error anywhere. This is the step that
+  # makes that loud instead of silent.
+  #
+  # It runs even when a build job failed (always()), because that is exactly
+  # when the release needs checking. To repair: re-run the failed matrix job on
+  # its own -- with nothing else in flight the race cannot recur -- then re-run
+  # this one.
+  verify:
+    needs: build
+    if: always() && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: the release covers every platform
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -uo pipefail
+          tag="${GITHUB_REF_NAME}"
+          repo="${GITHUB_REPOSITORY}"
+          bad=0
+
+          gh release download "$tag" --repo "$repo" --pattern latest.json --output latest.json --clobber \
+            || { echo "::error::$tag has no latest.json — nothing can update"; exit 1; }
+
+          # The updater looks itself up by platform key. A missing one is not a
+          # degraded update, it is no update at all, and it is silent.
+          for p in darwin-aarch64 darwin-x86_64 linux-x86_64 windows-x86_64; do
+            if ! jq -e --arg p "$p" '.platforms | has($p)' latest.json >/dev/null; then
+              echo "::error::latest.json has no $p entry — installs on that platform will never be offered $tag"
+              bad=1
+            fi
+          done
+
+          if ! jq -e '.platforms | to_entries | all(.value.url != "" and .value.signature != "")' latest.json >/dev/null; then
+            echo "::error::latest.json has an entry with an empty url or signature"
+            bad=1
+          fi
+
+          want="${tag#v}"
+          got=$(jq -r .version latest.json)
+          if [ "$got" != "$want" ]; then
+            echo "::error::latest.json says version $got but the tag is $want"
+            bad=1
+          fi
+
+          # The stable names are what the download page links to; the versioned
+          # bundles being present says nothing about these.
+          names=$(gh release view "$tag" --repo "$repo" --json assets --jq '.assets[].name')
+          for a in APE-macos-arm64.dmg APE-macos-intel.dmg APE-windows-x64-setup.exe APE-linux-x64.AppImage APE-linux-x64.deb; do
+            if ! grep -qx "$a" <<<"$names"; then
+              echo "::error::$a is missing from $tag — the download page links to it"
+              bad=1
+            fi
+          done
+
+          if [ "$bad" -ne 0 ]; then
+            echo "::error::$tag is incomplete. Re-run the failed matrix job alone, then re-run this job."
+            exit 1
+          fi
+          echo "$tag is complete: every platform in latest.json, every stable-name asset present."
