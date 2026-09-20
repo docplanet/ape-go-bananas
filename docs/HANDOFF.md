@@ -5,6 +5,65 @@ what was learned, why the browser direction was abandoned, and what the next
 session should do. Nothing here is deleted work — read "What to keep" before
 touching anything.
 
+## Pick-up note, written 2026-09-20 (read this first)
+
+**The window has a look.** Branch `ui/bananas`, commit `3dd0afd`, not merged
+to `main` and not pushed. The placeholder palette in `docs/APP.md` is gone;
+the design was worked out on a canvas first
+(<https://claude.ai/artifact/CoBQfCd1HfAWbaGC9LuP44>, private to the owner)
+and only then written as CSS.
+
+- **One family, four voices.** Recursive does all three type jobs through
+  its own axes, so there is one font file and no pairing to maintain:
+  `--voice-body` leans casual, `--voice-mono` sets anything the engine names
+  (a stage, a file, a path, its output), `--voice-display` carries the
+  wordmark and the step title, `--voice-button` sits between. Set
+  `font-variation-settings` *after* any `font:` shorthand -- the shorthand
+  resets it.
+- **The banana is a CSS mask**, not markup: `--banana-mask` filled with
+  `currentColor` on pseudo-elements, so a step colours its own (dim, green
+  once done, banana while live) and no TypeScript knows the motif exists.
+- **The font is local** (`app/public/fonts/Recursive-VF.woff2`, 139 KB,
+  latin, wght+CASL+MONO). Two reasons that each decide it alone: the
+  window's CSP is `default-src 'self'` with no font-src, so a CDN
+  stylesheet and font are both refused; and the app works on this computer,
+  so it should not need the network to draw itself. It is not gitignored, so
+  it ships in releases.
+- **`shell.css` now declares its own token contract** -- every token added
+  defaults to the older one it replaces (`--banana: var(--accent)`,
+  `--voice-mono: normal`) -- so `site/src/tool.css`, which imports it, is
+  untouched and still teal.
+- **Light and dark are equals**, and the theme can be pinned rather than
+  following the system: `app/src/theme.ts`, a `data-theme` attribute and
+  `ape.theme` in localStorage, applied in `main.ts` before the first paint
+  (it cannot be an inline script -- script-src is 'self').
+- Three things the deck preview earned: **moving between cards** from the
+  app's chrome (the app posts `ape:goto`, the frame posts `ape:at` back, so
+  scrolling by hand keeps the counter true), **a flag sheet** instead of
+  `window.prompt` -- which flagged the card when it was *cancelled*, because
+  a cancelled prompt and an empty note both came back falsy -- and the step
+  number moved into the kicker ("step 4 of 8").
+
+**Nothing here restyles a card, and nothing here can.** The review is the
+engine's own page in an iframe with `sandbox="allow-scripts"` and no
+same-origin, so the stylesheet structurally cannot reach inside it. What
+lands in Anki is what the preview shows. Keep it that way.
+
+**Verified:** `npm --prefix app run build` (tsc + vite), 10 app tests,
+`npm --prefix site run build`, and the real stylesheets driven in a browser
+against the real markup -- computed styles confirm the step-state colours,
+the four voices and the per-kind chip hues, and Recursive measurably paints
+(411.6px vs 351.1px for the same string against the fallback). The font
+serves from the dev server at `/fonts/Recursive-VF.woff2`, 200, 142,416
+bytes. **Not verified by the agent:** how it looks in the Tauri window
+itself -- no desktop-control tools in that session; the owner looked.
+
+**Still open, unchanged from the note below:** run a fresh deck through and
+read the plan for image rows; watch the adjudicator with merged flags. Plus
+Apple signing, still deferred, and this branch still to be merged.
+
+---
+
 ## Pick-up note, written 2026-09-11 afternoon (read this first)
 
 **v0.1.1 is released** (tag `v0.1.1`, all four builds green, updater feed
