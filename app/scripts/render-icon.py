@@ -1,11 +1,18 @@
 #!/usr/bin/env python3
 """Render the A.P.E. app icon to PNG with nothing but the standard library.
 
-No rasteriser is installed on this machine, so: cubic beziers are flattened to
-polygons, polygons are filled by scanline with 4x vertical subsampling and
-fractional horizontal coverage (that is the antialiasing), and the result is
-written as a PNG through zlib. The banana is the same crescent shell.css masks
-into the rail, so the icon and the UI draw one shape.
+No rasteriser is installed on this machine -- no ImageMagick, no rsvg, no
+Pillow, and QuickLook has no SVG generator -- so this does the job itself:
+cubic beziers are flattened to polygons, polygons are filled by scanline with
+4x vertical subsampling and fractional horizontal coverage (that is the
+antialiasing), the ink outline is a polygon offset along vertex normals, and
+the result is written as a PNG through zlib.
+
+The banana is the same crescent shell.css masks into the rail, so the icon and
+the UI draw one shape. Light mode's treatment: the peel over a warm ground,
+outlined in ink, which is what makes it read at 32px.
+
+    python3 scripts/render-icon.py app-icon.png && npx tauri icon app-icon.png
 """
 import math
 import struct
@@ -17,8 +24,10 @@ W = H = 1024
 # ---- the tile ---------------------------------------------------------------
 # macOS proportions: an 832 square inset in a 1024 canvas, Big Sur corner.
 TILE_X, TILE_Y, TILE_W, TILE_H, TILE_R = 96.0, 96.0, 832.0, 832.0, 186.0
-GROUND_TOP = (0x2E, 0x27, 0x16)
-GROUND_BOT = (0x12, 0x10, 0x0A)
+GROUND_TOP = (0xFF, 0xF7, 0xE0)   # warm cream, the app's --bg
+GROUND_BOT = (0xFF, 0xE0, 0x8A)   # deepening to the yellow, so it is not white
+INK = (0x24, 0x1F, 0x0E)          # --on-banana
+EDGE_ALPHA = 0.16                 # a hairline so the tile holds on a light Dock
 
 # ---- the banana -------------------------------------------------------------
 # The path from shell.css's --banana-mask, in its own 24-unit box.
@@ -31,7 +40,8 @@ PATH = [
     ((6.7, 2.4), (5.9, 1.8), (4.5, 1.3), (4.4, 2.2)),
 ]
 SCALE, TX, TY, ROT = 26.0, 184.0, 236.0, math.radians(-14.0)
-PEEL = [(0.0, (0xFF, 0xE2, 0x7A)), (0.45, (0xFF, 0xD0, 0x29)), (1.0, (0xE9, 0xAE, 0x05))]
+OUTLINE = 21.0                    # ink outline, drawn outside the path
+PEEL = [(0.0, (0xFF, 0xE9, 0xA6)), (0.45, (0xFF, 0xD0, 0x29)), (1.0, (0xEF, 0xB8, 0x12))]
 
 
 def transform(p):
@@ -62,12 +72,50 @@ def polygon():
     return pts
 
 
+def area(pts):
+    s = 0.0
+    for i in range(len(pts)):
+        x0, y0 = pts[i]
+        x1, y1 = pts[(i + 1) % len(pts)]
+        s += x0 * y1 - x1 * y0
+    return abs(s) * 0.5
+
+
+def offset(pts, d):
+    """Grow a polygon by d along its vertex normals -- the outline, drawn outside.
+
+    Outward is whichever sign enlarges it, which saves caring about winding."""
+    n = len(pts)
+
+    def grown(sign):
+        out = []
+        for i in range(n):
+            ax, ay = pts[i - 1]
+            bx, by = pts[i]
+            cx, cy = pts[(i + 1) % n]
+            nx, ny = 0.0, 0.0
+            for (px, py), (qx, qy) in (((ax, ay), (bx, by)), ((bx, by), (cx, cy))):
+                ex, ey = qx - px, qy - py
+                ln = math.hypot(ex, ey)
+                if ln:
+                    nx += ey / ln
+                    ny += -ex / ln
+            ln = math.hypot(nx, ny)
+            if ln:
+                out.append((bx + sign * d * nx / ln, by + sign * d * ny / ln))
+            else:
+                out.append((bx, by))
+        return out
+
+    plus = grown(1.0)
+    return plus if area(plus) > area(pts) else grown(-1.0)
+
+
 def add_span(cov, x0, x1):
     """Accumulate a horizontal span into a coverage row, fractional at both ends."""
     if x1 <= x0:
         return
-    x0 = max(x0, 0.0)
-    x1 = min(x1, float(W))
+    x0, x1 = max(x0, 0.0), min(x1, float(W))
     if x1 <= x0:
         return
     i0, i1 = int(x0), int(math.ceil(x1)) - 1
@@ -80,10 +128,9 @@ def add_span(cov, x0, x1):
     cov[i1] += (x1 - i1)
 
 
-def poly_coverage(pts, y):
-    """Coverage of one pixel row, 4 vertical subsamples (nonzero-agnostic: even-odd)."""
+def poly_coverage(edges, y):
+    """Coverage of one pixel row, 4 vertical subsamples, even-odd."""
     cov = [0.0] * W
-    edges = [(pts[i], pts[(i + 1) % len(pts)]) for i in range(len(pts))]
     for k in range(4):
         sy = y + (k + 0.5) / 4.0
         xs = []
@@ -96,24 +143,24 @@ def poly_coverage(pts, y):
     return [c * 0.25 for c in cov]
 
 
-def rrect_coverage(y):
+def rrect_coverage(y, inset=0.0):
     """Coverage of the rounded tile for one pixel row, 4 vertical subsamples."""
     cov = [0.0] * W
     cx, cy = TILE_X + TILE_W / 2, TILE_Y + TILE_H / 2
-    hw, hh = TILE_W / 2, TILE_H / 2
+    hw, hh, r = TILE_W / 2 - inset, TILE_H / 2 - inset, max(TILE_R - inset, 1.0)
     for k in range(4):
         sy = y + (k + 0.5) / 4.0
         dy = abs(sy - cy)
         if dy > hh:
             continue
-        if dy <= hh - TILE_R:
+        if dy <= hh - r:
             add_span(cov, cx - hw, cx + hw)
         else:
-            dd = dy - (hh - TILE_R)
-            if dd >= TILE_R:
+            dd = dy - (hh - r)
+            if dd >= r:
                 continue
-            xr = math.sqrt(TILE_R * TILE_R - dd * dd)
-            add_span(cov, cx - (hw - TILE_R) - xr, cx + (hw - TILE_R) + xr)
+            xr = math.sqrt(r * r - dd * dd)
+            add_span(cov, cx - (hw - r) - xr, cx + (hw - r) + xr)
     return [c * 0.25 for c in cov]
 
 
@@ -128,9 +175,15 @@ def ramp(stops, t):
     return stops[-1][1]
 
 
+def edges_of(pts):
+    return [(pts[i], pts[(i + 1) % len(pts)]) for i in range(len(pts))]
+
+
 def main(path):
-    pts = polygon()
-    # The peel gradient runs along the banana's own long axis.
+    peel_pts = polygon()
+    ink_pts = offset(peel_pts, OUTLINE)
+    peel_edges, ink_edges = edges_of(peel_pts), edges_of(ink_pts)
+
     gx0, gy0 = transform((4.4, 2.2))
     gx1, gy1 = transform((21.6, 20.4))
     gdx, gdy = gx1 - gx0, gy1 - gy0
@@ -139,16 +192,24 @@ def main(path):
     rows = []
     for y in range(H):
         tile = rrect_coverage(y)
-        peel = poly_coverage(pts, y)
+        inner = rrect_coverage(y, inset=4.0)
+        ink = poly_coverage(ink_edges, y)
+        peel = poly_coverage(peel_edges, y)
+        gt = min(max((y - TILE_Y) / TILE_H, 0.0), 1.0)
+        base = tuple(GROUND_TOP[j] + (GROUND_BOT[j] - GROUND_TOP[j]) * gt for j in range(3))
         row = bytearray(b"\x00")
-        gt = (y - TILE_Y) / TILE_H
-        base = tuple(GROUND_TOP[j] + (GROUND_BOT[j] - GROUND_TOP[j]) * min(max(gt, 0.0), 1.0) for j in range(3))
         for x in range(W):
             a = tile[x]
             if a <= 0.0:
                 row += b"\x00\x00\x00\x00"
                 continue
             r, g, b = base
+            e = (a - inner[x]) * EDGE_ALPHA          # the tile's hairline edge
+            if e > 0.0:
+                r, g, b = (r + (INK[0] - r) * e, g + (INK[1] - g) * e, b + (INK[2] - b) * e)
+            k = ink[x]
+            if k > 0.0:
+                r, g, b = (r + (INK[0] - r) * k, g + (INK[1] - g) * k, b + (INK[2] - b) * k)
             p = peel[x]
             if p > 0.0:
                 t = ((x - gx0) * gdx + (y - gy0) * gdy) / glen2 if glen2 else 0.0
@@ -173,4 +234,4 @@ def main(path):
 
 
 if __name__ == "__main__":
-    main(sys.argv[1] if len(sys.argv) > 1 else "ape-icon.png")
+    main(sys.argv[1] if len(sys.argv) > 1 else "app-icon.png")
