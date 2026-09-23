@@ -78,14 +78,14 @@ export function mountPicker(host: HTMLElement, sidecar: SidecarClient, bus: Bus,
     const useTitle = state.hasFolder ? '' : 'Remembered now; connects when a course folder is chosen';
     const actions =
       p.kind === 'api'
-        ? `<input type="password" placeholder="sk-or-…" data-key="${p.id}" autocomplete="off"><button type="button" data-use="${p.id}" title="${useTitle}">${useLabel}</button>`
+        ? `<input type="password" placeholder="sk-or-…" data-key="${esc(p.id)}" autocomplete="off"><button type="button" data-use="${esc(p.id)}" title="${useTitle}">${useLabel}</button>`
         : p.installed
-          ? `<button type="button" data-use="${p.id}" title="${useTitle}">${useLabel}</button><button type="button" data-uninstall="${p.id}" class="quiet">Remove</button>`
+          ? `<button type="button" data-use="${esc(p.id)}" title="${useTitle}">${useLabel}</button><button type="button" data-uninstall="${esc(p.id)}" class="quiet">Remove</button>`
           : p.installable
-            ? `<button type="button" data-install="${p.id}">Install</button>`
+            ? `<button type="button" data-install="${esc(p.id)}">Install</button>`
             : '';
     const lines = progress.get(p.id);
-    return `<li data-id="${p.id}"><div class="pname">${esc(p.name)} <small>${esc(state_)}</small> ${badge}</div><div class="pdesc">${esc(p.description)}</div><div class="pactions">${actions}</div>${lines ? `<pre class="plog">${esc(lines.slice(-6).join('\n'))}</pre>` : ''}</li>`;
+    return `<li data-id="${esc(p.id)}"><div class="pname">${esc(p.name)} <small>${esc(state_)}</small> ${badge}</div><div class="pdesc">${esc(p.description)}</div><div class="pactions">${actions}</div>${lines ? `<pre class="plog">${esc(lines.slice(-6).join('\n'))}</pre>` : ''}</li>`;
   }
 
   function render(): void {
@@ -135,7 +135,7 @@ export function mountPicker(host: HTMLElement, sidecar: SidecarClient, bus: Bus,
     auth.classList.remove('hidden');
     const status = result.authStatus ? `${result.authStatus.label}` : 'Sign-in needed';
     auth.innerHTML = `<div class="pname">${esc(result.agent?.name ?? result.provider)} · ${esc(status)}</div>
-      <div class="pactions">${result.authMethods.map((m) => `<button type="button" data-login="${m.id}" title="${esc(m.description ?? '')}">${esc(m.name)}</button>`).join('')}
+      <div class="pactions">${result.authMethods.map((m) => `<button type="button" data-login="${esc(m.id)}" title="${esc(m.description ?? '')}">${esc(m.name)}</button>`).join('')}
       <button type="button" data-skip="1" class="quiet">Continue anyway</button></div>`;
   }
 
@@ -148,7 +148,7 @@ export function mountPicker(host: HTMLElement, sidecar: SidecarClient, bus: Bus,
     }
     const params: { provider: string; dataDir: string; cwd: string; apiKey?: string } = { provider: id, dataDir, cwd };
     if (p?.kind === 'api') {
-      const input = host.querySelector<HTMLInputElement>(`input[data-key="${id}"]`);
+      const input = host.querySelector<HTMLInputElement>(`input[data-key="${CSS.escape(id)}"]`);
       const key = input?.value.trim() || (await keys.get(id).catch(() => null)) || '';
       if (!key) {
         cb.say('enter an API key first', true);
