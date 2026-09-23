@@ -4,13 +4,27 @@
    site rather than two projects that happen to share a domain. */
 :root {
   color-scheme: light dark;
-  --fg: #1d2329; --muted: #5b6672; --bg: #f7f8f9; --panel: #fff;
-  --line: #dde2e7; --accent: #2a8f8f; --warn: #9a6b00; --bad: #a03535;
+  --font: Recursive, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-mono: Recursive, ui-monospace, SFMono-Regular, Menlo, monospace;
+  --voice-body: 'CASL' 0.4, 'MONO' 0;
+  --voice-mono: 'MONO' 1, 'CASL' 0;
+  --voice-display: 'CASL' 1, 'MONO' 0;
+  --voice-button: 'CASL' 0.7, 'MONO' 0;
+
+  --bg: #FFF9E3; --panel: #FFFFFF; --raised: #FFF3C9; --stage: #EFE6CB;
+  --fg: #241F0E; --muted: #6E6243; --line: #EADFAE; --line-strong: #D3C48C;
+  --banana: #FFD029; --on-banana: #241F0E; --banana-edge: #E0B81C;
+  --wordmark: var(--fg); --dim: #E2D3A2;
+  --accent: #9A6400; --good: #167A44; --info: #0E7C8A; --bad: #C0402A; --extra: #6D4FC2;
+  --warn: #9A6400;
 }
 @media (prefers-color-scheme: dark) {
   :root {
-    --fg: #d7dee9; --muted: #98a4b0; --bg: #1d2329; --panel: #252c34;
-    --line: #3d4753; --accent: #5eb3b3; --warn: #e8c07d; --bad: #e08585;
+    --bg: #14120B; --panel: #1D1A11; --raised: #262114; --stage: #1A1710;
+    --fg: #F7F0DA; --muted: #B6AB8B; --line: #35301E; --line-strong: #4A432B;
+    --banana-edge: #C79E12; --wordmark: var(--banana); --dim: #3F3A26;
+    --accent: #FFD029; --good: #4DD97B; --info: #45D3E0; --bad: #FF8A6E; --extra: #C2A5FF;
+    --warn: #E8C07D;
   }
 }
 * { box-sizing: border-box; }
@@ -22,14 +36,22 @@
 [hidden] { display: none !important; }
 body {
   margin: 0; background: var(--bg); color: var(--fg);
-  font: 16px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font: 16px/1.55 var(--font); font-variation-settings: var(--voice-body);
 }
 main { max-width: 1100px; margin: 0 auto; padding: 40px 24px 64px; }
 
 /* Building a deck is the desktop app's job; the page says so once, below the checker. */
 #build { margin-top: 32px; border-top: 1px solid var(--line); padding-top: 18px; max-width: 70ch; }
 #build a { color: var(--accent); }
-h1 { font-size: 32px; letter-spacing: .04em; margin: 0 0 6px; font-weight: 600; }
+a { color: var(--accent); }
+h1 { font-size: 32px; letter-spacing: -.01em; margin: 0 0 6px; font-weight: 750;
+     font-variation-settings: var(--voice-display); display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+/* The same mark the app puts in its rail. */
+h1::before {
+  content: ''; flex: none; width: 34px; height: 34px; background: var(--banana);
+  -webkit-mask: var(--banana-mask) no-repeat center / contain;
+  mask: var(--banana-mask) no-repeat center / contain;
+}
 h1 .sep { color: var(--line); }
 h1 .what { font-size: 20px; letter-spacing: normal; color: var(--muted); font-weight: 400; }
 .tag { color: var(--muted); margin: 0 0 28px; }
@@ -48,11 +70,11 @@ code {
 .note { margin-top: 10px; }
 
 button {
-  background: var(--accent); color: #fff; border: 0; border-radius: 8px;
+  background: var(--banana); color: var(--on-banana); border: 0; border-radius: 8px;
   padding: 9px 16px; font: inherit; font-size: 15px; font-weight: 600; cursor: pointer;
 }
 button:hover { filter: brightness(1.08); }
-button.ghost { background: transparent; color: var(--accent); border: 1px solid var(--line); font-weight: 400; }
+button.ghost { background: transparent; color: var(--fg); border: 1px solid var(--line-strong); font-weight: 500; }
 button.link {
   background: none; border: 0; padding: 0; color: var(--accent);
   font: inherit; text-decoration: underline; cursor: pointer; font-weight: 400;

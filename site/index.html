@@ -5,33 +5,102 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>A.P.E. — download</title>
 <meta name="description" content="Drop a lecture in, review the cards, get an Anki deck out. Free desktop app for macOS, Windows and Linux.">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Recursive:slnt,wght,CASL,CRSV,MONO@-15..0,300..1000,0..1,0..1,0..1&display=swap">
 <style>
-  :root { color-scheme: light dark; --fg: #1d2329; --muted: #5b6672; --bg: #f7f8f9; --panel: #fff; --line: #dde2e7; --accent: #2a8f8f; --warn: #9a6b00; }
-  @media (prefers-color-scheme: dark) { :root { --fg: #d7dee9; --muted: #98a4b0; --bg: #1d2329; --panel: #252c34; --line: #3d4753; --accent: #5eb3b3; --warn: #e8c07d; } }
+  /* The same palette, family and mark as the app (app/src/style.css,
+     app/src/agent/shell.css). A stranger meets this page first; it should not
+     look like a different product from the thing it hands them. */
+  :root {
+    color-scheme: light dark;
+    --font: Recursive, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    --voice-body: 'CASL' 0.4, 'MONO' 0;
+    --voice-mono: 'MONO' 1, 'CASL' 0;
+    --voice-display: 'CASL' 1, 'MONO' 0;
+    --voice-button: 'CASL' 0.7, 'MONO' 0;
+    --bg: #FFF9E3; --panel: #FFFFFF; --raised: #FFF3C9;
+    --fg: #241F0E; --muted: #6E6243; --line: #EADFAE; --line-strong: #D3C48C;
+    --banana: #FFD029; --on-banana: #241F0E; --banana-edge: #E0B81C;
+    --accent: #9A6400; --good: #167A44; --warn: #9A6400; --bad: #C0402A;
+    --banana-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M4.4 2.2C3.6 12.6 11.4 20.4 21.6 20.4c1 0 1.3-1.2.4-1.7-.9-.5-1.5-1.1-1.9-1.9C14.2 15.7 9.4 11.1 8.4 5.2 8.2 4.1 7.6 3.1 6.7 2.4 5.9 1.8 4.5 1.3 4.4 2.2Z'/%3E%3C/svg%3E");
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #14120B; --panel: #1D1A11; --raised: #262114;
+      --fg: #F7F0DA; --muted: #B6AB8B; --line: #35301E; --line-strong: #4A432B;
+      --banana-edge: #C79E12; --accent: #FFD029; --good: #4DD97B; --warn: #E8C07D; --bad: #FF8A6E;
+    }
+  }
   * { box-sizing: border-box; }
-  body { margin: 0; background: var(--bg); color: var(--fg); font: 16px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
-  main { max-width: 680px; margin: 0 auto; padding: 56px 24px 80px; }
-  h1 { font-size: 40px; letter-spacing: .04em; margin: 0 0 8px; }
-  .tag { color: var(--muted); font-size: 18px; margin: 0 0 32px; }
-  .cta { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 24px; margin-bottom: 24px; }
-  .cta.alt { padding: 16px 20px; }
+  body {
+    margin: 0; background: var(--bg); color: var(--fg);
+    font: 16px/1.55 var(--font); font-variation-settings: var(--voice-body);
+  }
+  main { max-width: 700px; margin: 0 auto; padding: 56px 24px 80px; }
+
+  .wordmark { display: flex; align-items: center; gap: 12px; }
+  .wordmark::before {
+    content: ''; flex: none; width: 42px; height: 42px; background: var(--banana);
+    -webkit-mask: var(--banana-mask) no-repeat center / contain;
+    mask: var(--banana-mask) no-repeat center / contain;
+  }
+  h1 {
+    font-size: 42px; margin: 0; letter-spacing: -.01em; font-weight: 750;
+    font-variation-settings: var(--voice-display);
+  }
+  .tag { color: var(--muted); font-size: 18px; margin: 10px 0 34px; }
+
+  /* The download is the one thing this page is for, so it gets the banana
+     stripe the app gives its only forward action. */
+  .cta {
+    background: var(--banana); color: var(--on-banana);
+    border: 1px solid var(--banana-edge); border-radius: 14px; padding: 24px; margin-bottom: 18px;
+  }
+  .btn {
+    display: inline-block; background: var(--on-banana); color: var(--banana);
+    text-decoration: none; padding: 14px 24px; border-radius: 10px; min-height: 48px;
+    font-weight: 600; font-size: 17px; font-variation-settings: var(--voice-button);
+  }
+  .btn:hover { filter: brightness(1.15); }
+  .cta .small, .cta .others { color: color-mix(in srgb, var(--on-banana) 78%, var(--banana)); }
+  .cta .others a, .cta .small a { color: var(--on-banana); }
+
+  .cta.alt {
+    background: var(--panel); color: var(--fg);
+    border: 1px solid var(--line); padding: 18px 22px;
+  }
+  .cta.alt strong { font-variation-settings: var(--voice-display); font-weight: 650; }
   .cta.alt a { color: var(--accent); }
-  .btn { display: inline-block; background: var(--accent); color: #fff; text-decoration: none; padding: 14px 22px; border-radius: 10px; font-weight: 600; font-size: 17px; }
-  .btn:hover { filter: brightness(1.08); }
-  .small { color: var(--muted); font-size: 14px; margin-top: 10px; }
+  .cta.alt .small { color: var(--muted); }
+
+  .small { font-size: 14px; margin-top: 10px; font-variation-settings: var(--voice-mono); }
   .others { margin-top: 18px; font-size: 14px; }
-  .others a { color: var(--accent); }
-  .others li { margin: 4px 0; }
-  h2 { font-size: 18px; margin: 32px 0 8px; }
-  .note { border-left: 3px solid var(--warn); padding: 4px 14px; margin: 10px 0; color: var(--fg); }
-  code { background: var(--panel); border: 1px solid var(--line); border-radius: 4px; padding: 1px 5px; font-size: 90%; }
-  footer { margin-top: 48px; color: var(--muted); font-size: 14px; }
-  footer a { color: var(--accent); }
+  .others li { margin: 4px 0; font-variation-settings: var(--voice-mono); }
+  .others ul { padding-left: 20px; }
+
+  h2 {
+    font-size: 19px; margin: 34px 0 8px; font-weight: 650;
+    font-variation-settings: var(--voice-display);
+  }
+  .note {
+    background: var(--panel); border: 1px solid var(--line);
+    border-left: 3px solid var(--banana); border-radius: 0 10px 10px 0;
+    padding: 10px 16px; margin: 10px 0;
+  }
+  code {
+    background: var(--raised); border: 1px solid var(--line); border-radius: 5px;
+    padding: 1px 5px; font-size: 90%; font-variation-settings: var(--voice-mono);
+  }
+  footer {
+    margin-top: 52px; padding-top: 18px; border-top: 1px solid var(--line);
+    color: var(--muted); font-size: 14px;
+  }
+  footer a, a { color: var(--accent); }
 </style>
 </head>
 <body>
 <main>
-  <h1>A.P.E.</h1>
+  <div class="wordmark"><h1>A.P.E.</h1></div>
   <p class="tag">Drop a lecture in. Review the cards. Get an Anki deck out.</p>
 
   <section class="cta">
@@ -45,7 +114,7 @@
 
   <section class="cta alt">
     <strong>Already have a deck.json?</strong>
-    <p class="small" style="margin-top:6px">
+    <p class="small" style="margin-top:6px; font-variation-settings: var(--voice-body)">
       The <a href="tool/">browser tool</a> runs the same engine in a tab — check a deck, read every
       card, and export a real <code>.apkg</code>. Nothing to install, nothing uploaded. Useful if you
       run the method with your own agent and only want the checks and the export.
@@ -83,7 +152,7 @@
   else if (/Linux/.test(plat)) { best = pick(/\.AppImage$/); label = 'Linux · AppImage'; }
   if (best) { dl.href = best.browser_download_url; dl.textContent = `Download for ${label}`; info.textContent = `${rel.tag_name} · ${(best.size / 1e6).toFixed(0)} MB`; }
   else info.textContent = `${rel.tag_name} — pick your platform below.`;
-  all.innerHTML = assets.map(a => `<li><a href="${a.browser_download_url}">${a.name}</a> <span style="color:var(--muted)">${(a.size / 1e6).toFixed(0)} MB</span></li>`).join('');
+  all.innerHTML = assets.map(a => `<li><a href="${a.browser_download_url}">${a.name}</a> <span style="color:inherit;opacity:.7">${(a.size / 1e6).toFixed(0)} MB</span></li>`).join('');
 })();
 </script>
 </body>
