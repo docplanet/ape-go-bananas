@@ -17,6 +17,9 @@ export interface Settings {
   setMethodDir(dir: string | null): void;
 }
 
+/** Where people reach the author: forwarded by the domain, so it outlives any one inbox. */
+const CONTACT_EMAIL = 'contact@ankiengine.com';
+
 function esc(s: string): string {
   return s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
 }
@@ -47,9 +50,36 @@ export function mountSettings(host: HTMLElement, engine: EngineHost, opts: Setti
         <dt>Method files</dt><dd class="path" id="set-method">…</dd>
       </dl>
       <p class="hint">Nothing leaves this computer except what the agent sends to its own service. Artifacts live beside your material; the app keeps no copy.</p>
+    </section>
+    <section class="set-section">
+      <h3>Get in touch</h3>
+      <p class="hint">A question, a card that came out wrong, an idea: write to us.</p>
+      <p class="set-contact"><span class="path" id="set-email">${CONTACT_EMAIL}</span><button type="button" id="set-email-copy" class="quiet">Copy</button></p>
     </section>`;
   const $ = <T extends HTMLElement>(sel: string): T => host.querySelector<T>(sel)!;
   $<HTMLButtonElement>('#set-done').addEventListener('click', () => opts.onDone());
+
+  // Copied rather than linked: the window has no way to hand a mailto: link
+  // to the mail app, and a link that does nothing is worse than none.
+  // The clipboard API is the first try; a webview may refuse it, so the
+  // address is then selected and copied the older way, and if that is
+  // refused too it stays selected for ⌘C.
+  const copy = $<HTMLButtonElement>('#set-email-copy');
+  const copied = (): void => {
+    copy.textContent = 'Copied';
+    setTimeout(() => (copy.textContent = 'Copy'), 1500);
+  };
+  copy.addEventListener('click', () => {
+    navigator.clipboard.writeText(CONTACT_EMAIL).then(copied, () => {
+      const range = document.createRange();
+      range.selectNodeContents($<HTMLElement>('#set-email'));
+      const sel = window.getSelection();
+      sel?.removeAllRanges();
+      sel?.addRange(range);
+      if (document.execCommand('copy')) copied();
+      else opts.say('the address is selected — press ⌘C to copy it');
+    });
+  });
 
   // Appearance. The pressed one is the one in force; the banana marks it.
   const themeGroup = $<HTMLElement>('#set-theme');
