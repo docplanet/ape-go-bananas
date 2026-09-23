@@ -80,3 +80,21 @@ jobs:
           npm ci
           npm run build
           npm test
+
+      # The Rust side. Until this step nothing compiled it short of a `v*`
+      # tag, so a Rust error was first seen by the release. tauri-build checks
+      # at compile time that the node sidecar, the staged resources and the
+      # built frontend all exist, so the bundle inputs are staged first,
+      # exactly as release.yml does; app/dist is the app build above.
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
+      - uses: swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: 'APE/app/src-tauri -> target'
+      - name: app — stage the bundle inputs, then compile the Rust
+        working-directory: APE/app
+        env:
+          APE_TARGET_TRIPLE: aarch64-apple-darwin
+          APE_METHOD_DIR: ${{ github.workspace }}/Anki/method
+        run: |
+          node scripts/prepare-bundle.mjs
+          cd src-tauri && cargo check --locked

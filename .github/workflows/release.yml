@@ -44,10 +44,13 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - uses: dtolnay/rust-toolchain@stable
+      # Third-party actions are pinned to a commit, not a tag: this job holds
+      # a write token and tauri-action runs with the updater's signing key in
+      # its environment, and a tag can be moved to other code. Bump by SHA.
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
         with:
           targets: ${{ matrix.triple }}
-      - uses: swatinem/rust-cache@v2
+      - uses: swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           workspaces: 'APE/app/src-tauri -> target'
 
@@ -77,7 +80,7 @@ jobs:
           npm ci
           node scripts/prepare-bundle.mjs
 
-      - uses: tauri-apps/tauri-action@v0
+      - uses: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5 # v0.6.2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
