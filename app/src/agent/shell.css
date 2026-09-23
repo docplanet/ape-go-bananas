@@ -131,6 +131,41 @@
 }
 .nb-hint { font-size: 13px; color: color-mix(in srgb, var(--on-banana) 82%, var(--banana)); }
 .nb-actions { display: flex; gap: 8px; flex: none; }
+
+/* A stage is minutes of someone else's work. Without this the window is
+   indistinguishable from a hang, which is what the first person through it
+   assumed. There is no total to count towards, so nothing here pretends to be
+   a percentage: the ring says "still going", the clock says how long, and the
+   second line appears only once the agent has gone quiet long enough to be
+   worth mentioning. */
+/* While a stage runs the spinner takes the banana's place, rather than the
+   bar carrying two marks. */
+.nextbar:has(.nb-spin)::before { display: none; }
+.nb-spin {
+  flex: none; width: 22px; height: 22px; border-radius: 50%;
+  border: 3px solid color-mix(in srgb, var(--on-banana) 25%, transparent);
+  border-top-color: var(--on-banana);
+  animation: nb-spin 0.9s linear infinite;
+}
+@keyframes nb-spin { to { transform: rotate(360deg); } }
+.nb-run {
+  flex: none; display: flex; flex-direction: column; align-items: flex-end; gap: 2px;
+  font-family: var(--font-mono); font-variation-settings: var(--voice-mono);
+  color: var(--on-banana);
+}
+.nb-elapsed { font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.nb-idle { font-size: 11px; color: color-mix(in srgb, var(--on-banana) 70%, var(--banana)); }
+.nb-idle:empty { display: none; }
+.nb-idle.stalled { color: var(--bad); font-weight: 600; }
+
+/* The live step pulses in the rail, so the window is never wholly still. */
+.stages li.running::before { animation: nb-pulse 1.4s ease-in-out infinite; }
+@keyframes nb-pulse { 50% { opacity: 0.35; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .nb-spin, .stages li.running::before { animation: none; }
+  .nb-spin { border-top-color: var(--on-banana); opacity: 0.8; }
+}
 /* On the stripe the ink-filled button is the loud one and the banana-filled
    default would vanish, so the roles swap here only. */
 .nextbar button { min-height: 44px; background: var(--on-banana); color: var(--banana); font-size: 14.5px; }

@@ -368,6 +368,7 @@ export function mountAgentApp(host: EngineHost, opts: AgentAppOptions): AgentApp
   };
   const stages: Stages = mountStages($<HTMLOListElement>(rail, '#stages'), bar, gate, {
     sidecar: runnerClient,
+    bus,
     courseDir: () => courseDir,
     deckName: () => deckInput.value.trim(),
     say,

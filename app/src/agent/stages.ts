@@ -20,7 +20,12 @@ import {
   type StageId,
 } from '../../../dist/pipeline/index.js';
 import { EngineError, type ConnectResult, type Flag, type SidecarClient, type SendToAnkiResult } from '../engine/client.js';
+import type { Bus } from './bus.js';
 import { mergeFlags } from './flags.js';
+
+/** Silence long enough to mention, and long enough to worry about. */
+const QUIET_MS = 60_000;
+const STALLED_MS = 240_000;
 
 export const STAGES: readonly StageId[] = ['extract', 'inventory review', 'organize', 'plan review', 'cards', 'deck preview', 'audit', 'deliver'];
 
@@ -38,6 +43,8 @@ const ABOUT: Record<StageId, string> = {
 
 export interface StageHost {
   sidecar: SidecarClient;
+  /** The shared notification stream, for knowing the agent is still alive. */
+  bus: Bus;
   courseDir(): string | null;
   deckName(): string;
   say(text: string, isError?: boolean): void;
@@ -89,6 +96,16 @@ export function mountStages(rail: HTMLOListElement, bar: HTMLElement, gate: HTML
   let writerSession: string | null = null;
   /** What is running, or null. Named rather than a flag so the rail can mark it and the refusal can say which. */
   let busy: string | null = null;
+  /** When the running stage started, and when the agent last said anything. */
+  let startedAt = 0;
+  let lastHeard = 0;
+  let ticker: number | null = null;
+  // Any traffic at all counts as a sign of life, including a tool call or a
+  // single token. Only session/update: it is the agent's own stream, so it
+  // cannot be kept alive by the shell's own polling.
+  host.bus.onNotification((method) => {
+    if (busy && method === 'session/update') lastHeard = Date.now();
+  });
   /** Stages the user asked to run again despite an artifact already existing. */
   const force = new Set<StageId>();
   // What the folder says, as of the last refresh.
@@ -122,7 +139,37 @@ export function mountStages(rail: HTMLOListElement, bar: HTMLElement, gate: HTML
     busy = label;
     rail.querySelectorAll<HTMLLIElement>('li').forEach((li) => li.classList.toggle('running', li.dataset.stage === label));
     rail.setAttribute('aria-busy', label === null ? 'false' : 'true');
+    startedAt = label === null ? 0 : Date.now();
+    lastHeard = startedAt;
     renderBar();
+    if (ticker !== null) clearInterval(ticker);
+    ticker = label === null ? null : (setInterval(tick, 1000) as unknown as number);
+  }
+
+  /**
+   * A stage is minutes of someone else's work and the window has nothing to
+   * say about it, which is indistinguishable from a hang. There is no total to
+   * count towards -- the agent decides how much reading a lecture takes -- so
+   * the bar reports the two things that are actually known: how long this has
+   * been going, and how long since the agent last said anything. The second is
+   * the one that answers "is this stuck?".
+   */
+  function human(ms: number): string {
+    const s = Math.floor(ms / 1000);
+    return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, '0')}s`;
+  }
+
+  function tick(): void {
+    if (!busy) return;
+    const now = Date.now();
+    const elapsed = bar.querySelector<HTMLElement>('.nb-elapsed');
+    const idle = bar.querySelector<HTMLElement>('.nb-idle');
+    if (elapsed) elapsed.textContent = human(now - startedAt);
+    if (!idle) return;
+    const quiet = now - lastHeard;
+    // Under a minute of silence is ordinary: the agent is reading, or thinking.
+    idle.textContent = quiet < QUIET_MS ? '' : `nothing heard for ${human(quiet)}`;
+    idle.classList.toggle('stalled', quiet >= STALLED_MS);
   }
 
   // A later artifact implies the earlier steps: a folder with only deck.json
@@ -227,10 +274,16 @@ export function mountStages(rail: HTMLOListElement, bar: HTMLElement, gate: HTML
     }
     bar.hidden = false;
     if (busy) {
-      bar.innerHTML = `<div class="nb-text"><span class="nb-k">${through ? 'Running through to audit' : 'Running'}</span><strong>${esc(busy)}…</strong><span class="nb-hint">${
+      const n = STAGES.indexOf(busy as StageId) + 1;
+      bar.innerHTML = `<span class="nb-spin" aria-hidden="true"></span>
+        <div class="nb-text"><span class="nb-k">${
+          through ? 'Running through to audit' : n > 0 ? `Running · step ${n} of ${STAGES.length}` : 'Running'
+        }</span><strong>${esc(busy)}…</strong><span class="nb-hint">${
         through ? 'Each stage starts the next; it stops at the audit for you. Stop cancels the turn and ends the run.' : 'Watch the agent below. Stop cancels its turn.'
       }</span></div>
+        <div class="nb-run"><span class="nb-elapsed">0s</span><span class="nb-idle" role="status"></span></div>
         <div class="nb-actions"><button type="button" data-stop="1" class="quiet">Stop</button></div>`;
+      tick();
       return;
     }
     const a = action();
