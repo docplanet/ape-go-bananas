@@ -80,6 +80,8 @@ export interface Stages {
   run(stage: StageId): Promise<void>;
   /** Re-reads the folder and redraws the rail and the bar. */
   refresh(): Promise<void>;
+  /** What is running, or null; a deck is not switched out from under a run. */
+  busy(): string | null;
 }
 
 interface Action {
@@ -120,6 +122,10 @@ export function mountStages(rail: HTMLOListElement, bar: HTMLElement, gate: HTML
   let showing: string | null = null;
   /** A run-through is in progress: each stage starts the next until the audit. */
   let through = false;
+  /** Stop was pressed during the current run. A stage's file can already exist when it is cancelled, so this, not the file, ends a run-through. */
+  let stopRequested = false;
+  /** The last stage did not finish its turn: stopped, cut short, or failed. */
+  let halted = false;
 
   // Each step is a button, and says so: the first person through this screen
   // read the list as a progress display and asked how to start the process.
@@ -138,6 +144,7 @@ export function mountStages(rail: HTMLOListElement, bar: HTMLElement, gate: HTML
    */
   function setBusy(label: string | null): void {
     busy = label;
+    if (label !== null) stopRequested = false;
     rail.querySelectorAll<HTMLLIElement>('li').forEach((li) => li.classList.toggle('running', li.dataset.stage === label));
     rail.setAttribute('aria-busy', label === null ? 'false' : 'true');
     startedAt = label === null ? 0 : Date.now();
@@ -314,7 +321,13 @@ export function mountStages(rail: HTMLOListElement, bar: HTMLElement, gate: HTML
     const b = (e.target as HTMLElement).closest<HTMLButtonElement>('button');
     if (!b) return;
     if (b.dataset.stop) {
-      if (writerSession) void sidecar.cancel(writerSession);
+      // The audit and the adjudicator run in sessions of their own; the runner
+      // knows which one is prompting. Between turns there is nothing to cancel,
+      // and the flag still ends a run-through before its next stage.
+      stopRequested = true;
+      const id = runner?.activeSession() ?? writerSession;
+      if (id) void sidecar.cancel(id);
+      host.say(`stopping ${busy ?? 'the run'}…`);
       return;
     }
     if (b.dataset.settings) return host.openSettings();
@@ -387,15 +400,30 @@ export function mountStages(rail: HTMLOListElement, bar: HTMLElement, gate: HTML
       return host.openSettings();
     }
     setStage(stage);
+    // Only a branch that claimed the bar gives it back: opening the deck or a
+    // review is not a run, and clearing busy when it finished used to clear it
+    // for whatever stage had started meanwhile.
+    let claimed = false;
+    const claim = (label: string): void => {
+      setBusy(label);
+      claimed = true;
+    };
+    halted = false;
     try {
       if (writing) {
         host.showAgentView();
         hideGate();
-        setBusy(stage);
+        claim(stage);
         if (stage === 'extract') await host.prepareMaterials(dir);
+        if (stopRequested) {
+          halted = true;
+          host.say(`${stage} stopped before the agent started`);
+          return;
+        }
         host.say(`running ${stage}…`);
         const r = await runner!.run(writing);
-        host.say(r.stopReason === 'end_turn' ? `${stage} finished` : `${stage} stopped: ${r.stopReason}`, r.stopReason !== 'end_turn');
+        halted = r.stopReason !== 'end_turn';
+        host.say(!halted ? `${stage} finished` : `${stage} stopped: ${r.stopReason}`, halted);
         showArtifactGate(stage, writing.artifact, r.artifactText);
       } else if (stage === 'inventory review' || stage === 'plan review') {
         const artifact = stage === 'inventory review' ? 'inventory.md' : 'plan.md';
@@ -419,12 +447,16 @@ export function mountStages(rail: HTMLOListElement, bar: HTMLElement, gate: HTML
           return;
         }
         force.delete('audit');
+        // What the last audit wrote is about a deck that has changed since; an
+        // auditor that writes nothing this time must not have it read back as
+        // this run's findings.
+        await Promise.all(['audit.md', 'audit.json'].map((name) => sidecar.deleteCourse(dir, name).catch(() => undefined)));
         // The method's run-sheet: an auditor who wrote none of the cards reads
         // the whole deck first; its findings and the owner's flags then go to
         // a separate adjudicator. The owner sees the report before that step.
         host.showAgentView();
         hideGate();
-        setBusy(stage);
+        claim(stage);
         host.say('auditing the whole deck in a fresh session…');
         const deckPath = `${dir}/deck.json`;
         // The auditor is told review.html is beside deck.json -- the run-sheet's
@@ -432,6 +464,7 @@ export function mountStages(rail: HTMLOListElement, bar: HTMLElement, gate: HTML
         // its own preview in memory, so the file is written here, just before.
         await sidecar.review(deckPath, { outPath: `${dir}/review.html` }).catch(() => undefined);
         const a = await runner!.audit();
+        halted = a.stopReason !== 'end_turn';
         const { flags } = await sidecar.readFlags(deckPath);
         const merged: Flag[] = mergeFlags([
           ...flags,
@@ -443,15 +476,16 @@ export function mountStages(rail: HTMLOListElement, bar: HTMLElement, gate: HTML
           <pre class="artifact">${a.report === null ? '(no audit.md was written)' : esc(a.report)}</pre>`);
         host.say(a.stopReason === 'end_turn' ? `audit filed ${a.findings.length} finding(s)` : `auditor stopped: ${a.stopReason}`, a.stopReason !== 'end_turn');
       } else if (stage === 'deliver') {
-        setBusy(stage);
+        claim(stage);
         const out = await host.exportDeck();
         if (out !== null) exportedTo = out;
         else if (exportedTo === null) exportedTo = 'the .apkg';
       }
     } catch (err) {
+      halted = true;
       host.say(err instanceof EngineError ? err.message : String(err), true);
     } finally {
-      setBusy(null);
+      if (claimed) setBusy(null);
       await refresh();
     }
   }
@@ -498,6 +532,12 @@ export function mountStages(rail: HTMLOListElement, bar: HTMLElement, gate: HTML
         if (stage === 'organize') reviewed.add('inventory review');
         if (stage === 'cards') reviewed.add('plan review');
         await run(stage);
+        // A stopped stage can leave its file behind -- deck.json written early,
+        // then cancelled mid-fix -- so the file existing is not the test.
+        if (stopRequested || halted) {
+          host.say(`run-through stopped at ${stage}`, !stopRequested);
+          return;
+        }
         await refresh();
         if (!done(stage) && !(stage === 'audit' && has.audit)) {
           host.say(`run-through stopped: ${stage} wrote nothing`, true);
@@ -522,6 +562,10 @@ export function mountStages(rail: HTMLOListElement, bar: HTMLElement, gate: HTML
     setBusy('adjudicate');
     host.say(`adjudicating ${flags.length} flag(s) in a fresh session…`);
     try {
+      // Verdicts from an earlier round rule on other flags, by card numbers
+      // that may have moved; an adjudicator that writes nothing must not have
+      // them shown, and offered for applying, as its own.
+      await sidecar.deleteCourse(dir, 'verdicts.md').catch(() => undefined);
       const r = await runner.adjudicate(mergeFlags(flags)); // the owner may have flagged a card the audit already had
       showGate(`<header class="bar"><span>verdicts.md</span><span class="grow"></span>
         ${r.verdicts !== null ? '<button type="button" data-apply="1">Apply verdicts</button>' : ''}<button type="button" data-close="1" class="quiet">Close</button></header>
@@ -550,7 +594,13 @@ export function mountStages(rail: HTMLOListElement, bar: HTMLElement, gate: HTML
       // they are resolved, and their note indexes no longer line up with a
       // deck that may have lost cards. Clear them before the reload, so the
       // deck view does not show sixteen stale flags on a clean deck.
-      if (r.stopReason === 'end_turn') await sidecar.writeFlags(`${dir}/deck.json`, []).catch(() => undefined);
+      // verdicts.md goes with them, for the same reason: left behind, the next
+      // round's flags made the button "Apply verdicts" again, and the writer
+      // applied the old rulings by number to cards that had since moved.
+      if (r.stopReason === 'end_turn') {
+        await sidecar.writeFlags(`${dir}/deck.json`, []).catch(() => undefined);
+        await sidecar.deleteCourse(dir, 'verdicts.md').catch(() => undefined);
+      }
       previewed = true;
       await host.openDeck(dir);
     } catch (err) {
@@ -602,5 +652,6 @@ export function mountStages(rail: HTMLOListElement, bar: HTMLElement, gate: HTML
     },
     run,
     refresh,
+    busy: () => busy,
   };
 }

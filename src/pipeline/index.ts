@@ -183,14 +183,29 @@ export interface Runner {
   audit(): Promise<{ stopReason: string; report: string | null; findings: AuditFinding[] }>;
   adjudicate(flags: Flag[]): Promise<{ stopReason: string; verdicts: string | null }>;
   applyVerdicts(): Promise<{ stopReason: string }>;
+  /**
+   * The session a turn is running in right now, or null. The audit and the
+   * adjudicator run in fresh sessions, so "cancel the writer" does not stop
+   * them; Stop cancels this one.
+   */
+  activeSession(): string | null;
 }
 
 export function makeRunner(client: PipelineClient, conn: ConnectionLike, courseDir: string, deckName: () => string): Runner {
   const writer = conn.session!.sessionId;
+  let active: string | null = null;
+  const prompt = async (sessionId: string, blocks: ContentBlock[]): Promise<{ stopReason: string }> => {
+    active = sessionId;
+    try {
+      return await client.prompt(sessionId, blocks);
+    } finally {
+      if (active === sessionId) active = null;
+    }
+  };
   return {
     async run(stage) {
       const blocks = await stageBlocks(client, stage, courseDir, deckName());
-      const { stopReason } = await client.prompt(writer, blocks);
+      const { stopReason } = await prompt(writer, blocks);
       let artifactText: string | null = null;
       try {
         artifactText = (await client.readCourse(courseDir, stage.artifact)).text;
@@ -201,7 +216,7 @@ export function makeRunner(client: PipelineClient, conn: ConnectionLike, courseD
     },
     async audit() {
       const fresh = await client.newSession(conn.connectionId);
-      const { stopReason } = await client.prompt(fresh.session.sessionId, await auditBlocks(client, courseDir));
+      const { stopReason } = await prompt(fresh.session.sessionId, await auditBlocks(client, courseDir));
       const report = await client.readCourse(courseDir, 'audit.md').then((r) => r.text, () => null);
       let findings: AuditFinding[] = [];
       try {
@@ -215,7 +230,7 @@ export function makeRunner(client: PipelineClient, conn: ConnectionLike, courseD
     async adjudicate(flags) {
       const fresh = await client.newSession(conn.connectionId);
       const blocks = await adjudicateBlocks(client, courseDir, flags);
-      const { stopReason } = await client.prompt(fresh.session.sessionId, blocks);
+      const { stopReason } = await prompt(fresh.session.sessionId, blocks);
       let verdicts: string | null = null;
       try {
         verdicts = (await client.readCourse(courseDir, 'verdicts.md')).text;
@@ -225,7 +240,8 @@ export function makeRunner(client: PipelineClient, conn: ConnectionLike, courseD
       return { stopReason, verdicts };
     },
     async applyVerdicts() {
-      return client.prompt(writer, await applyVerdictsBlocks(client, courseDir));
+      return prompt(writer, await applyVerdictsBlocks(client, courseDir));
     },
+    activeSession: () => active,
   };
 }

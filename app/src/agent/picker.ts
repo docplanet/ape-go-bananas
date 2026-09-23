@@ -163,6 +163,13 @@ export function mountPicker(host: HTMLElement, sidecar: SidecarClient, bus: Bus,
     try {
       const result = await sidecar.connect(params);
       progress.delete(id);
+      // The session is rooted in the folder it was asked for; if the deck
+      // changed while the agent started, it belongs to no deck on screen.
+      if (courseDir() !== cwd) {
+        void sidecar.disconnect(result.connectionId).catch(() => undefined);
+        render();
+        return false;
+      }
       if (result.authRequired || (result.authStatus?.kind === 'none' && result.authMethods.length > 0)) {
         render();
         showAuth(result);

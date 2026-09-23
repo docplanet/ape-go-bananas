@@ -195,6 +195,14 @@ export function mountAgentApp(host: EngineHost, opts: AgentAppOptions): AgentApp
       show('agent');
       return true;
     }
+    // A run belongs to the deck it started in: its results, its Stop and a
+    // run-through's next stage all read "the current deck", so the deck does
+    // not change under it.
+    const running = stages.busy();
+    if (running) {
+      say(`${running} is still running in ${deckInput.value.trim() || 'this deck'} — stop it or let it finish first`, true);
+      return false;
+    }
     try {
       await sidecar.listCourse(dir);
     } catch (err) {
@@ -330,6 +338,7 @@ export function mountAgentApp(host: EngineHost, opts: AgentAppOptions): AgentApp
     $<HTMLElement>(rail, '#rail-agent').textContent = !name ? 'No agent chosen' : connection ? `${name} · connected` : `${name} · not connected`;
     home.setAgent(name);
   }
+  let attaching: Promise<void> = Promise.resolve();
   const picker: Picker = mountPicker(settings.agentSlot, sidecar, bus, host.dataDir(), () => courseDir, opts.keys, {
     say,
     onChosen(id) {
@@ -342,7 +351,10 @@ export function mountAgentApp(host: EngineHost, opts: AgentAppOptions): AgentApp
         say('connected but no session', true);
         return;
       }
-      void (async () => {
+      // One at a time: two connects finishing together (a double press, the
+      // auto-connect meeting a Reconnect) both disposed the same old pane and
+      // mounted a new one each, and the first new one was never closed.
+      attaching = attaching.then(async () => {
         if (chat) await chat.dispose();
         // The adapter names itself by its package; the person chose "Claude Agent".
         const named: ConnectResult = { ...result, agent: { name: picker.nameOf(result.provider) ?? result.agent?.name ?? result.provider, version: result.agent?.version ?? '' } };
@@ -355,7 +367,7 @@ export function mountAgentApp(host: EngineHost, opts: AgentAppOptions): AgentApp
         say(`${named.agent!.name} ready`);
         if (screen === 'settings') show('agent');
         await stages.refresh();
-      })();
+      }).catch((err: unknown) => say(err instanceof EngineError ? err.message : String(err), true));
     },
   });
   picker.setState({ chosen: remember.get(REMEMBER.agent) });
