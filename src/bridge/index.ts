@@ -23,7 +23,7 @@ import type { SidecarInfo } from '../sidecar/methods.js';
 
 const NODE_FLOOR = 20;
 const DEFAULT_PORT = 9100;
-const DEFAULT_SITE = 'https://planetjc.github.io/ape-go-bananas/tool/';
+const DEFAULT_SITE = 'https://ankiengine.com/tool/';
 // The method is prose that lives in its own repository and is read at run
 // time, unmodified (docs/APP.md). The desktop app bundles a copy at build
 // time; a package installed with npx has no build step on the user's machine,
