@@ -12,7 +12,8 @@ use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::process::Stdio;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::time::{Duration, Instant, SystemTime};
 use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Emitter};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
@@ -47,7 +48,7 @@ pub struct Sidecar {
     status: Mutex<Status>,
     /// How the process was started, so it can be started again.
     launch: Mutex<Option<(AppHandle, Paths)>>,
-    started: Mutex<Option<std::time::SystemTime>>,
+    started: Mutex<Option<SystemTime>>,
 }
 
 struct Running {
@@ -55,7 +56,16 @@ struct Running {
     stdin: Arc<tokio::sync::Mutex<ChildStdin>>,
     pending: Pending,
     next_id: AtomicU64,
+    /// Cleared by the reader when stdout closes: the process is gone or going.
+    alive: Arc<AtomicBool>,
 }
+
+/// A dead engine is started again on the next call, but not one that died
+/// this soon after starting: the window reloads on `engine/restarted`, so an
+/// engine that crashes on start would otherwise be a reload loop.
+const MIN_UPTIME_FOR_RESTART: Duration = Duration::from_secs(10);
+/// How long quitting waits for the engine to close its agents on EOF.
+const SHUTDOWN_GRACE: Duration = Duration::from_secs(2);
 
 impl Sidecar {
     pub fn new() -> Self {
@@ -125,10 +135,26 @@ impl Sidecar {
         let pending: Pending = Arc::new(Mutex::new(HashMap::new()));
 
         let reader_pending = pending.clone();
+        let alive = Arc::new(AtomicBool::new(true));
+        let reader_alive = alive.clone();
         tauri::async_runtime::spawn(async move {
-            let mut lines = BufReader::new(stdout).lines();
-            while let Ok(Some(line)) = lines.next_line().await {
-                let msg: Value = match serde_json::from_str(&line) {
+            // Bytes, not `lines()`: one line that is not UTF-8 ended that
+            // loop with an error while node ran on, its stdout undrained,
+            // until the pipe filled and every call waited forever.
+            let mut reader = BufReader::new(stdout);
+            let mut buf = Vec::new();
+            loop {
+                buf.clear();
+                match reader.read_until(b'\n', &mut buf).await {
+                    Ok(0) | Err(_) => break,
+                    Ok(_) => {}
+                }
+                let text = String::from_utf8_lossy(&buf);
+                let line = text.trim_end_matches(['\n', '\r']);
+                if line.is_empty() {
+                    continue;
+                }
+                let msg: Value = match serde_json::from_str(line) {
                     Ok(v) => v,
                     Err(_) => {
                         eprintln!("sidecar: non-JSON on stdout, ignored: {line}");
@@ -171,7 +197,9 @@ impl Sidecar {
                     _ => {}
                 }
             }
-            // stdout closed: every waiter gets an error rather than a hang.
+            // stdout closed: every waiter gets an error rather than a hang,
+            // and the next call starts a new engine (`call`).
+            reader_alive.store(false, Ordering::SeqCst);
             for (_, tx) in reader_pending.lock().unwrap().drain() {
                 let _ = tx.send(Err(RpcError { code: -32001, message: "sidecar exited".into(), data: None }));
             }
@@ -182,8 +210,9 @@ impl Sidecar {
             stdin: Arc::new(tokio::sync::Mutex::new(stdin)),
             pending,
             next_id: AtomicU64::new(1),
+            alive,
         });
-        *self.started.lock().unwrap() = Some(std::time::SystemTime::now());
+        *self.started.lock().unwrap() = Some(SystemTime::now());
         {
             let mut s = self.status.lock().unwrap();
             s.running = true;
@@ -213,6 +242,16 @@ impl Sidecar {
         std::fs::metadata(script).and_then(|m| m.modified()).map(|m| m > started).unwrap_or(false)
     }
 
+    /// The engine was started and its stdout has closed: it crashed, or was
+    /// killed. Release builds had no way back from this short of quitting.
+    fn dead(&self) -> bool {
+        self.inner.lock().unwrap().as_ref().is_some_and(|r| !r.alive.load(Ordering::SeqCst))
+    }
+
+    fn up_for(&self) -> Duration {
+        self.started.lock().unwrap().and_then(|t| t.elapsed().ok()).unwrap_or_default()
+    }
+
     /// Stops the process and starts it again from the same paths. Whatever
     /// the old one held -- agent sessions above all -- is gone; the shell is
     /// told, as a notification, and starts over.
@@ -228,14 +267,20 @@ impl Sidecar {
         if cfg!(debug_assertions) {
             eprintln!("sidecar: -> {method}");
         }
-        if self.stale() {
-            eprintln!("sidecar: the engine on disk is newer than the running process; restarting it");
+        let dead = self.dead();
+        if dead && self.up_for() < MIN_UPTIME_FOR_RESTART {
+            let e = "the engine stopped seconds after it started; it will be tried again shortly, or restart the app".to_string();
+            self.fail(e.clone());
+            return Err(RpcError { code: -32001, message: e, data: None });
+        }
+        if dead || self.stale() {
+            eprintln!("sidecar: {}; restarting it", if dead { "the engine exited" } else { "the engine on disk is newer than the running process" });
             if let Err(e) = self.restart() {
                 self.fail(e.clone());
                 return Err(RpcError { code: -32001, message: e, data: None });
             }
         }
-        let (stdin, rx, line) = {
+        let (stdin, rx, line, id, pending) = {
             let guard = self.inner.lock().unwrap();
             let running = guard.as_ref().ok_or(RpcError {
                 code: -32001,
@@ -249,21 +294,32 @@ impl Sidecar {
             if !params.is_null() {
                 req["params"] = params;
             }
-            (running.stdin.clone(), rx, format!("{}\n", req))
+            (running.stdin.clone(), rx, format!("{}\n", req), id, running.pending.clone())
         };
-        stdin
-            .lock()
-            .await
-            .write_all(line.as_bytes())
-            .await
-            .map_err(|e| RpcError { code: -32001, message: format!("write to sidecar: {e}"), data: None })?;
+        if let Err(e) = stdin.lock().await.write_all(line.as_bytes()).await {
+            // Nothing will ever answer it; do not leave it waiting in the map.
+            pending.lock().unwrap().remove(&id);
+            return Err(RpcError { code: -32001, message: format!("write to sidecar: {e}"), data: None });
+        }
         rx.await.unwrap_or(Err(RpcError { code: -32001, message: "sidecar dropped the request".into(), data: None }))
     }
 
+    /// Closes the engine's stdin, which is its own shutdown -- it closes
+    /// every agent connection on EOF (src/sidecar/index.ts) -- and kills it
+    /// only if it has not gone within SHUTDOWN_GRACE. Killing outright skipped
+    /// that, and an agent's own child processes could outlive the app.
     pub fn stop(&self) {
-        if let Some(mut running) = self.inner.lock().unwrap().take() {
-            let _ = running.child.start_kill();
+        let Some(Running { mut child, stdin, .. }) = self.inner.lock().unwrap().take() else { return };
+        drop(stdin);
+        let deadline = Instant::now() + SHUTDOWN_GRACE;
+        while Instant::now() < deadline {
+            match child.try_wait() {
+                Ok(Some(_)) => return,
+                Ok(None) => std::thread::sleep(Duration::from_millis(50)),
+                Err(_) => break,
+            }
         }
+        let _ = child.start_kill();
     }
 }
 
