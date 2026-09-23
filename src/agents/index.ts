@@ -78,7 +78,7 @@ function parseRegistry(raw: unknown): RegistryEntry[] {
     if (typeof item !== 'object' || item === null) continue;
     const e = item as Record<string, unknown>;
     const dist = e.distribution;
-    if (typeof e.id !== 'string' || typeof e.name !== 'string' || typeof dist !== 'object' || dist === null) continue;
+    if (typeof e.id !== 'string' || !isAgentId(e.id) || typeof e.name !== 'string' || typeof dist !== 'object' || dist === null) continue;
     const kind = (['npx', 'binary', 'uvx'] as const).find((k) => k in (dist as object));
     if (kind === undefined) continue;
     const entry: RegistryEntry = {
@@ -144,7 +144,17 @@ export async function loadRegistry(
 
 // ---- on-disk layout -------------------------------------------------------
 
+/**
+ * An agent id becomes a directory name under the data dir, and it comes from
+ * the public registry or the caller: `..` as an id made uninstall a
+ * recursive delete of the data dir itself. A registry id is a plain name.
+ */
+export function isAgentId(id: string): boolean {
+  return /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(id) && !id.includes('..');
+}
+
 export function prefixFor(dataDir: string, id: string): string {
+  if (!isAgentId(id)) throw new RangeError(`not an agent id: ${JSON.stringify(id)}`);
   return join(dataDir, 'npx', id);
 }
 

@@ -37,6 +37,7 @@ import {
   loadRegistry,
   resolveBin,
   toProvider,
+  isAgentId,
   uninstallAgent,
   type RegistryEntry,
 } from '../agents/index.js';
@@ -162,6 +163,7 @@ export class AgentBridge {
       'agents/uninstall': (raw) => {
         const p = asParams(raw);
         const id = str(p, 'id');
+        if (!isAgentId(id)) throw new InvalidParams(`params.id: not an agent id: ${JSON.stringify(id)}`);
         return { id, removed: uninstallAgent(str(p, 'dataDir'), id) };
       },
       'agent/connect': (raw) => this.connect(asParams(raw)),

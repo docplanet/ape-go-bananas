@@ -4,7 +4,7 @@
 // agent-protocol.md §1 (+ sidecar-protocol.md §1–§3 for framing and error
 // rows) by a context that has not seen src/sidecar/agent*.ts or src/agents/.
 import assert from 'node:assert/strict';
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { isAbsolute, join } from 'node:path';
 import test, { after } from 'node:test';
 
@@ -149,6 +149,13 @@ test('agents/list, agents/install and agents/uninstall validate params with -326
   assert.match(expectError(await s.request(2, 'agents/install', { dataDir: makeTmpDir() }), -32602, 'install without id').message, /\bid\b/);
   assert.match(expectError(await s.request(3, 'agents/install', { id: 'fake-npx' }), -32602, 'install without dataDir').message, /\bdataDir\b/);
   assert.match(expectError(await s.request(4, 'agents/uninstall', { dataDir: makeTmpDir() }), -32602, 'uninstall without id').message, /\bid\b/);
+  // An id is a directory name under dataDir: ".." made uninstall delete dataDir itself.
+  const dataDir = makeTmpDir();
+  mkdirSync(join(dataDir, 'npx'), { recursive: true });
+  for (const [n, id] of ['..', '../..', 'a/b', '/etc'].entries()) {
+    assert.match(expectError(await s.request(10 + n, 'agents/uninstall', { dataDir, id }), -32602, `uninstall ${id}`).message, /not an agent id/);
+  }
+  assert.ok(existsSync(join(dataDir, 'npx')), 'nothing under dataDir was touched');
   assert.equal(await s.end(), 0);
 });
 
