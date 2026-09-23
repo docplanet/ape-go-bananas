@@ -275,8 +275,11 @@ export function courseMethods(): Record<string, MethodHandler> {
         rmSync(full);
         removed = true;
       }
-      // What the shell extracted from it goes with it.
-      rmSync(join(path, EXTRACTED, ...name.split('/')), { recursive: true, force: true });
+      // What the shell extracted from it goes with it -- found from the name
+      // as resolved and confined above, not as given: "../../b/c/x" passed the
+      // check on the course folder, then climbed out of _extracted/, one level
+      // deeper, and was deleted recursively.
+      rmSync(join(path, EXTRACTED, relative(resolve(path), full)), { recursive: true, force: true });
       return { name, removed };
     },
 

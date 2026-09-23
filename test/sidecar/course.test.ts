@@ -249,6 +249,24 @@ test('course/import copies files, and a folder\'s files one level deep minus dot
   assert.equal(await s.end(), 0);
 });
 
+test('course/delete: a name that stays in the course folder cannot climb out of _extracted/ when its extraction is removed', { timeout: TIMEOUT }, async () => {
+  // <root>/course is the course. "../../<root name>/course/x" resolves to
+  // <root>/course/x -- inside, so it passes -- but joined onto _extracted/ it
+  // named <root>/<root name>/course/x, outside the course, deleted recursively.
+  const { root, dir } = makeCourseTree();
+  const victim = join(root, basename(root), 'course', 'x');
+  mkdirSync(victim, { recursive: true });
+  writeFileSync(join(victim, 'keep.txt'), 'not the course\'s');
+  writeFileSync(join(dir, 'x'), 'a file in the course');
+  const s = spawnSidecar();
+  await s.ready;
+  const name = `../../${basename(root)}/course/x`;
+  assert.deepStrictEqual((await s.request(1, 'course/delete', { path: dir, name })).result, { name, removed: true });
+  assert.equal(existsSync(join(dir, 'x')), false, 'the course file it names is removed');
+  assert.equal(readFileSync(join(victim, 'keep.txt'), 'utf8'), 'not the course\'s', 'nothing outside the course is');
+  assert.equal(await s.end(), 0);
+});
+
 test('course/read with encoding "base64" returns the exact bytes of any kind, and refuses another encoding (§2)', { timeout: TIMEOUT }, async () => {
   const { dir } = makeCourseTree();
   const s = spawnSidecar();
