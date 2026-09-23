@@ -177,6 +177,19 @@ export const SCENARIOS = {
    * message chunk and ends the turn.
    */
   CLAUDE_AUTH: 'claude-auth',
+  /**
+   * Session Modes whose ids are not the ones Claude's adapter uses: no
+   * `default`. The sidecar pins `default` when an agent has modes; asking
+   * for one this agent does not have was refused, and every connect to it
+   * failed.
+   */
+  MODES_NO_DEFAULT: 'modes-no-default',
+  /**
+   * `session/new` fails with an error that is not "authentication
+   * required". The agent process is running by then; the connect fails,
+   * and nothing is handed back to disconnect it with.
+   */
+  SESSION_NEW_FAILS: 'session-new-fails',
 } as const;
 
 /** The six §2 update kinds UPDATE_KINDS streams, in wire order (sessionId is added by the mock). */

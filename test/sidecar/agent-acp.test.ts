@@ -9,7 +9,7 @@ import test, { after } from 'node:test';
 import { SCENARIOS, UPDATE_KINDS_SEQUENCE } from '../acp/scenarios.ts';
 import {
   agentPid, agentReceived, agentSessionIds, answerError, answerRequest, connectMock, expectError, isNotification,
-  layoutMockProvider, notificationParams, pidIsAlive, primeRegistry, readMockLog, shimArgvs, updatesFor, waitForExit, waitForLine,
+  layoutMockProvider, MOCK_PROVIDER_ID, mockFiles, notificationParams, pidIsAlive, primeRegistry, readMockLog, shimArgvs, updatesFor, waitForExit, waitForLine,
   type ConnectSession,
 } from './agent-helpers.ts';
 import { TIMEOUT, isJsonRpcLine, spawnSidecar, sweepSidecars, type Sidecar } from './helpers.ts';
@@ -263,4 +263,23 @@ test('EOF on stdin reaps every agent (§2 disconnect "and EOF")', { timeout: TIM
   const pid = agentPid(files.pidFile);
   assert.equal(await s.end(), 0);
   assert.ok(await waitForExit(pid), `agent pid ${pid} must not outlive the sidecar`);
+});
+
+test('agent/connect to an agent whose modes have no "default" succeeds, and pins nothing (§2)', { timeout: TIMEOUT }, async () => {
+  const { s, dataDir } = await sidecarWithMock();
+  const { result, files } = await connectMock(s, dataDir, SCENARIOS.MODES_NO_DEFAULT);
+  assert.equal(sessionOf(result.session).modes?.currentModeId, 'suggest', "the agent's own mode stands");
+  assert.equal(agentReceived(files.logFile).filter((f) => f.method === 'session/set_mode').length, 0, 'no set_mode for a mode the agent does not offer');
+  assert.equal(await s.end(), 0);
+});
+
+test('a connect that fails after the agent started does not leave the agent running (§2)', { timeout: TIMEOUT }, async () => {
+  const { s, dataDir } = await sidecarWithMock();
+  const files = mockFiles(SCENARIOS.SESSION_NEW_FAILS);
+  const res = await s.request('connect-fails', 'agent/connect', { provider: MOCK_PROVIDER_ID, dataDir, cwd: dataDir, env: files.env });
+  assert.ok(res.error, 'the connect fails');
+  assert.match(res.error.message, /workspace could not be opened/);
+  const pid = agentPid(files.pidFile);
+  assert.ok(await waitForExit(pid), `agent pid ${pid} is closed with the failed connect, not left for the sidecar's exit`);
+  assert.equal(await s.end(), 0);
 });

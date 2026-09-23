@@ -249,9 +249,18 @@ export class AgentBridge {
       byAgentId: new Map(),
     };
     this.connections.set(connectionId, conn);
-    await this.spawnAcp(conn);
-    const session = await this.openAcpSession(conn);
-    return this.connectResult(conn, session);
+    // A connect that fails after the spawn -- session/new refused, the agent
+    // gone mid-handshake -- returns no connectionId to disconnect with, so the
+    // agent process is closed here or it runs until the sidecar exits, one
+    // more with every retry.
+    try {
+      await this.spawnAcp(conn);
+      const session = await this.openAcpSession(conn);
+      return this.connectResult(conn, session);
+    } catch (err) {
+      await this.disconnect(connectionId).catch(() => undefined);
+      throw err;
+    }
   }
 
   private async spawnAcp(conn: AcpConnection): Promise<void> {
@@ -289,7 +298,9 @@ export class AgentBridge {
     const state: AcpSessionState = { kind: 'acp', sessionId, connectionId: conn.connectionId, session, commands: [], busy: false };
     conn.byAgentId.set(session.sessionId, sessionId);
     session.onUpdate((update) => this.forwardUpdate(state, update));
-    if (session.modes !== undefined) await session.setMode('default');
+    // Pinned only when the agent offers it: an agent whose modes have other
+    // ids refused the call, and every connect to it failed.
+    if (session.modes?.availableModes.some((m) => m.id === 'default')) await session.setMode('default');
     conn.sessions.set(sessionId, state);
     this.sessions.set(sessionId, state);
     return state;

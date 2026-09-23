@@ -438,6 +438,14 @@ function handleSessionNew(id: number | string | null, params: Record<string, unk
     respondResult(id, { sessionId, modes: MODE_STATE });
     return;
   }
+  if (scenario === SCENARIOS.MODES_NO_DEFAULT) {
+    respondResult(id, { sessionId, modes: { currentModeId: 'suggest', availableModes: [{ id: 'suggest', name: 'Suggest' }, { id: 'full-auto', name: 'Full auto' }] } });
+    return;
+  }
+  if (scenario === SCENARIOS.SESSION_NEW_FAILS) {
+    respondError(id, -32603, 'workspace could not be opened');
+    return;
+  }
   if (scenario === SCENARIOS.CONFIG_OPTIONS) {
     // Both mechanisms at once, as a mid-transition agent does (#17.2).
     respondResult(id, { sessionId, modes: MODE_STATE, configOptions: CONFIG_STATE });
