@@ -267,3 +267,23 @@ test('a second subscriber also sees sidecar/ready first -- a reloaded page must 
     await s.close();
   }
 });
+
+test('a client that drops in the middle of a POST does not take the bridge down', async () => {
+  // readBody rejects when the request is aborted; from an async handler that
+  // was an unhandled rejection, and Node's default is to exit -- a page
+  // reloaded during a large base64 course/write ended the bridge.
+  const { request } = await import('node:http');
+  const s = await start();
+  try {
+    await new Promise<void>((resolve) => {
+      const req = request(withToken(s, '/rpc'), { method: 'POST', headers: { origin: ORIGIN, 'content-length': '1000000' } });
+      req.on('error', () => resolve());
+      req.write('{"jsonrpc":"2.0","id":1,"method":"course/wr', () => setTimeout(() => req.destroy(), 50));
+    });
+    await new Promise((r) => setTimeout(r, 100));
+    const res = await fetch(withToken(s, '/health'), { headers: { origin: ORIGIN } });
+    assert.equal(res.status, 200, 'still answering');
+  } finally {
+    await s.close();
+  }
+});

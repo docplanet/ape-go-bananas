@@ -133,7 +133,17 @@ export async function serveSidecar(options: ServeOptions): Promise<SidecarServer
     res.writeHead(status, { 'content-type': 'text/plain' }).end(message);
   }
 
-  const http: HttpServer = createServer(async (req, res) => {
+  // Nothing thrown in a request may reach the process: an async handler's
+  // rejection is unhandled, and Node's default for that is to exit -- the
+  // bridge died when a page reloaded in the middle of a large POST.
+  const http: HttpServer = createServer((req, res) => {
+    handle(req, res).catch((err: unknown) => {
+      if (!res.headersSent) reject(res, 500, err instanceof Error ? err.message : String(err));
+      else res.destroy();
+    });
+  });
+
+  async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
     const url = new URL(req.url ?? '/', `http://${host}`);
     const origin = req.headers.origin ?? null;
 
@@ -222,13 +232,14 @@ export async function serveSidecar(options: ServeOptions): Promise<SidecarServer
           'content-length': stat.size,
           'cache-control': 'no-store',
         });
-        createReadStream(full).pipe(res);
+        // Gone between the stat and the open, or unreadable: end the response rather than throw from the stream.
+        createReadStream(full).on('error', () => res.destroy()).pipe(res);
         return;
       }
       default:
         return reject(res, 404, 'not found');
     }
-  });
+  }
 
   await new Promise<void>((resolve, reject) => {
     http.once('error', reject);
