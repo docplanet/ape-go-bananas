@@ -54,7 +54,11 @@ h1::before {
 }
 h1 .sep { color: var(--line); }
 h1 .what { font-size: 20px; letter-spacing: normal; color: var(--muted); font-weight: 400; }
-.tag { color: var(--muted); margin: 0 0 28px; }
+.expand {
+  margin: 6px 0 0; font-size: 12.5px; letter-spacing: .16em; text-transform: uppercase;
+  color: var(--muted); font-variation-settings: var(--voice-mono);
+}
+.tag { color: var(--muted); margin: 10px 0 28px; }
 code {
   background: var(--panel); border: 1px solid var(--line);
   border-radius: 4px; padding: 1px 5px; font-size: 90%;

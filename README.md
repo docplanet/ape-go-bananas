@@ -4,8 +4,8 @@ Deck-pipeline structural checks, a `.apkg` (Anki package) writer, a CLI over
 both, an ACP (Agent Client Protocol) client, and a stdio sidecar that exposes
 all of it to the desktop app in `app/` (`docs/APP.md`), in TypeScript. Every claim
 about what works here is backed by a command in [Status](#status) that was
-actually run. Nobody has defined what the letters stand for — none
-of this repo's code, comments, or docs do either.
+actually run. The letters stand for **Anki Process Engine**, which the method's own
+repository has been called all along and which the site now says out loud.
 
 ## Use it
 

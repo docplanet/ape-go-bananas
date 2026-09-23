@@ -48,7 +48,11 @@
     font-size: 42px; margin: 0; letter-spacing: -.01em; font-weight: 750;
     font-variation-settings: var(--voice-display);
   }
-  .tag { color: var(--muted); font-size: 18px; margin: 10px 0 34px; }
+  .expand {
+    margin: 8px 0 0; font-size: 12.5px; letter-spacing: .16em; text-transform: uppercase;
+    color: var(--muted); font-variation-settings: var(--voice-mono);
+  }
+  .tag { color: var(--muted); font-size: 18px; margin: 12px 0 34px; }
 
   /* The download is the one thing this page is for, so it gets the banana
      stripe the app gives its only forward action. */
@@ -101,6 +105,7 @@
 <body>
 <main>
   <div class="wordmark"><h1>A.P.E.</h1></div>
+  <p class="expand">Anki Process Engine</p>
   <p class="tag">Drop a lecture in. Review the cards. Get an Anki deck out.</p>
 
   <section class="cta">
