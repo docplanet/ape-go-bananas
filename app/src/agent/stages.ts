@@ -101,10 +101,11 @@ export function mountStages(rail: HTMLOListElement, bar: HTMLElement, gate: HTML
   let lastHeard = 0;
   let ticker: number | null = null;
   // Any traffic at all counts as a sign of life, including a tool call or a
-  // single token. Only session/update: it is the agent's own stream, so it
-  // cannot be kept alive by the shell's own polling.
+  // single token. Only agent/update -- the engine's forward of the agent's own
+  // session/update stream -- so it cannot be kept alive by the shell's own
+  // polling. Any session counts: the audit and the adjudicator run in their own.
   host.bus.onNotification((method) => {
-    if (busy && method === 'session/update') lastHeard = Date.now();
+    if (busy && method === 'agent/update') lastHeard = Date.now();
   });
   /** Stages the user asked to run again despite an artifact already existing. */
   const force = new Set<StageId>();
@@ -170,6 +171,11 @@ export function mountStages(rail: HTMLOListElement, bar: HTMLElement, gate: HTML
     // Under a minute of silence is ordinary: the agent is reading, or thinking.
     idle.textContent = quiet < QUIET_MS ? '' : `nothing heard for ${human(quiet)}`;
     idle.classList.toggle('stalled', quiet >= STALLED_MS);
+    // The count changes every second, so it is not what a screen reader hears:
+    // only crossing into quiet, and into stalled, is announced.
+    const said = bar.querySelector<HTMLElement>('.nb-said');
+    const state = quiet >= STALLED_MS ? 'The agent may be stalled: nothing heard for four minutes.' : quiet >= QUIET_MS ? 'Nothing heard from the agent for a minute.' : '';
+    if (said && said.textContent !== state) said.textContent = state;
   }
 
   // A later artifact implies the earlier steps: a folder with only deck.json
@@ -281,7 +287,7 @@ export function mountStages(rail: HTMLOListElement, bar: HTMLElement, gate: HTML
         }</span><strong>${esc(busy)}…</strong><span class="nb-hint">${
         through ? 'Each stage starts the next; it stops at the audit for you. Stop cancels the turn and ends the run.' : 'Watch the agent below. Stop cancels its turn.'
       }</span></div>
-        <div class="nb-run"><span class="nb-elapsed">0s</span><span class="nb-idle" role="status"></span></div>
+        <div class="nb-run"><span class="nb-elapsed">0s</span><span class="nb-idle" aria-hidden="true"></span><span class="nb-said sr-only" role="status"></span></div>
         <div class="nb-actions"><button type="button" data-stop="1" class="quiet">Stop</button></div>`;
       tick();
       return;
