@@ -5,7 +5,66 @@ what was learned, why the browser direction was abandoned, and what the next
 session should do. Nothing here is deleted work — read "What to keep" before
 touching anything.
 
-## Pick-up note, written 2026-09-20 (read this first)
+## Pick-up note, written 2026-09-22 (read this first)
+
+**A review pass with fresh eyes, and sixteen fixes from it** (`2dfafab` ..
+`31a1a14`, on `main`, not pushed). Four reviewers read the app shell, the
+Rust and workflows, the engine and the exporter; every finding acted on was
+read in the code first, and each fix that could be pinned by a test fails
+on the code before it. The 2026-09-20 note below is out of date on one
+point: `ui/bananas` is merged and pushed.
+
+What a v0.1.3 would carry, most visible first:
+
+- **Flag, the card counter and "go to card" in a packaged build.** The
+  review frame is srcdoc, inherits `script-src 'self'`, and its one inline
+  script was listed nowhere: blocked outside dev. Its sha256 is now in the
+  CSP, and `app/test/csp.test.ts` fails if they drift. Reproduced in a
+  browser with the same policy; **not yet clicked in a packaged build --
+  that is the first thing to check on v0.1.3.**
+- **Re-exporting an .apkg updated nothing -- it duplicated the deck.** Guids
+  and the notetype id came from the export clock. Guids are now
+  deck + notetype + stripped Text (the rule Send to Anki's duplicate check
+  uses); the notetype id is fixed. Proved against real Anki
+  (`anki-import.test.ts`: 7 notes after two imports, not 14). Anyone who
+  imported an older .apkg gets one more copy on the next import, then never
+  again.
+- **The stall clock called every stage stalled** (listened for
+  `session/update`; the engine sends `agent/update`).
+- **Stop** now cancels the audit and the adjudicator (the runner tracks its
+  live session); **Run to audit** stops on Stop; opening the deck no longer
+  clears another stage's busy state; a deck cannot be switched mid-run;
+  **old `verdicts.md` is removed once applied** (it was being re-applied, by
+  card number, to a changed deck); `audit.md`/`audit.json`/`verdicts.md` are
+  no longer listed as lecture material (they were linked into later prompts).
+- **OpenRouter:** one Stop no longer breaks the session for every later stage.
+- **The feed:** `verify` could not dispatch `pages` (403); `pages` could copy
+  a half-uploaded feed. Both fixed; the jq check was run against the live
+  feed and broken copies.
+- **Hardening:** a deck's media list cannot name files outside the deck
+  (they were shipped into Anki); `agents/uninstall {id:".."}` no longer
+  deletes the data dir; `course/delete` cannot climb out of `_extracted/`;
+  the bridge survives a dropped POST and has the right default origin; a
+  failed connect closes its agent; the engine restarts when it dies in a
+  release build and is asked to leave (stdin EOF) before it is killed;
+  CI compiles the Rust; third-party release actions are pinned by commit.
+
+**Not verified live:** the stage-flow changes (Stop, run-through, deck
+switching) and the engine restart were built, typechecked and read, not
+driven -- they need an agent and a window. One dev run through extract →
+audit, pressing Stop once during the audit, would cover most of it.
+
+**Left open from the review, lower stakes:** the exporter counts a cloze in
+Extra/Source or an unclosed `{{c2::` that the checker and the preview do
+not; an `<img src="sub/a.png">` makes the whole review throw, so the deck
+will not open; review.html's `file://` links are not URL-encoded (a `%` in a
+filename breaks the preview); the next-step bar can show over Home/Settings;
+`course/import` silently overwrites same-named files; the asset protocol's
+scope is all of `$HOME`; the OpenRouter loop re-sends attached PDFs every
+tool round; the bridge's 1000-line replay buffer can drop a pending
+permission request. Apple signing is still deferred.
+
+## Pick-up note, written 2026-09-20
 
 **The window has a look.** Branch `ui/bananas`, commit `3dd0afd`, not merged
 to `main` and not pushed. The placeholder palette in `docs/APP.md` is gone;
