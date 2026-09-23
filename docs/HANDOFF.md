@@ -137,7 +137,7 @@ app itself:
 `cd app && PATH=~/.nvm/versions/node/v24.12.0/bin:$PATH npm run app:dev`.
 The engine must be built first (`npm run build` at the root; the app
 imports `dist/pipeline` and spawns `dist/sidecar`). Decks live under
-`~/Library/Application Support/dev.docplanet.ape/decks/`.
+`~/Library/Application Support/com.ankiengine.ape/decks/`.
 
 **Known rough edges, deliberately left:** flagging a card uses
 `window.prompt`; no "start over" for a deck (re-running step 1 overwrites

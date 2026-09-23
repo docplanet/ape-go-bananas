@@ -22,7 +22,7 @@ async fn sidecar_answer(state: State<'_, Sidecar>, id: u64, result: Option<Value
 // API keys live in the OS credential store, never in a file the sidecar or
 // the webview can read at rest. The webview asks for one only to hand it to
 // `agent/connect`, and nothing logs it (agent-protocol.md §2, §5).
-const SECRET_SERVICE: &str = "dev.docplanet.ape";
+const SECRET_SERVICE: &str = "com.ankiengine.ape";
 
 #[tauri::command]
 fn secret_get(name: String) -> Result<Option<String>, String> {

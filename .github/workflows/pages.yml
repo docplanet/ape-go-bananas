@@ -44,6 +44,15 @@ jobs:
         run: |
           npm ci
           npm run build
+      # The updater feed lives on our own domain, so a rename or a move off
+      # GitHub cannot strand installed copies: tauri.conf points the app at
+      # ankiengine.com/latest.json and this copies the release's feed there.
+      # No fallback on failure -- a deploy that fails leaves the previous
+      # site, and its previous feed, serving. A placeholder would break
+      # updates for everyone silently.
+      - name: updater feed — copy the latest release's latest.json onto the site
+        run: curl -fsSL -o site/dist/latest.json "https://github.com/${{ github.repository }}/releases/latest/download/latest.json"
+
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

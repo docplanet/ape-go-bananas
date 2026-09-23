@@ -112,8 +112,8 @@ function packageVersion(): string {
 function dataDir(): string {
   if (process.env.APE_DATA_DIR) return process.env.APE_DATA_DIR;
   const home = homedir();
-  if (process.platform === 'darwin') return join(home, 'Library', 'Application Support', 'dev.docplanet.ape');
-  if (process.platform === 'win32') return join(process.env.APPDATA ?? join(home, 'AppData', 'Roaming'), 'dev.docplanet.ape');
+  if (process.platform === 'darwin') return join(home, 'Library', 'Application Support', 'com.ankiengine.ape');
+  if (process.platform === 'win32') return join(process.env.APPDATA ?? join(home, 'AppData', 'Roaming'), 'com.ankiengine.ape');
   return join(process.env.XDG_DATA_HOME ?? join(home, '.local', 'share'), 'ape');
 }
 

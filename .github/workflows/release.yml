@@ -185,3 +185,10 @@ jobs:
             exit 1
           fi
           echo "$tag is complete: every platform in latest.json, every stable-name asset present."
+
+      # The feed the app actually reads is the copy on ankiengine.com, so a
+      # release is not finished until the site has been rebuilt with it.
+      - name: refresh the updater feed on the site
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh workflow run pages --repo "$GITHUB_REPOSITORY" --ref main

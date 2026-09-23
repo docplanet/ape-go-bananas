@@ -541,7 +541,7 @@ The provider picker (`src/providers.ts`), chat pane (`src/chat.ts`), OS
 keychain for API keys (`secret_*` commands, `keyring` crate), and the reverse
 channel (`sidecar://request` event → `sidecar_answer` command). Verified by
 launching: the webview reached `agents/list` and the real registry was cached
-under `~/Library/Application Support/dev.docplanet.ape/`. Clicks through the
+under `~/Library/Application Support/com.ankiengine.ape/`. Clicks through the
 picker, sign-in, and chat in the running window are **not** verified from
 this session (no screen capture); every call they make is verified at the
 sidecar level above.
