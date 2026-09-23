@@ -183,8 +183,14 @@ export function mountAgentApp(host: EngineHost, opts: AgentAppOptions): AgentApp
     }
   }
 
-  /** Opens a deck's folder: the materials, the steps, and the chosen agent connected in it. */
-  async function openWorkspace(dir: string, name: string): Promise<boolean> {
+  /**
+   * Opens a deck's folder: the materials, the steps, and the chosen agent
+   * connected in it. `quiet` is for the deck remembered from last time, which
+   * may simply be gone -- renamed, deleted, on a disk that is not mounted.
+   * That is not a failure the person caused and should not be shouted at them
+   * in red on a screen they did not ask for.
+   */
+  async function openWorkspace(dir: string, name: string, quiet = false): Promise<boolean> {
     if (dir === courseDir) {
       show('agent');
       return true;
@@ -192,7 +198,8 @@ export function mountAgentApp(host: EngineHost, opts: AgentAppOptions): AgentApp
     try {
       await sidecar.listCourse(dir);
     } catch (err) {
-      say(err instanceof EngineError ? err.message : String(err), true);
+      if (quiet) say(`${basename(dir)} is not there any more — pick a deck, or start a new one`);
+      else say(err instanceof EngineError ? err.message : String(err), true);
       return false;
     }
     if (chat) {
@@ -397,7 +404,9 @@ export function mountAgentApp(host: EngineHost, opts: AgentAppOptions): AgentApp
     const given = host.courseRoot();
     const last = remember.get(REMEMBER.deck);
     const first = given ?? last;
-    if (first && !(await openWorkspace(first, basename(first)))) {
+    // `given` was asked for on the command line, so its failure is worth
+    // saying plainly; `last` is just where we were, and may be long gone.
+    if (first && !(await openWorkspace(first, basename(first), first === last && !given))) {
       remember.set(REMEMBER.deck, null);
       show('home');
     }
