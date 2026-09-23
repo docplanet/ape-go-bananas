@@ -1,4 +1,6 @@
 // Id and guid generation -- docs/research/apkg-format.md §8 and §6.
+
+import { sha1 } from './sha1.js';
 //
 // §8's practical recipe: seed a counter at "now" (milliseconds) and hand out
 // counter++ for every id needed across every table. Exact collision
@@ -52,17 +54,15 @@ function toBase91(value: bigint): string {
 const U64_MASK = (1n << 64n) - 1n;
 
 /**
- * A guid, unique within the file and deterministic in (clockMs, counter).
- * Not Anki's actual RNG-backed algorithm (doc §6 explains why that's not
- * required) -- this mixes the two inputs with fixed odd multipliers purely
- * so different notes at the same clock value don't collide, then base-91
- * encodes the result the same way Anki's own generator would. `counter`
- * is expected to already be unique per note (the note's own allocated id
- * does the job) so the mixing step doesn't have to work hard to avoid
- * collisions -- it only has to not be constant.
+ * A note's guid from what the note is, not when it was exported: the first
+ * 64 bits of sha1(key), base-91 encoded like Anki's own. Anki matches an
+ * imported note to an existing one by guid alone (doc §6), so a guid minted
+ * from the export clock made every re-export of a deck a second copy of it.
+ * The caller chooses the key; see buildCollection.
  */
-export function guidFor(clockMs: number, counter: number): string {
-  const mixed =
-    (BigInt(clockMs) * 1000003n + BigInt(counter) * 2654435761n + 0x9e3779b97f4a7c15n) & U64_MASK;
-  return toBase91(mixed === 0n ? 1n : mixed);
+export function contentGuid(key: string): string {
+  const digest = sha1(new TextEncoder().encode(key));
+  let value = 0n;
+  for (let i = 0; i < 8; i++) value = (value << 8n) | BigInt(digest[i]!);
+  return toBase91(value === 0n ? 1n : value);
 }

@@ -68,18 +68,20 @@ import sys, os, json, tempfile
 sys.path.insert(0, ${JSON.stringify(ANKI_PACKAGES)})
 from anki.collection import Collection
 
-apkg = sys.argv[1]
 tmp = tempfile.mkdtemp(prefix='ape_disposable_')
 col = Collection(os.path.join(tmp, 'collection.anki2'))
-try:
+# Every package named is imported, in order, into the same collection -- a
+# re-export of a deck is a second import on top of the first.
+for apkg in sys.argv[1:]:
     try:
-        from anki.collection import ImportAnkiPackageRequest, ImportAnkiPackageOptions
-        col.import_anki_package(ImportAnkiPackageRequest(package_path=apkg, options=ImportAnkiPackageOptions()))
-    except ImportError:
-        col.import_anki_package(apkg)
-except Exception as e:
-    print(json.dumps({"ok": False, "error": f"{type(e).__name__}: {e}"}))
-    col.close(); sys.exit(0)
+        try:
+            from anki.collection import ImportAnkiPackageRequest, ImportAnkiPackageOptions
+            col.import_anki_package(ImportAnkiPackageRequest(package_path=apkg, options=ImportAnkiPackageOptions()))
+        except ImportError:
+            col.import_anki_package(apkg)
+    except Exception as e:
+        print(json.dumps({"ok": False, "error": f"{type(e).__name__}: {e}"}))
+        col.close(); sys.exit(0)
 
 out = {
     "ok": True,
@@ -89,6 +91,7 @@ out = {
     "decks": [d.name for d in col.decks.all_names_and_ids()],
     "notetypes": [m.name for m in col.models.all_names_and_ids()],
     "media": sorted(os.listdir(col.media.dir())),
+    "extras": sorted(col.get_note(nid)["Extra"] for nid in col.find_notes('')),
 }
 col.close()
 print(json.dumps(out))
@@ -142,4 +145,36 @@ test('real Anki imports the exported package and generates the expected cards', 
   assert.ok(result.decks.includes(deckName), `deck ${deckName} should exist after import`);
   assert.ok(result.notetypes.includes('Custom Cloze'), 'the Custom Cloze notetype should be created');
   assert.ok(result.media.includes('slide.jpg'), 'referenced media should be installed into the profile');
+});
+
+test('real Anki: a re-export of the same deck updates its notes in place -- no second copy, no second notetype', (t) => {
+  const python = findAnkiPython();
+  if (python === null) {
+    t.skip('Anki desktop (or a matching python3.13) not found on this machine; re-import behaviour not verified.');
+    return;
+  }
+  // The owner fixes a card and exports again. Anki matches notes by guid and
+  // notetypes by id; both used to come from the export clock, so every
+  // re-export arrived as a whole second deck on a second "Custom Cloze".
+  const tempDir = makeTempDir('anki-reimport');
+  const notes = JSON.parse(readFileSync(new URL('../fixtures/reference-cards.json', import.meta.url), 'utf8')).notes as DeckNote[];
+  const deckName = notes[0].deckName;
+  const mediaDir = new URL('./fixtures/', import.meta.url).pathname;
+  const first = join(tempDir, 'first.apkg');
+  const second = join(tempDir, 'second.apkg');
+  writeApkg(notes, { deckName, outPath: first, mediaDir, clock: () => 1_700_000_000_000 });
+  // A day later, with one card's Extra corrected: the Text, and so the note's identity, is unchanged.
+  const edited = notes.map((n, i) => (i === 2 ? { ...n, fields: { ...n.fields, Extra: 'Corrected on the second export.' } } : n));
+  writeApkg(edited, { deckName, outPath: second, mediaDir, clock: () => 1_700_086_400_000 });
+
+  const scriptPath = join(tempDir, 'import_check.py');
+  writeFileSync(scriptPath, IMPORT_SCRIPT);
+  const result = JSON.parse(execFileSync(python, [scriptPath, first, second], { encoding: 'utf8' }).trim().split('\n').at(-1)!);
+
+  assert.equal(result.ok, true, `Anki rejected a package: ${result.error}`);
+  assert.equal(result.notes, 7, 'the second import updates the seven notes; it does not add seven more');
+  assert.equal(result.cards, 14);
+  assert.deepEqual(result.notetypes.filter((n: string) => n.startsWith('Custom Cloze')), ['Custom Cloze'], 'one Custom Cloze, reused -- not a renamed copy per import');
+  assert.ok(result.extras.includes('Corrected on the second export.'), 'the corrected Extra landed on the existing note');
+  assert.equal(result.extras.filter((e: string) => e === notes[2]!.fields.Extra).length, 6, 'and replaced the old one: only the six untouched notes keep theirs');
 });

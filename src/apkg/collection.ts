@@ -11,8 +11,18 @@ import type { OpenSqlite } from './sqlite.js';
 import { executeSchema } from './schema-sql.js';
 import { buildCustomClozeModel } from './notetype.js';
 import { CUSTOM_CLOZE_MODEL_NAME } from './notetype-source.js';
-import { IdAllocator, guidFor } from './ids.js';
+import { IdAllocator, contentGuid } from './ids.js';
 import { normalizeFieldText, stripHtmlPreservingMediaFilenames, fieldChecksum } from './text.js';
+
+/**
+ * The notetype's id, fixed. Anki matches an imported notetype by id before
+ * name (doc §5d): one taken from the export clock was new every time, so each
+ * import added another renamed "Custom Cloze" and hung that export's notes on
+ * it. Fixed, the second import finds the first one's and reuses it. It is a
+ * millisecond timestamp like any Anki id (2025-09-07, when the exporter was
+ * written), well clear of the ids handed out from the export clock.
+ */
+export const CUSTOM_CLOZE_MODEL_ID = 1_757_203_200_000;
 import { distinctClozeNumbers } from './cloze.js';
 
 // doc §5b, "Always include it, verbatim" -- the hardcoded id-1 deck every
@@ -136,7 +146,7 @@ export function buildCollection(notes: DeckNote[], options: BuildCollectionOptio
   const nowSeconds = Math.floor(clockMs / 1000); // doc §5: col.crt and every notes/cards `mod` are seconds
 
   const ids = new IdAllocator(clockMs);
-  const modelId = ids.next();
+  const modelId = CUSTOM_CLOZE_MODEL_ID;
   const deckId = ids.next();
 
   const models = { [String(modelId)]: buildCustomClozeModel(modelId, nowSeconds) };
@@ -169,6 +179,7 @@ export function buildCollection(notes: DeckNote[], options: BuildCollectionOptio
   const noteRows: NoteRow[] = [];
   const cardRows: CardRow[] = [];
   let dueCounter = 1; // doc §7: one counter, advanced once per NOTE, shared by that note's own cards
+  const seen = new Map<string, number>(); // guid key -> how many notes already had it
 
   for (const [noteIndex, note] of notes.entries()) {
     // Both fields are part of the AnkiConnect-shaped DeckNote a note
@@ -208,9 +219,22 @@ export function buildCollection(notes: DeckNote[], options: BuildCollectionOptio
     // whichever field sortf names").
     const strippedField0 = stripHtmlPreservingMediaFilenames(text);
 
+    // The guid is the note's identity across exports: the deck, the notetype
+    // and the first field as Anki strips it -- the same deck-scoped
+    // "same first field" rule Send to Anki's duplicate check applies
+    // (src/sidecar/anki.ts), so both routes agree on what is the same card.
+    // Re-exported unchanged, or with only Extra, Source or formatting
+    // changed, a note updates the one already in Anki; reworded, it arrives
+    // as a new note, as it would over AnkiConnect. A note whose stripped
+    // Text repeats an earlier one in this deck takes its occurrence number,
+    // which keeps guids unique within the file.
+    const key = [deckName, CUSTOM_CLOZE_MODEL_NAME, strippedField0].join('\x1f');
+    const occurrence = seen.get(key) ?? 0;
+    seen.set(key, occurrence + 1);
+
     noteRows.push({
       id: noteId,
-      guid: guidFor(clockMs, noteId),
+      guid: contentGuid(occurrence === 0 ? key : `${key}\x1f${occurrence}`),
       mid: modelId,
       mod: nowSeconds,
       usn: -1,

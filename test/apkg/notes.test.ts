@@ -55,11 +55,11 @@ interface NoteRow {
   data: string;
 }
 
-async function buildNotes(notes: DeckNote[]) {
+async function buildNotes(notes: DeckNote[], opts: { deckName?: string; clock?: () => number } = {}) {
   const tempDir = makeTempDir('notes');
   const outPath = join(tempDir, 'out.apkg');
   const mediaDir = makeEmptyMediaDir(tempDir);
-  await writeApkg(notes, { deckName: DECK_NAME, outPath, mediaDir, clock: fixedClock });
+  await writeApkg(notes, { deckName: opts.deckName ?? DECK_NAME, outPath, mediaDir, clock: opts.clock ?? fixedClock });
   const dbPath = extractZipMember(outPath, 'collection.anki21', tempDir);
   const db = openCollection(dbPath);
   const rows = db.prepare('SELECT * FROM notes ORDER BY id').all() as unknown as NoteRow[];
@@ -210,4 +210,35 @@ test('notes: every note shares the one Custom Cloze mid, and ids/guids are uniqu
   const guids = rows.map((r) => r.guid);
   assert.ok(guids.every((g) => typeof g === 'string' && g.length > 0));
   assert.equal(new Set(guids).size, guids.length, 'guids must be unique within the file (doc §6: exact algorithm not required)');
+});
+
+test('notes: a guid is the note, not the export -- the same across clocks, the notetype id too', async () => {
+  const shared = loadSharedNotes();
+  const a = await buildNotes(shared);
+  const b = await buildNotes(shared, { clock: () => FIXED_CLOCK_MS + 86_400_000 });
+  assert.deepEqual(b.rows.map((r) => r.guid), a.rows.map((r) => r.guid), 'Anki matches a re-import by guid: a clock-born guid made every re-export a second deck');
+  assert.deepEqual(b.modelIds, a.modelIds, 'and the notetype by id: a clock-born id made every import another "Custom Cloze"');
+  assert.notDeepEqual(b.rows.map((r) => r.id), a.rows.map((r) => r.id), 'note ids still come from the clock; only identity is fixed');
+});
+
+test('notes: the guid follows the Text as Anki strips it, within the deck -- Extra, Source and markup do not move it', async () => {
+  const base = makeNote('{{c1::Rome}} is the capital of Italy.', { deckName: DECK_NAME });
+  const [plain] = (await buildNotes([base])).rows;
+  const [extraEdited] = (await buildNotes([{ ...base, fields: { ...base.fields, Extra: 'since 1871', Source: 'lecture 3' } }])).rows;
+  const [bolded] = (await buildNotes([{ ...base, fields: { ...base.fields, Text: '<b>{{c1::Rome}}</b> is the capital of Italy.' } }])).rows;
+  const [reworded] = (await buildNotes([{ ...base, fields: { ...base.fields, Text: '{{c1::Rome}} is the capital city of Italy.' } }])).rows;
+  const other = 'Fixtures::Another Deck';
+  const [otherDeck] = (await buildNotes([{ ...base, deckName: other }], { deckName: other })).rows;
+  assert.equal(extraEdited!.guid, plain!.guid);
+  assert.equal(bolded!.guid, plain!.guid);
+  assert.notEqual(reworded!.guid, plain!.guid, 'reworded is a new note, as Send to Anki treats it');
+  assert.notEqual(otherDeck!.guid, plain!.guid, "deck-scoped, like Send to Anki's duplicateScope");
+});
+
+test('notes: two notes with the same Text in one deck still get distinct guids, stable across exports', async () => {
+  const twice = [makeNote('{{c1::Rome}} is the capital of Italy.', { deckName: DECK_NAME }), makeNote('{{c1::Rome}} is the capital of Italy.', { deckName: DECK_NAME })];
+  const a = (await buildNotes(twice)).rows.map((r) => r.guid);
+  const b = (await buildNotes(twice, { clock: () => FIXED_CLOCK_MS + 1 })).rows.map((r) => r.guid);
+  assert.equal(new Set(a).size, 2);
+  assert.deepEqual(b, a);
 });

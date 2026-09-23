@@ -629,6 +629,12 @@ notetype id, not a defect in this exporter; there is no way for an offline file 
 guess a live AnkiConnect session's notetype id. Worth surfacing to whoever writes the
 exporter as an expected (if slightly untidy) outcome, not a bug to chase.
 
+What *is* a bug to chase is the exporter's own id changing between exports: an id taken
+from the export clock matched nothing on every import, so each .apkg added one more renamed
+"Custom Cloze". The exporter now writes a fixed id (`CUSTOM_CLOZE_MODEL_ID` in
+`src/apkg/collection.ts`), so the second and later imports find the first one's notetype and
+reuse it.
+
 ---
 
 ## 6. `notes`
@@ -684,9 +690,20 @@ in `import/notes.rs`), and if this file's guid doesn't happen to match anything 
 there, the note is simply added as new — with its numeric `id` silently bumped
 (`+= 999`, repeatedly) if it collides with an id already in the destination
 (`uniquify_note_id`, same file). So any short, unique-within-this-file opaque string is
-sufficient; replicating the algorithm above just produces a value indistinguishable from
+sufficient *for one import*; replicating the algorithm above just produces a value indistinguishable from
 one Anki would have generated itself, which is a reasonable bar to hold given how cheap it
 is (a 64-bit random number and a base-91 encode).
+
+**But the guid is also the note's identity across imports**, and that decides what a
+re-export does. The exporter first minted guids from the export clock; every re-export of a
+deck then matched nothing and arrived as a complete second copy (reproduced in Anki 26:
+seven notes became fourteen). It now takes the first 64 bits of
+`sha1(deckName ␟ notetype name ␟ field-0 as stripped for csum)`, with an occurrence number
+appended when that repeats within the deck, base-91 encoded as above. That is the same
+deck-scoped "same first field" rule the AnkiConnect route's duplicate check uses
+(`duplicateScope: 'deck'`), so an unchanged or Extra-only edit updates the existing note in
+place, and a reworded card arrives as a new note on both routes. Pinned by
+`test/apkg/notes.test.ts` and the real-Anki re-import in `test/apkg/anki-import.test.ts`.
 
 ### `sfld` and `csum` — the exact algorithm, verified two ways
 

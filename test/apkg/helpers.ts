@@ -24,11 +24,12 @@ import type { DeckNote } from '../../dist/types.js';
  * checks on col.mod/notes.mod/cards.mod possible at all -- see
  * docs/research/apkg-format.md §8: "seed a counter at Date.now()... when the
  * exporter starts". writeApkg's `clock` option is the injection point; the
- * implementation must derive every id/timestamp (and, per the API contract
- * this suite pins, every note guid) from clock()'s return value and its own
- * counter state, never from a fresh Date.now()/Math.random()/
- * crypto.randomUUID() call, or determinism.test.ts cannot pass no matter how
- * the rest of the exporter is written.
+ * implementation must derive every id/timestamp from clock()'s return value
+ * and its own counter state, and every note guid from the note itself, never
+ * from a fresh Date.now()/Math.random()/crypto.randomUUID() call, or
+ * determinism.test.ts cannot pass no matter how the rest of the exporter is
+ * written. (Guids once rode on the clock too; that made every re-export a
+ * second copy of the deck in Anki -- notes.test.ts pins why they do not.)
  */
 export const FIXED_CLOCK_MS = 1_700_000_000_000;
 export const fixedClock = (): number => FIXED_CLOCK_MS;

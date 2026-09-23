@@ -2,18 +2,13 @@
 // produce byte-identical output.
 //
 // This is only satisfiable at all if `clock` is the SOLE source of
-// nondeterminism in the exporter: every id, every mod/crt/scm timestamp, and
-// -- per this suite's own pinned reading of the API (see helpers.ts and the
-// review notes returned alongside this suite) -- every note guid must be a
-// deterministic function of clock()'s return value and the writer's own
-// counter state, never a fresh Date.now(), Math.random(), or
-// crypto.randomUUID() call. The pinned options carry no separate seed for
-// guid randomness, so guid generation has to ride on `clock` too for this
-// file to be satisfiable by any implementation. This is flagged clearly
-// because it is a design constraint this suite is imposing on the
-// implementation, not something apkg-format.md states outright -- the doc's
-// own §6 guid discussion only says the exact algorithm is not required for
-// Anki-import correctness, not that it must be clock-derived.
+// nondeterminism in the exporter: every id and every mod/crt/scm timestamp
+// must be a deterministic function of clock()'s return value and the
+// writer's own counter state, never a fresh Date.now(), Math.random(), or
+// crypto.randomUUID() call. Note guids and the notetype id are fixed by the
+// notes themselves, not the clock -- that is what lets a re-export update
+// the notes already in Anki (notes.test.ts, anki-import.test.ts) -- so they
+// are deterministic here for a stronger reason than the clock.
 //
 // A second check (the "different clock" case) guards the inverse failure
 // mode: an implementation that hardcodes every timestamp/id regardless of
