@@ -135,7 +135,7 @@ const COURSE_FILES: Array<[string, string | Buffer, string, string]> = [
   ['weird.xyz', 'unknown extension\n', 'other', 'application/octet-stream'],
 ];
 const SKIPPED = ['.DS_Store', '.hidden/secret.md', 'node_modules/x/index.js'];
-const ARTIFACTS = ['inventory.md', 'plan.md', 'deck.json', 'flags.json', 'review.html', 'out.apkg'];
+const ARTIFACTS = ['inventory.md', 'plan.md', 'deck.json', 'flags.json', 'review.html', 'audit.md', 'audit.json', 'verdicts.md', 'out.apkg'];
 const NO_ARTIFACTS = { inventory: false, plan: false, deck: false, flags: false, review: false };
 const EXPECTED_FILES = COURSE_FILES.map(([relPath, content, kind, mimeType]) => ({ name: basename(relPath), relPath, bytes: bytesOf(content), kind, mimeType }));
 

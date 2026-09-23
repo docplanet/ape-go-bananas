@@ -7,7 +7,10 @@ import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync,
 import { basename, dirname, extname, join, relative, resolve, sep } from 'node:path';
 import { InvalidParams, type MethodHandler } from './methods.js';
 
-const ARTIFACTS = ['inventory.md', 'plan.md', 'deck.json', 'flags.json', 'review.html'] as const;
+// What the stages write beside the material. None of it is material: listed,
+// it became a tile on the deck screen and a "material" linked into the next
+// stage's prompt, so the writer was handed the audit of its own deck as a source.
+const ARTIFACTS = ['inventory.md', 'plan.md', 'deck.json', 'flags.json', 'review.html', 'audit.md', 'audit.json', 'verdicts.md'] as const;
 // Where the page puts what it extracted from a source file: text.md and one
 // image per page under `_extracted/<relPath of the source>/`. Not material,
 // so not listed as files; reported as `extracted` instead.
@@ -112,7 +115,7 @@ function listFiles(root: string, dir: string, out: { name: string; relPath: stri
     }
     if (!entry.isFile()) continue;
     const rel = relative(root, full).split(sep).join('/');
-    if (dir === root && ((ARTIFACTS as readonly string[]).includes(entry.name) || entry.name.toLowerCase().endsWith('.apkg'))) continue;
+    if (dir === root && (ARTIFACTS as readonly string[]).includes(entry.name)) continue;
     if (entry.name.toLowerCase().endsWith('.apkg')) continue;
     out.push({ name: entry.name, relPath: rel, bytes: statSync(full).size, ...classify(entry.name) });
   }

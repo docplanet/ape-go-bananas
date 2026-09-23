@@ -33,7 +33,8 @@ params `{ path }` (a directory) →
 file under `path`, recursive, sorted by `relPath`, skipping entries whose
 name starts with `.`, `node_modules`, the top-level `_extracted/` tree, and
 the artifacts themselves (`inventory.md`, `plan.md`, `deck.json`,
-`flags.json`, `review.html`, `*.apkg`). `kind` by extension: `pdf`; `image` (png jpg jpeg gif webp);
+`flags.json`, `review.html`, `audit.md`, `audit.json`, `verdicts.md`,
+`*.apkg`). `kind` by extension: `pdf`; `image` (png jpg jpeg gif webp);
 `audio` (mp3 m4a wav aac ogg flac); `video` (mp4 mov webm mkv); `text` (md
 txt vtt srt csv json html); `slides` (pptx ppt key odp); `doc` (docx doc
 pages rtf); else `other`. `mimeType` is the usual one for the extension,
