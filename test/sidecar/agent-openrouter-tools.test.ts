@@ -63,6 +63,24 @@ function pairFor(updates: Update[], toolCallId: string): { call: Update; update:
 const toolMessages = (body: any): Array<{ role: string; tool_call_id: string; content: unknown }> => body.messages.filter((m: { role: string }) => m.role === 'tool');
 const contentText = (c: unknown): string => (typeof c === 'string' ? c : Array.isArray(c) ? c.map((p: { text?: string }) => p.text ?? '').join('') : '');
 
+/**
+ * Every assistant tool call in a request body is answered by a tool message
+ * before the next assistant or user message. A real provider refuses a history
+ * that breaks this with a 400; the fake does not, so it is checked here.
+ */
+function assertToolCallsAnswered(body: any, where: string): void {
+  const msgs = body.messages as Array<{ role: string; tool_call_id?: string; tool_calls?: Array<{ id: string }> }>;
+  msgs.forEach((m, i) => {
+    if (m.role !== 'assistant' || !m.tool_calls?.length) return;
+    const answered = new Set<string>();
+    for (const n of msgs.slice(i + 1)) {
+      if (n.role !== 'tool') break;
+      answered.add(n.tool_call_id!);
+    }
+    for (const call of m.tool_calls) assert.ok(answered.has(call.id), `${where}: tool call ${call.id} (message ${i}) has no tool message after it`);
+  });
+}
+
 test('a tool round: list_dir + read_file announced, executed, fed back as tool messages, then end_turn (§4)', { timeout: TIMEOUT }, async () => {
   const c = await connectWithFiles();
   fake.enqueue(
@@ -332,10 +350,40 @@ test('a model that never stops calling tools is cut off at 50 rounds with stopRe
   // Every round fed the previous result back: the last body holds 50 tool messages.
   assert.equal(toolMessages(fake.chatRequests()[n - 1].body).length, n - 1);
 
-  // The session is still usable afterwards.
+  // The session is still usable afterwards, with a history a provider accepts:
+  // the round that hit the cap is answered, "not run", before the next prompt.
   fake.fallback = null;
   fake.enqueue(textTurn('calm'));
   expectStop(await runPrompt(c.s, c.sessionId, [text('ok?')]), 'end_turn');
+  const followUp = fake.chatRequests().at(-1)!.body;
+  assertToolCallsAnswered(followUp, 'the prompt after max_turn_requests');
+  assert.match(contentText(toolMessages(followUp).at(-1)!.content), /not run/i);
+  assert.equal(await c.s.end(), 0);
+});
+
+test('a turn cancelled while a write waits for permission leaves every tool call answered, so the next prompt is well-formed (§3, §4)', { timeout: TIMEOUT }, async () => {
+  const c = await connectWithFiles();
+  // Two calls in one round: the write waits on permission, the read after it never runs.
+  fake.enqueue(toolCallsTurn([
+    { id: 'call_w', name: 'write_file', args: { path: 'held.txt', content: 'x' } },
+    { id: 'call_r', name: 'read_file', args: { path: 'notes.md' } },
+  ]));
+  const pending = runPrompt(c.s, c.sessionId, [systemBlock(SYSTEM), text('write then read')], { answer: () => new Promise<never>(() => undefined) });
+  await new Promise<void>((resolve) => {
+    const tick = () => (c.s.lines.some((l) => l.json?.method === 'agent/requestPermission') ? resolve() : setTimeout(tick, 15));
+    tick();
+  });
+  assert.deepEqual((await c.s.request(freshId(), 'agent/cancel', { sessionId: c.sessionId })).result, {});
+  expectStop(await pending, 'cancelled');
+  assert.ok(!existsSync(join(c.cwd, 'held.txt')), 'the write was never allowed');
+
+  fake.enqueue(textTurn('Fine.'));
+  expectStop(await runPrompt(c.s, c.sessionId, [text('carry on')]), 'end_turn');
+  const followUp = fake.chatRequests().at(-1)!.body;
+  assertToolCallsAnswered(followUp, 'the prompt after a cancelled turn');
+  const answers = toolMessages(followUp);
+  assert.deepEqual(answers.map((m) => m.tool_call_id), ['call_w', 'call_r']);
+  assert.match(contentText(answers[1]!.content), /not run/i);
   assert.equal(await c.s.end(), 0);
 });
 

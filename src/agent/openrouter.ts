@@ -189,13 +189,29 @@ class Session implements EmbeddedSession {
       this.history.push(assistant);
 
       if (!calls.length) return stopReasonOf(acc.finishReason);
-      if (toolRounds >= MAX_TOOL_ROUNDS) return 'max_turn_requests';
+      // Every tool call in the history is answered before the turn ends, run
+      // or not: a call with no tool message after it is a request providers
+      // refuse, and the session is reused -- one Stop during a permission
+      // prompt used to fail every later stage on the connection.
+      const unanswered = (from: number, why: string): void => {
+        for (const call of calls.slice(from)) this.history.push({ role: 'tool', tool_call_id: call.id, name: call.name, content: why });
+      };
+      if (toolRounds >= MAX_TOOL_ROUNDS) {
+        unanswered(0, `Not run: this turn reached its limit of ${MAX_TOOL_ROUNDS} tool rounds.`);
+        return 'max_turn_requests';
+      }
       toolRounds++;
-      for (const call of calls) {
-        if (signal.aborted) return 'cancelled';
+      for (const [i, call] of calls.entries()) {
+        if (signal.aborted) {
+          unanswered(i, 'Not run: the user cancelled the turn.');
+          return 'cancelled';
+        }
         const text = await this.runTool(call.id, call.name, call.arguments, signal);
-        if (signal.aborted) return 'cancelled';
         this.history.push({ role: 'tool', tool_call_id: call.id, name: call.name, content: text });
+        if (signal.aborted) {
+          unanswered(i + 1, 'Not run: the user cancelled the turn.');
+          return 'cancelled';
+        }
       }
     }
   }
