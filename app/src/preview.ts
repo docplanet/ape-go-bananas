@@ -5,6 +5,7 @@
 // card; if the review page changes in the engine, this pane changes with it,
 // and the card the person studies in Anki is the card they see here.
 import { convertFileSrc } from '@tauri-apps/api/core';
+import { FLAG_SCRIPT_BODY } from './flag-script.js';
 
 // renderReview points images at file:// paths under the media dir. A Tauri
 // webview cannot load file:// from its own origin; the asset protocol can,
@@ -13,46 +14,10 @@ function rewriteFileUrls(html: string): string {
   return html.replace(/src="file:\/\/([^"]+)"/g, (_m, path: string) => `src="${convertFileSrc(decodeURIComponent(path))}"`);
 }
 
-// The only script that runs inside the review. It adds the per-card Flag
-// button, scrolls to a card when the app asks, and says which card is at the
-// top so the app's counter stays true when the person scrolls by hand. The
-// frame has no same-origin, so this is the whole conversation.
-const FLAG_SCRIPT = `<script>
-const arts = Array.prototype.slice.call(document.querySelectorAll('article'));
-arts.forEach((a, i) => {
-  const b = document.createElement('button');
-  b.textContent = 'Flag';
-  b.className = 'flag';
-  b.style.cssText = 'float:right;margin-left:8px';
-  b.onclick = () => parent.postMessage({ type: 'ape:flag', noteIndex: i }, '*');
-  a.querySelector('.idx').prepend(b);
-});
-window.addEventListener('message', (e) => {
-  if (!e.data) return;
-  if (e.data.type === 'ape:flagged') {
-    arts.forEach((a, i) => {
-      a.style.outline = e.data.indexes.includes(i) ? '2px solid #E0B81C' : '';
-    });
-  }
-  if (e.data.type === 'ape:goto' && arts[e.data.index]) {
-    arts[e.data.index].scrollIntoView({ block: 'start', behavior: 'smooth' });
-  }
-});
-let queued = false;
-window.addEventListener('scroll', () => {
-  if (queued) return;
-  queued = true;
-  requestAnimationFrame(() => {
-    queued = false;
-    for (let i = 0; i < arts.length; i++) {
-      if (arts[i].getBoundingClientRect().bottom > 40) {
-        parent.postMessage({ type: 'ape:at', index: i }, '*');
-        return;
-      }
-    }
-  });
-}, { passive: true });
-</script>`;
+const FLAG_SCRIPT = `<script>${FLAG_SCRIPT_BODY}</script>`;
+
+/** The frame mounted last; a new deck replaces it, and its listener goes with it. */
+let unmountLast: (() => void) | null = null;
 
 export interface Preview {
   /** Rings the cards the owner has flagged. */
@@ -69,6 +34,7 @@ export interface PreviewOptions {
 }
 
 export function mountPreview(host: HTMLElement, html: string, opts: PreviewOptions): Preview {
+  unmountLast?.();
   host.replaceChildren();
   const frame = document.createElement('iframe');
   frame.className = 'preview-frame';
@@ -83,10 +49,19 @@ export function mountPreview(host: HTMLElement, html: string, opts: PreviewOptio
     if (data?.type === 'ape:at' && Number.isInteger(data.index)) opts.onAt?.(data.index!);
   };
   window.addEventListener('message', listener);
+  unmountLast = () => window.removeEventListener('message', listener);
+
+  // The deck's stored flags are marked straight after mounting, before the
+  // frame's script is listening, and that message is simply lost. The last
+  // marking is kept and sent again once the frame has loaded.
+  let flagged: number[] = [];
+  const mark = (): void => frame.contentWindow?.postMessage({ type: 'ape:flagged', indexes: flagged }, '*');
+  frame.addEventListener('load', mark);
 
   return {
     markFlagged(indexes) {
-      frame.contentWindow?.postMessage({ type: 'ape:flagged', indexes }, '*');
+      flagged = indexes;
+      mark();
     },
     goto(index) {
       frame.contentWindow?.postMessage({ type: 'ape:goto', index }, '*');

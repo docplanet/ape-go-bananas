@@ -161,6 +161,15 @@ function makeDeckView(sidecar: SidecarClient, say: (text: string, isError?: bool
       renderFlags();
       say(check.clean ? 'checks clean' : `${check.result.findings.length} finding(s)`, !check.clean);
     } catch (err) {
+      // Whatever was open before is not this deck: left up, its Export, Send
+      // and Flag acted on the previous deck while the rail named this one.
+      deckPath = null;
+      flags = [];
+      cards = 0;
+      preview = null;
+      $('preview').replaceChildren();
+      $('work').hidden = true;
+      $('drop').hidden = false;
       say(err instanceof EngineError ? `${err.message} (code ${err.code})` : String(err), true);
     }
   }
