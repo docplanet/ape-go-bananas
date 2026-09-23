@@ -147,18 +147,39 @@
   const dl = document.getElementById('dl'), info = document.getElementById('dlinfo'), all = document.getElementById('all');
   let rel;
   try { rel = await (await fetch('https://api.github.com/repos/planetjc/ape-go-bananas/releases/latest')).json(); } catch { info.textContent = 'Downloads are on the GitHub release page.'; return; }
-  const assets = (rel.assets || []).filter(a => !/\.sig$|latest\.json|\.tar\.gz$/.test(a.name));
+  // The stable names only: every release also carries the same files under
+  // versioned names, and listing both showed each download twice.
+  const assets = (rel.assets || []).filter(a => /^APE-/.test(a.name) && !/\.sig$/.test(a.name));
   const pick = (re) => assets.find(a => re.test(a.name));
-  const ua = navigator.userAgent, plat = navigator.platform || '';
-  let best, label;
+  const plat = navigator.platform || '';
+  let best, label, other = null;
   if (/Mac/.test(plat)) {
-    // Apple silicon Safari/Chrome report x86 in navigator; WebGL renderer is the usual tell.
-    let arm = false;
-    try { const gl = document.createElement('canvas').getContext('webgl'); const ext = gl && gl.getExtension('WEBGL_debug_renderer_info'); const r = ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : ''; arm = /Apple (M\d|GPU)/i.test(r); } catch {}
-    best = arm ? pick(/aarch64\.dmg$/) : pick(/x64\.dmg$/); label = arm ? 'macOS · Apple silicon' : 'macOS · Intel';
+    // Every Mac browser says "Intel" in navigator, so only positive evidence
+    // of Intel counts, and anything else gets the Apple-silicon build: the
+    // WebGL renderer names an Intel or AMD GPU on an Intel Mac, and Chromium
+    // reports the architecture outright. Firefox and recent Safari hide the
+    // renderer, which is how an M-series Mac was offered the Intel build.
+    let intel = false;
+    try {
+      const gl = document.createElement('canvas').getContext('webgl');
+      const ext = gl && gl.getExtension('WEBGL_debug_renderer_info');
+      const r = gl ? String(gl.getParameter(ext ? ext.UNMASKED_RENDERER_WEBGL : gl.RENDERER)) : '';
+      intel = /Intel|AMD|Radeon/i.test(r) && !/Apple (M\d|GPU)/i.test(r);
+    } catch {}
+    try {
+      const hints = await navigator.userAgentData?.getHighEntropyValues(['architecture']);
+      if (hints?.architecture) intel = hints.architecture === 'x86';
+    } catch {}
+    best = pick(intel ? /macos-intel\.dmg$/ : /macos-arm64\.dmg$/);
+    label = intel ? 'macOS · Intel' : 'macOS · Apple silicon';
+    other = intel ? { a: pick(/macos-arm64\.dmg$/), text: 'Apple silicon (M1 and later)?' } : { a: pick(/macos-intel\.dmg$/), text: 'An Intel Mac?' };
   } else if (/Win/.test(plat)) { best = pick(/setup\.exe$/); label = 'Windows'; }
   else if (/Linux/.test(plat)) { best = pick(/\.AppImage$/); label = 'Linux · AppImage'; }
-  if (best) { dl.href = best.browser_download_url; dl.textContent = `Download for ${label}`; info.textContent = `${rel.tag_name} · ${(best.size / 1e6).toFixed(0)} MB`; }
+  if (best) {
+    dl.href = best.browser_download_url; dl.textContent = `Download for ${label}`;
+    info.textContent = `${rel.tag_name} · ${(best.size / 1e6).toFixed(0)} MB`;
+    if (other?.a) info.insertAdjacentHTML('beforeend', ` · ${other.text} <a href="${other.a.browser_download_url}">this one</a>`);
+  }
   else info.textContent = `${rel.tag_name} — pick your platform below.`;
   all.innerHTML = assets.map(a => `<li><a href="${a.browser_download_url}">${a.name}</a> <span style="color:inherit;opacity:.7">${(a.size / 1e6).toFixed(0)} MB</span></li>`).join('');
 })();
