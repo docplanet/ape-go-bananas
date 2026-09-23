@@ -3,7 +3,7 @@
 // sidecar-protocol.md (message text via check-deck-contract.md §1.6, whose
 // templates the loader owes) only -- see helpers.ts's header.
 import assert from 'node:assert/strict';
-import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import test, { after } from 'node:test';
@@ -313,5 +313,30 @@ test('deck/check, deck/review and deck/export read images through the deck\'s ow
   assert.deepEqual(out.unresolvedMedia, []);
   const manifest = JSON.parse(readZipMember(out.outPath, 'media').toString('utf8'));
   assert.deepEqual(manifest, { '0': 'isf-biochem-09-slide-03.jpg' });
+  assert.equal(await s.end(), 0);
+});
+
+test('a media entry that points outside the deck\'s folder is refused, not read, packed or sent (apkg-format §3 note)', { timeout: TIMEOUT }, async () => {
+  // deck.json is agent-written, and a media path is read and shipped into the
+  // Anki collection. Absolute, climbing, or through a link: all refused.
+  const root = makeTmpDir('ape-sidecar-media-escape-');
+  const dir = join(root, 'deck');
+  mkdirSync(dir);
+  const secret = join(root, 'secret.jpg');
+  writeFileSync(secret, readFileSync(join(import.meta.dirname, '..', 'apkg', 'fixtures', 'slide.jpg')));
+  symlinkSync(secret, join(dir, 'innocent.jpg'));
+  const note = { deckName: 'Fixtures::Escape', modelName: 'Custom Cloze', fields: { Text: '{{c1::Rome}} is the capital of Italy.', Extra: '<img src="s.jpg">', Source: '' }, tags: [] };
+  const s = spawnSidecar({ mediaDir: join(root, 'no-media') });
+  await s.ready;
+  let id = 0;
+  for (const path of [secret, '../secret.jpg', 'innocent.jpg']) {
+    const deckPath = join(dir, 'deck.json');
+    writeFileSync(deckPath, JSON.stringify({ deckName: 'Fixtures::Escape', media: [{ filename: 's.jpg', path }], notes: [note] }));
+    for (const method of ['deck/export', 'deck/review']) {
+      const res = await s.request(++id, method, { path: deckPath });
+      assert.ok(res.error, `${method} with media path ${path} must fail`);
+      assert.match(res.error.message, /outside the deck's folder/);
+    }
+  }
   assert.equal(await s.end(), 0);
 });
