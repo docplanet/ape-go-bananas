@@ -135,6 +135,9 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      # `gh workflow run pages` below: without it the dispatch is a 403, the
+      # job goes red on a complete release, and the site keeps the old feed.
+      actions: write
     steps:
       - name: the release covers every platform
         shell: bash

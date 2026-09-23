@@ -16,6 +16,11 @@ permissions:
   contents: read
   pages: write
   id-token: write
+# One deploy at a time, and none cancelled halfway: the release's own
+# dispatch must not be dropped for a push that happened to start first.
+concurrency:
+  group: pages
+  cancel-in-progress: false
 jobs:
   deploy:
     environment:
@@ -47,11 +52,33 @@ jobs:
       # The updater feed lives on our own domain, so a rename or a move off
       # GitHub cannot strand installed copies: tauri.conf points the app at
       # ankiengine.com/latest.json and this copies the release's feed there.
-      # No fallback on failure -- a deploy that fails leaves the previous
-      # site, and its previous feed, serving. A placeholder would break
-      # updates for everyone silently.
-      - name: updater feed — copy the latest release's latest.json onto the site
-        run: curl -fsSL -o site/dist/latest.json "https://github.com/${{ github.repository }}/releases/latest/download/latest.json"
+      #
+      # Only a complete feed is copied. The version bump that goes out with a
+      # tag touches package.json, which runs this workflow while the release's
+      # four builds are still uploading -- and "latest" is already the new,
+      # half-filled release. A feed missing a platform is kept off the site and
+      # the one being served now stays; release.yml's verify dispatches this
+      # again once the release is whole. No placeholder, ever: a deploy that
+      # cannot produce a good feed fails and leaves the previous site serving.
+      - name: updater feed — copy the latest release's latest.json onto the site, if it is complete
+        shell: bash
+        run: |
+          set -euo pipefail
+          complete() {
+            for p in darwin-aarch64 darwin-x86_64 linux-x86_64 windows-x86_64; do
+              jq -e --arg p "$p" '.platforms[$p] | (.url // "") != "" and (.signature // "") != ""' "$1" >/dev/null || return 1
+            done
+          }
+          curl -fsSL -o release.json "https://github.com/${{ github.repository }}/releases/latest/download/latest.json"
+          if complete release.json; then
+            cp release.json site/dist/latest.json
+            echo "feed: $(jq -r .version release.json) from the latest release"
+          else
+            echo "::warning::the latest release's feed ($(jq -r .version release.json)) is not complete yet; keeping the one on the site"
+            curl -fsSL -o site/dist/latest.json https://ankiengine.com/latest.json
+            complete site/dist/latest.json
+            echo "feed: $(jq -r .version site/dist/latest.json), unchanged"
+          fi
 
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
