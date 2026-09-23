@@ -43,7 +43,7 @@ export interface ServeOptions {
   /** Loopback only; anything else is refused before listening. */
   host?: string;
   token: string;
-  /** Exact origins, e.g. `https://docplanet.github.io`. */
+  /** Exact origins, e.g. `https://planetjc.github.io`. */
   allowedOrigins: readonly string[];
   /** Runs when a `sidecar/shutdown` request is handled. */
   onShutdown?: () => void;

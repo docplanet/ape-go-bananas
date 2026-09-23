@@ -35,11 +35,11 @@
   <p class="tag">Drop a lecture in. Review the cards. Get an Anki deck out.</p>
 
   <section class="cta">
-    <a class="btn" id="dl" href="https://github.com/docplanet/ape-go-bananas/releases/latest">Download</a>
+    <a class="btn" id="dl" href="https://github.com/planetjc/ape-go-bananas/releases/latest">Download</a>
     <div class="small" id="dlinfo">Finding the right build for your computer…</div>
     <div class="others">
       <div>All downloads:</div>
-      <ul id="all"><li><a href="https://github.com/docplanet/ape-go-bananas/releases/latest">release page on GitHub</a></li></ul>
+      <ul id="all"><li><a href="https://github.com/planetjc/ape-go-bananas/releases/latest">release page on GitHub</a></li></ul>
     </div>
   </section>
 
@@ -63,13 +63,13 @@
   <h2>Nothing leaves your machine except what you send the agent</h2>
   <p>No accounts, no server, no telemetry. Your course folder stays where it is; every artifact is written beside it. API keys go to your OS keychain. Updates are checked on launch and installed only when you click.</p>
 
-  <footer>Free and open source · <a href="https://github.com/docplanet/ape-go-bananas">source and issues on GitHub</a> · the method the app follows lives in <a href="https://github.com/docplanet/anki-process-engine-live">its own repository</a>.</footer>
+  <footer>Free and open source · <a href="https://github.com/planetjc/ape-go-bananas">source and issues on GitHub</a> · the method the app follows lives in <a href="https://github.com/planetjc/anki-process-engine-live">its own repository</a>.</footer>
 </main>
 <script>
 (async () => {
   const dl = document.getElementById('dl'), info = document.getElementById('dlinfo'), all = document.getElementById('all');
   let rel;
-  try { rel = await (await fetch('https://api.github.com/repos/docplanet/ape-go-bananas/releases/latest')).json(); } catch { info.textContent = 'Downloads are on the GitHub release page.'; return; }
+  try { rel = await (await fetch('https://api.github.com/repos/planetjc/ape-go-bananas/releases/latest')).json(); } catch { info.textContent = 'Downloads are on the GitHub release page.'; return; }
   const assets = (rel.assets || []).filter(a => !/\.sig$|latest\.json|\.tar\.gz$/.test(a.name));
   const pick = (re) => assets.find(a => re.test(a.name));
   const ua = navigator.userAgent, plat = navigator.platform || '';

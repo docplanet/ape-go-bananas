@@ -391,10 +391,10 @@ wasteful.
   `spawnClaudeCodeProcess` hook ("custom spawn logic for VM execution") may
   be useful later.
 - **Method files** live in their own repo
-  (`docplanet/anki-process-engine-live`), fetched at run time. `SETUP.md`
+  (`planetjc/anki-process-engine-live`), fetched at run time. `SETUP.md`
   sits at the repository root, not in `method/` — the bridge fetches both.
 - The live tool page is
-  <https://docplanet.github.io/ape-go-bananas/tool/>; `pages.yml` deploys it
+  <https://planetjc.github.io/ape-go-bananas/tool/>; `pages.yml` deploys it
   on every push to `main`.
 
 ---

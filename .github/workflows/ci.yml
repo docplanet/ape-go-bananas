@@ -28,7 +28,7 @@ jobs:
           path: APE
       - uses: actions/checkout@v4
         with:
-          repository: docplanet/anki-process-engine-live
+          repository: planetjc/anki-process-engine-live
           path: Anki
 
       # Node 24 is not a preference: the engine imports node:sqlite, which

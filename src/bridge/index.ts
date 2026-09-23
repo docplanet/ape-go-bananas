@@ -23,12 +23,12 @@ import type { SidecarInfo } from '../sidecar/methods.js';
 
 const NODE_FLOOR = 20;
 const DEFAULT_PORT = 9100;
-const DEFAULT_SITE = 'https://docplanet.github.io/ape-go-bananas/tool/';
+const DEFAULT_SITE = 'https://planetjc.github.io/ape-go-bananas/tool/';
 // The method is prose that lives in its own repository and is read at run
 // time, unmodified (docs/APP.md). The desktop app bundles a copy at build
 // time; a package installed with npx has no build step on the user's machine,
 // so the bridge fetches the same files once into its data directory.
-const METHOD_RAW = 'https://raw.githubusercontent.com/docplanet/anki-process-engine-live/main/';
+const METHOD_RAW = 'https://raw.githubusercontent.com/planetjc/anki-process-engine-live/main/';
 // SETUP.md sits at the repository root, not in method/, and 1-extract.md
 // sends the agent to it by name for the slide-conversion commands. Left out,
 // the first live run from the website watched the agent search skills/ and

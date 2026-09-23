@@ -33,7 +33,7 @@ jobs:
           path: APE
       - uses: actions/checkout@v4
         with:
-          repository: docplanet/anki-process-engine-live
+          repository: planetjc/anki-process-engine-live
           path: Anki
 
       - if: startsWith(matrix.os, 'ubuntu')
@@ -98,7 +98,7 @@ jobs:
           args: ${{ matrix.args }}
 
       # Version-free copies, so a link written once keeps working:
-      # https://github.com/docplanet/ape-go-bananas/releases/latest/download/APE-<platform>.<ext>
+      # https://github.com/planetjc/ape-go-bananas/releases/latest/download/APE-<platform>.<ext>
       - name: stable-name copies on the release
         if: startsWith(github.ref, 'refs/tags/v')
         shell: bash

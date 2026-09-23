@@ -9,7 +9,7 @@ of this repo's code, comments, or docs do either.
 
 ## Use it
 
-Download the desktop app from <https://docplanet.github.io/ape-go-bananas/>
+Download the desktop app from <https://planetjc.github.io/ape-go-bananas/>
 (`docs/APP.md`). Make a deck, drop the lecture's files on the window —
 slides as PDF, the transcript, the objectives — pick an agent you already
 pay for once in Settings (a Claude, Gemini or Codex subscription, or any
@@ -20,7 +20,7 @@ folder. The browser tool at `/tool/` checks a finished `deck.json` and
 exports the `.apkg` with nothing installed.
 
 For development, the same shell runs in a browser without building the
-app: `npx -p github:docplanet/ape-go-bananas ape-bridge` starts the engine
+app: `npx -p github:planetjc/ape-go-bananas ape-bridge` starts the engine
 on this machine and opens the tool page attached to it (`src/bridge/`,
 Node ≥ 20). It is a developer route, not advertised on the pages.
 

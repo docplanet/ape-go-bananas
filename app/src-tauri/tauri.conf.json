@@ -65,7 +65,7 @@
     "updater": {
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDY4MkZFQzEwOTNCNkY5RkUKUldUKytiYVRFT3d2YUJXY3NkdmpydHhHeFZrSVVnRUNReTNtdEJtbzR4NWFnMHhNa3FRLytSTlQK",
       "endpoints": [
-        "https://github.com/docplanet/ape-go-bananas/releases/latest/download/latest.json"
+        "https://github.com/planetjc/ape-go-bananas/releases/latest/download/latest.json"
       ],
       "windows": {
         "installMode": "passive"

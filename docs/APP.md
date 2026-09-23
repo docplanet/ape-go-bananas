@@ -154,7 +154,7 @@ variables at build time (`APPLE_SIGNING_IDENTITY`, `APPLE_ID`,
 right for the re-signed node. Artifacts: a `.zip` of the app (`ditto -c -k --keepParent`) and a plain
 `.dmg` (`hdiutil create -format UDZO`); Tauri's own DMG step drives Finder
 through Apple events and cannot run headless. **Updates and releases.** `tauri-plugin-updater` checks
-`https://github.com/docplanet/ape-go-bananas/releases/latest/download/latest.json`
+`https://github.com/planetjc/ape-go-bananas/releases/latest/download/latest.json`
 on launch and offers a bar; the archive is verified against the minisign
 public key in `tauri.conf.json`, which is unrelated to Apple signing. The
 private key lives outside the repo (`~/.tauri/ape.key` on the build machine,
@@ -197,7 +197,7 @@ engine call respawns the sidecar and the window reloads (`sidecar.rs`,
 ## Stage 3: the browser page drives a local agent through a bridge
 
 A tab cannot spawn Claude Code — that is the browser sandbox, not a gap. So
-the subscriber runs one command — `npx -p github:docplanet/ape-go-bananas
+the subscriber runs one command — `npx -p github:planetjc/ape-go-bananas
 ape-bridge [course-folder]`, which builds itself on the first run because
 npm runs `prepare` on a git install — and the page does the rest. The bridge is `src/sidecar` — the same method table the
 Rust shell drove over stdio — listening on `127.0.0.1` (`src/sidecar/serve.ts`):
@@ -248,7 +248,7 @@ applies (19 notes) → deck reloads clean → export. The final `deck.json`,
 exported with `ape export`, imports into Anki 26.5: 19 notes, 38 cards.
 
 **From the published site, same day.** The live page at
-`docplanet.github.io/ape-go-bananas/tool/` reached a bridge on the same Mac
+`planetjc.github.io/ape-go-bananas/tool/` reached a bridge on the same Mac
 from Chrome 152 with no local-network prompt at all: `/health` 200, the
 event stream 200, RPCs 202, the picker rendered. Brave refused the same
 fetch silently — it blocks sites from reaching `127.0.0.1` unless the site
