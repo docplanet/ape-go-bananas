@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!-- Merged by tauri build over the Info.plist it generates. The app is
+       A.P.E. wherever macOS shows a name; productName stays "APE" because it
+       also names APE.app, the updater's APE.app.tar.gz and the download
+       files, and renaming those would strand installed copies.
+       CFBundleName (menu bar, About, Cmd-Tab) is set by bundle.macOS.bundleName. -->
+  <key>CFBundleDisplayName</key><string>A.P.E.</string>
+</dict>
+</plist>

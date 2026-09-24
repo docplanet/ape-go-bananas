@@ -50,6 +50,7 @@
       "resources/method/": "method/"
     },
     "macOS": {
+      "bundleName": "A.P.E.",
       "entitlements": "Entitlements.plist",
       "minimumSystemVersion": "12.0",
       "signingIdentity": "-"
