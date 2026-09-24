@@ -335,12 +335,34 @@ export function mountAgentApp(host: EngineHost, opts: AgentAppOptions): AgentApp
   function showAgentLine(): void {
     const chosen = remember.get(REMEMBER.agent);
     const name = chosen ? (picker.nameOf(chosen) ?? chosen) : null;
-    $<HTMLElement>(rail, '#rail-agent').textContent = !name ? 'No agent chosen' : connection ? `${name} · connected` : `${name} · not connected`;
+    // Said where it is seen every day: an agent is never updated on its own,
+    // and Settings is a screen nobody opens once the agent works.
+    const newer = chosen ? picker.updateFor(chosen) : null;
+    $<HTMLElement>(rail, '#rail-agent').textContent =
+      (!name ? 'No agent chosen' : connection ? `${name} · connected` : `${name} · not connected`) + (newer ? ` · update ${newer} in Settings` : '');
     home.setAgent(name);
   }
   let attaching: Promise<void> = Promise.resolve();
   const picker: Picker = mountPicker(settings.agentSlot, sidecar, bus, host.dataDir(), () => courseDir, opts.keys, {
     say,
+    onListed: () => showAgentLine(),
+    async release(id) {
+      const running = stages.busy();
+      if (running) {
+        say(`${running} is still running — change the agent when it has finished`, true);
+        return false;
+      }
+      await attaching; // a connect that is landing now is let go of too, not left behind
+      if (connection?.provider === id) {
+        await chat?.dispose();
+        chat = null;
+        connection = null;
+        stages.setConnection(null);
+        picker.setState({ connected: null });
+        showAgentLine();
+      }
+      return true;
+    },
     onChosen(id) {
       remember.set(REMEMBER.agent, id);
       picker.setState({ chosen: id });

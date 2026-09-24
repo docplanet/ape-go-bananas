@@ -263,3 +263,28 @@ test('agents/uninstall: false before install, true after (prefix gone), false ag
   assert.deepEqual([p.installed, p.installedVersion], [false, null], 'list reflects the removal');
   assert.equal(await s.end(), 0);
 });
+
+test('agents/install over an older install of the same agent updates it in place: the picker\'s Update', { timeout: INSTALL_TIMEOUT }, async () => {
+  // An agent is installed at an exact version and nothing moves it after
+  // that; the picker's "Update to x" is this call over the existing prefix.
+  // Seeded by hand as an older copy, so the one fake package can stand in
+  // for "the registry has moved on".
+  const dataDir = makeTmpDir();
+  const prefix = join(dataDir, 'npx', 'fake-npx');
+  const old = join(prefix, 'node_modules', FAKE_PACKAGE);
+  mkdirSync(old, { recursive: true });
+  writeFileSync(join(prefix, 'package.json'), `${JSON.stringify({ dependencies: { [FAKE_PACKAGE]: '0.9.0' } })}\n`);
+  writeFileSync(join(old, 'package.json'), `${JSON.stringify({ name: FAKE_PACKAGE, version: '0.9.0', bin: { [FAKE_PACKAGE]: 'index.js' } })}\n`);
+  writeFileSync(join(old, 'index.js'), 'console.log("old")\n');
+  const s = spawnSidecar();
+  await s.ready;
+  const before = (await list(s, 'before', dataDir)).providers.find((p) => p.id === 'fake-npx')!;
+  assert.deepEqual([before.installed, before.installedVersion, before.version], [true, '0.9.0', FAKE_VERSION], 'installed, older than the registry');
+
+  const res = await s.request('upd', 'agents/install', { dataDir, id: 'fake-npx', npm: { registry: npm.url } });
+  assert.ok(!res.error, `update failed: ${JSON.stringify(res.error)}\nstderr:\n${s.stderr()}`);
+  const after = (await list(s, 'after', dataDir)).providers.find((p) => p.id === 'fake-npx')!;
+  assert.equal(after.installedVersion, FAKE_VERSION, 'the same prefix now holds the registry version');
+  assert.equal(JSON.parse(readFileSync(join(prefix, 'package.json'), 'utf8')).dependencies[FAKE_PACKAGE], FAKE_VERSION, 'and pins it exactly');
+  assert.equal(await s.end(), 0);
+});

@@ -12,12 +12,21 @@
 
 import { EngineError, type ConnectResult, type Provider, type SidecarClient } from '../engine/client.js';
 import type { Bus } from './bus.js';
+import { isNewer } from './versions.js';
 
 export interface PickerCallbacks {
   /** The user picked this agent; remember it. Called before any connection is attempted. */
   onChosen(id: string): void;
   onConnected(result: ConnectResult): void;
   say(text: string, isError?: boolean): void;
+  /**
+   * The agent's files are about to change (update, remove): let go of it
+   * first. npm rewrites what a running agent is executing, so a connected
+   * one is disconnected, and the answer is false while a stage is running.
+   */
+  release(id: string): Promise<boolean>;
+  /** The list was (re)read: what is installed, and what could be updated, may have changed. */
+  onListed?(): void;
 }
 
 /** Where an API key lives between sessions. Names are provider ids. */
@@ -43,6 +52,8 @@ export interface Picker {
   setState(state: Partial<PickerState>): void;
   /** The display name of an agent id, once the registry is loaded. */
   nameOf(id: string): string | null;
+  /** The registry's newer version of an installed agent, or null when it is current. */
+  updateFor(id: string): string | null;
 }
 
 function esc(s: string): string {
@@ -69,18 +80,26 @@ export function mountPicker(host: HTMLElement, sidecar: SidecarClient, bus: Bus,
   const auth = $<HTMLDivElement>('#auth');
   const log = $<HTMLPreElement>('#log');
 
+  /** The registry has a later release than the one installed here. */
+  function update(p: Provider | undefined): string | null {
+    return p && p.kind !== 'api' && p.installed && p.installable && isNewer(p.version, p.installedVersion) ? p.version : null;
+  }
+
   function card(p: Provider): string {
     const isChosen = p.id === state.chosen;
     const isConnected = p.id === state.connected;
     const badge = isConnected ? '<span class="pk-badge on">connected</span>' : isChosen ? '<span class="pk-badge">chosen</span>' : '';
-    const state_ = p.kind === 'api' ? 'any model, one API key' : p.installed ? `installed ${p.installedVersion}` : p.installable ? `v${p.version ?? '?'}` : `${p.distribution} — not installable from here yet`;
+    const newer = update(p);
+    const state_ = p.kind === 'api' ? 'any model, one API key' : p.installed ? `installed ${p.installedVersion}${newer ? ` · ${newer} available` : ''}` : p.installable ? `v${p.version ?? '?'}` : `${p.distribution} — not installable from here yet`;
     const useLabel = isConnected ? 'Reconnect' : state.hasFolder ? 'Use' : 'Use';
     const useTitle = state.hasFolder ? '' : 'Remembered now; connects when a course folder is chosen';
     const actions =
       p.kind === 'api'
         ? `<input type="password" placeholder="sk-or-…" data-key="${esc(p.id)}" autocomplete="off"><button type="button" data-use="${esc(p.id)}" title="${useTitle}">${useLabel}</button>`
         : p.installed
-          ? `<button type="button" data-use="${esc(p.id)}" title="${useTitle}">${useLabel}</button><button type="button" data-uninstall="${esc(p.id)}" class="quiet">Remove</button>`
+          ? `<button type="button" data-use="${esc(p.id)}" title="${useTitle}">${useLabel}</button>${
+              newer ? `<button type="button" data-update="${esc(p.id)}" title="The newer release brings whatever the agent has added since -- for Claude, the newest models.">Update to ${esc(newer)}</button>` : ''
+            }<button type="button" data-uninstall="${esc(p.id)}" class="quiet">Remove</button>`
           : p.installable
             ? `<button type="button" data-install="${esc(p.id)}">Install</button>`
             : '';
@@ -127,6 +146,24 @@ export function mountPicker(host: HTMLElement, sidecar: SidecarClient, bus: Bus,
       cb.say(String(err), true);
     }
     render();
+    cb.onListed?.();
+  }
+
+  /** npm install into the agent's own prefix: a first install, or an update over the old one. */
+  async function installNow(id: string): Promise<boolean> {
+    progress.set(id, ['installing…']);
+    render();
+    let ok = false;
+    try {
+      const r = await sidecar.installProvider(dataDir, id);
+      cb.say(`installed ${r.package} ${r.version}`);
+      ok = true;
+    } catch (err) {
+      cb.say(err instanceof EngineError ? err.message : String(err), true);
+    }
+    progress.delete(id);
+    await load();
+    return ok;
   }
   loaded = load();
 
@@ -190,19 +227,18 @@ export function mountPicker(host: HTMLElement, sidecar: SidecarClient, bus: Bus,
     const t = (e.target as HTMLElement).closest<HTMLElement>('button');
     if (!t) return;
     if (t.id === 'refresh') return void load(true);
-    const { install, uninstall, use, login, skip } = t.dataset;
+    const { install, update: updating, uninstall, use, login, skip } = t.dataset;
     if (install) {
-      progress.set(install, ['installing…']);
-      render();
-      try {
-        const r = await sidecar.installProvider(dataDir, install);
-        cb.say(`installed ${r.package} ${r.version}`);
-      } catch (err) {
-        cb.say(err instanceof EngineError ? err.message : String(err), true);
-      }
-      progress.delete(install);
-      await load();
+      await installNow(install);
+    } else if (updating) {
+      const wasConnected = state.connected === updating;
+      if (!(await cb.release(updating))) return;
+      state.connected = null;
+      // Back where it was: connected before, connected again, on the new version.
+      if ((await installNow(updating)) && (wasConnected || (state.chosen === updating && state.hasFolder))) await connect(updating);
     } else if (uninstall) {
+      if (!(await cb.release(uninstall))) return;
+      state.connected = state.connected === uninstall ? null : state.connected;
       await sidecar.uninstallProvider(dataDir, uninstall).catch(() => undefined);
       await load();
     } else if (use) {
@@ -263,6 +299,9 @@ export function mountPicker(host: HTMLElement, sidecar: SidecarClient, bus: Bus,
     },
     nameOf(id) {
       return providers.find((p) => p.id === id)?.name ?? null;
+    },
+    updateFor(id) {
+      return update(providers.find((p) => p.id === id));
     },
   };
 }
