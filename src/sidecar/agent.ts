@@ -73,7 +73,8 @@ interface AcpSessionState {
   connectionId: string;
   session: AcpSession;
   commands: AvailableCommand[];
-  busy: boolean;
+  /** Settles when the last prompt handed to this session has finished; the next one waits on it. */
+  tail: Promise<void>;
 }
 
 interface ApiConnection {
@@ -94,7 +95,8 @@ interface ApiSessionState {
   session: EmbeddedSession;
   modes: SessionModeState;
   configOptions: SessionConfigOption[];
-  busy: boolean;
+  /** Settles when the last prompt handed to this session has finished; the next one waits on it. */
+  tail: Promise<void>;
 }
 
 type Connection = AcpConnection | ApiConnection;
@@ -295,7 +297,7 @@ export class AgentBridge {
       throw err;
     }
     const sessionId = randomUUID();
-    const state: AcpSessionState = { kind: 'acp', sessionId, connectionId: conn.connectionId, session, commands: [], busy: false };
+    const state: AcpSessionState = { kind: 'acp', sessionId, connectionId: conn.connectionId, session, commands: [], tail: Promise.resolve() };
     conn.byAgentId.set(session.sessionId, sessionId);
     session.onUpdate((update) => this.forwardUpdate(state, update));
     // Pinned only when the agent offers it: an agent whose modes have other
@@ -379,7 +381,7 @@ export class AgentBridge {
       },
       onPermissionRequest: (params) => this.relayPermission({ ...params, sessionId }),
     });
-    const state: ApiSessionState = { kind: 'api', sessionId, connectionId: conn.connectionId, session, modes, configOptions: [], busy: false };
+    const state: ApiSessionState = { kind: 'api', sessionId, connectionId: conn.connectionId, session, modes, configOptions: [], tail: Promise.resolve() };
     state.configOptions = this.apiConfigOptions(conn, state);
     conn.sessions.set(sessionId, state);
     this.sessions.set(sessionId, state);
@@ -504,8 +506,19 @@ export class AgentBridge {
     if (!Array.isArray(blocks) || blocks.some((b) => typeof b !== 'object' || b === null || typeof (b as { type?: unknown }).type !== 'string')) {
       throw new InvalidParams('params.blocks must be an array of content blocks');
     }
-    if (state.busy) throw new Error(`session ${state.sessionId} has a turn in progress`);
-    state.busy = true;
+    // One turn at a time, and a prompt sent during one is held for the next,
+    // not refused: the chat and the stages share the writer session, and a
+    // message typed while a stage ran was once refused and never reached the
+    // agent. What was sent is received, in the order it was sent.
+    const before = state.tail;
+    let finished!: () => void;
+    state.tail = new Promise<void>((resolve) => (finished = resolve));
+    await before;
+    if (this.sessions.get(state.sessionId) !== state) {
+      finished();
+      throw new Error(`session ${state.sessionId} closed before this message reached the agent`);
+    }
+    this.app.notify('agent/turn', { sessionId: state.sessionId, running: true });
     try {
       if (state.kind === 'api') {
         const stopReason = await state.session.prompt(blocks as ContentBlock[]);
@@ -525,7 +538,8 @@ export class AgentBridge {
       if (err instanceof OpenRouterError) throw new Error(err.message);
       throw err;
     } finally {
-      state.busy = false;
+      this.app.notify('agent/turn', { sessionId: state.sessionId, running: false });
+      finished();
     }
   }
 

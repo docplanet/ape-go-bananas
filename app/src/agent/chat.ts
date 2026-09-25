@@ -43,7 +43,8 @@ function isModeOption(o: ConfigOption): boolean {
 
 export function mountChat(host: HTMLElement, sidecar: SidecarClient, bus: Bus, conn: ConnectResult, say: (t: string, e?: boolean) => void, courseDir: () => string | null, preferredMode?: ModePreference): Chat {
   const session = conn.session!;
-  let busy = false;
+  /** A turn is running on this session -- the chat's own, or a stage's: they share it. The engine says so with agent/turn. */
+  let turnRunning = false;
   let cost = 0;
   let configOptions = session.configOptions ?? [];
   let modes = session.modes;
@@ -189,6 +190,15 @@ export function mountChat(host: HTMLElement, sidecar: SidecarClient, bus: Bus, c
   }
 
   const offUpdate = bus.onNotification((method, params) => {
+    if (method === 'agent/turn') {
+      const p = params as { sessionId: string; running: boolean };
+      if (p.sessionId !== session.sessionId) return;
+      turnRunning = p.running;
+      // Whoever started the turn, it can be stopped from here.
+      stop.classList.toggle('hidden', !turnRunning);
+      if (!turnRunning) current = null;
+      return;
+    }
     if (method !== 'agent/update') return;
     const p = params as { sessionId: string; update: SessionUpdate };
     if (p.sessionId === session.sessionId) onUpdate(p.update);
@@ -221,21 +231,21 @@ export function mountChat(host: HTMLElement, sidecar: SidecarClient, bus: Bus, c
   host.querySelector<HTMLFormElement>('#composer')!.onsubmit = async (e) => {
     e.preventDefault();
     const text = input.value.trim();
-    if (!text || busy) return;
+    if (!text) return;
     input.value = '';
     append('user', text, true);
+    // Sent during a turn -- a stage's, or an earlier message's -- it is held
+    // by the engine and reaches the agent when that turn ends. Said, so the
+    // wait does not read as the message being ignored.
+    if (turnRunning) append('tool', 'waiting — the agent reads this when its current turn ends', true);
     current = null;
-    busy = true;
-    stop.classList.remove('hidden');
     try {
       const r = await sidecar.prompt(session.sessionId, [{ type: 'text', text }]);
       if (r.stopReason !== 'end_turn') append('tool', `(stopped: ${r.stopReason})`, true);
     } catch (err) {
       append('tool', `error: ${err instanceof EngineError ? err.message : String(err)}`, true);
     } finally {
-      busy = false;
       current = null;
-      stop.classList.add('hidden');
     }
   };
   stop.onclick = () => void sidecar.cancel(session.sessionId);

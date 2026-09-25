@@ -382,7 +382,7 @@ test('429 is retried once after 2 s: 429-then-200 succeeds with exactly two requ
   assert.equal(await c.s.end(), 0);
 });
 
-test('agent/cancel mid-stream: prompt resolves cancelled, the fetch is aborted, partial text stays in history; a concurrent prompt is -32000 (§2, §4)', { timeout: 20_000 }, async () => {
+test('agent/cancel mid-stream: prompt resolves cancelled, the fetch is aborted, partial text stays in history; a concurrent prompt is held and runs next (§2, §4)', { timeout: 20_000 }, async () => {
   const c = await connectGood(fake);
   const chunks = Array.from({ length: 20 }, (_, i) => `w${i} `);
   fake.enqueue(slowTextTurn(chunks, 200));
@@ -392,8 +392,10 @@ test('agent/cancel mid-stream: prompt resolves cancelled, the fetch is aborted, 
   const pending = c.s.request(promptId, 'agent/prompt', { sessionId: c.sessionId, blocks: [systemBlock(SYSTEM), text('slow')] });
   await waitFor(() => (ofKind(updatesOf(c.s, c.sessionId, start), 'agent_message_chunk').length >= 3 ? true : undefined), 'three chunks');
 
-  const busy = await c.s.request(freshId(), 'agent/prompt', { sessionId: c.sessionId, blocks: [text('again')] });
-  assert.equal(expectError(busy, -32000, 'second prompt mid-turn').message, `session ${c.sessionId} has a turn in progress`);
+  const held = c.s.request(freshId(), 'agent/prompt', { sessionId: c.sessionId, blocks: [systemBlock(SYSTEM), text('again')] });
+  await new Promise((r) => setTimeout(r, 200));
+  assert.equal(fake.chatRequests().length, 1, 'the second prompt waits while the first turn runs');
+  fake.enqueue(textTurn('next'));
 
   const cancel = await c.s.request(freshId(), 'agent/cancel', { sessionId: c.sessionId });
   assert.deepEqual(cancel.result, {});
@@ -405,8 +407,7 @@ test('agent/cancel mid-stream: prompt resolves cancelled, the fetch is aborted, 
   const first = fake.chatRequests()[0];
   await waitFor(() => (first.aborted ? true : undefined), '§4: "agent/cancel aborts the fetch" (the fake sees the connection drop)', 5_000);
 
-  fake.enqueue(textTurn('next'));
-  expectStop(await runPrompt(c.s, c.sessionId, [systemBlock(SYSTEM), text('after cancel')]), 'end_turn');
+  assert.deepEqual((await held).result, { stopReason: 'end_turn' }, 'the held message ran once the cancelled turn ended');
   const second = fake.chatRequests()[1];
   const assistant = second.body.messages.filter((m: { role: string }) => m.role === 'assistant');
   assert.equal(assistant.length, 1, '§4: "the partial assistant text is kept in history"');
@@ -414,7 +415,7 @@ test('agent/cancel mid-stream: prompt resolves cancelled, the fetch is aborted, 
   assert.ok(kept.startsWith('w0 w1 w2 '), `history carries the partial text: ${JSON.stringify(kept)}`);
   assert.equal(kept, seen, 'exactly the text that was streamed to the app');
   assert.equal(second.body.messages.at(-1).role, 'user');
-  assert.equal(textOf(second.body.messages.at(-1).content), 'after cancel');
+  assert.equal(textOf(second.body.messages.at(-1).content), 'again');
   assert.equal(await c.s.end(), 0);
 });
 

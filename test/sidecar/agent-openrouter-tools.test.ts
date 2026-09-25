@@ -387,9 +387,9 @@ test('a turn cancelled while a write waits for permission leaves every tool call
   assert.equal(await c.s.end(), 0);
 });
 
-test('a second prompt while a tool permission is outstanding is -32000; answering then ends the first turn (§2, §3)', { timeout: TIMEOUT }, async () => {
+test('a second prompt while a tool permission is outstanding is held; answering ends the first turn, then it runs (§2, §3)', { timeout: TIMEOUT }, async () => {
   const c = await connectWithFiles();
-  fake.enqueue(toolCallsTurn([{ id: 'call_w', name: 'write_file', args: { path: 'late.txt', content: 'late\n' } }]), textTurn('done'));
+  fake.enqueue(toolCallsTurn([{ id: 'call_w', name: 'write_file', args: { path: 'late.txt', content: 'late\n' } }]), textTurn('done'), textTurn('and again'));
   let release!: (a: { outcome: 'selected'; optionId: string }) => void;
   const gate = new Promise<{ outcome: 'selected'; optionId: string }>((r) => { release = r; });
   const pending = runPrompt(c.s, c.sessionId, [text('write late')], { answer: () => gate });
@@ -398,11 +398,14 @@ test('a second prompt while a tool permission is outstanding is -32000; answerin
     const tick = () => (c.s.lines.some((l) => l.json?.method === 'agent/requestPermission') ? resolve() : setTimeout(tick, 15));
     tick();
   });
-  const busy = await c.s.request(freshId(), 'agent/prompt', { sessionId: c.sessionId, blocks: [text('again')] });
-  assert.equal(expectError(busy, -32000, 'prompt while a permission is outstanding').message, `session ${c.sessionId} has a turn in progress`);
+  const held = c.s.request(freshId(), 'agent/prompt', { sessionId: c.sessionId, blocks: [text('again')] });
+  await new Promise((r) => setTimeout(r, 200));
+  assert.equal(fake.chatRequests().length, 1, 'the second prompt waits while the permission is outstanding');
   release({ outcome: 'selected', optionId: 'allow-once' });
   const run = await pending;
   expectStop(run, 'end_turn');
   assert.equal(readFileSync(join(c.cwd, 'late.txt'), 'utf8'), 'late\n');
+  assert.deepEqual((await held).result, { stopReason: 'end_turn' }, 'the held message ran after the first turn');
+  assert.equal(contentText(fake.chatRequests().at(-1)!.body.messages.at(-1).content), 'again');
   assert.equal(await c.s.end(), 0);
 });

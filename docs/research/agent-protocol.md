@@ -160,8 +160,14 @@ While the turn runs, every update is a notification
 `agent/update { sessionId, update: SessionUpdate }` in ACP's exact shapes
 (`agent_message_chunk`, `agent_thought_chunk`, `tool_call`,
 `tool_call_update`, `usage_update`, `available_commands_update`,
-`current_mode_update`, `config_option_update`). A second `agent/prompt` on a
-session mid-turn → `-32000` `"session <id> has a turn in progress"`.
+`current_mode_update`, `config_option_update`). One turn runs at a time: a
+second `agent/prompt` on a session mid-turn is held and runs when the turn
+ends, in the order sent -- never refused, since the chat and the stages share
+the writer session and a message refused there never reached the agent. Each
+turn is bracketed by `agent/turn { sessionId, running: true | false }`, so the
+app knows a turn is running whoever started it. A held prompt whose session
+closes before its turn → `-32000` `"session <id> closed before this message
+reached the agent"`.
 
 ### `agent/cancel`
 params `{ sessionId }` → `{}`; the in-flight `agent/prompt` resolves

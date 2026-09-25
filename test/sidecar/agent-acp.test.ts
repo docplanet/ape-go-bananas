@@ -121,7 +121,7 @@ test('authRequired: session/new failing with auth_required keeps the connection 
   assert.equal(await s.end(), 0);
 });
 
-test('agent/prompt relays every update kind as agent/update in order; a second prompt mid-turn is -32000 (§2)', { timeout: TIMEOUT }, async () => {
+test('agent/prompt relays every update kind as agent/update in order; a second prompt mid-turn is held and runs next (§2)', { timeout: TIMEOUT }, async () => {
   const { s, dataDir } = await sidecarWithMock();
   const { result, files } = await connectMock(s, dataDir, SCENARIOS.UPDATE_KINDS);
   const { sessionId } = sessionOf(result.session);
@@ -133,17 +133,28 @@ test('agent/prompt relays every update kind as agent/update in order; a second p
   const prompt = agentReceived(files.logFile).find((f) => f.method === 'session/prompt');
   assert.deepEqual(prompt?.params, { sessionId: agentSessionIds(files.logFile)[0], prompt: blocks }, 'blocks pass through as the ACP prompt');
 
-  // in-flight guard, on a turn that only ends on cancel
+  // one turn at a time, on a turn that only ends on cancel: a second prompt
+  // is held until the first ends, then reaches the agent -- never refused
   const hang = await connectMock(s, dataDir, SCENARIOS.CANCEL_HANG);
   const hangSid = sessionOf(hang.result.session).sessionId;
+  const turnsOf = () => notificationParams(s, 'agent/turn').filter((p) => p.sessionId === hangSid).map((p) => p.running);
   const first = s.request('h1', 'agent/prompt', { sessionId: hangSid, blocks: text('go') });
   await waitForLine(s, (m) => isNotification(m, 'agent/update') && (m.params as { sessionId: string }).sessionId === hangSid, 'first update of the hanging turn');
-  const second = await s.request('h2', 'agent/prompt', { sessionId: hangSid, blocks: text('again') });
-  assert.equal(expectError(second, -32000, 'second prompt').message, `session ${hangSid} has a turn in progress`);
+  const second = s.request('h2', 'agent/prompt', { sessionId: hangSid, blocks: text('again') });
+  const prompts = () => agentReceived(hang.files.logFile).filter((f) => f.method === 'session/prompt');
+  await new Promise((r) => setTimeout(r, 200));
+  assert.equal(prompts().length, 1, 'the second prompt waits while the first turn runs');
+  assert.deepEqual(turnsOf(), [true]);
   assert.deepEqual((await s.request('c1', 'agent/cancel', { sessionId: hangSid })).result, {});
   assert.deepEqual((await first).result, { stopReason: 'cancelled' }, 'the in-flight prompt resolves cancelled');
-  assert.deepEqual(updatesFor(s, hangSid).map((u) => (u.content as { text: string }).text), ['Starting work...', 'Cleaning up...'], 'updates sent after cancel are still relayed');
   assert.ok(agentReceived(hang.files.logFile).some((f) => f.method === 'session/cancel' && f.params?.sessionId === agentSessionIds(hang.files.logFile)[0]), 'session/cancel reached the agent');
+  await waitForLine(s, (m) => isNotification(m, 'agent/update') && (m.params as { sessionId: string }).sessionId === hangSid && updatesFor(s, hangSid).length === 3, 'the held turn\'s first update');
+  assert.equal(prompts().length, 2, 'the held prompt reached the agent once the first turn ended');
+  assert.deepEqual((prompts()[1]!.params as { prompt: unknown }).prompt, text('again'), 'the held message, as sent');
+  assert.deepEqual((await s.request('c1b', 'agent/cancel', { sessionId: hangSid })).result, {});
+  assert.deepEqual((await second).result, { stopReason: 'cancelled' });
+  assert.deepEqual(turnsOf(), [true, false, true, false], 'agent/turn brackets each turn');
+  assert.deepEqual(updatesFor(s, hangSid).map((u) => (u.content as { text: string }).text), ['Starting work...', 'Cleaning up...', 'Starting work...', 'Cleaning up...'], 'updates sent after cancel are still relayed');
   assert.deepEqual((await s.request('c2', 'agent/cancel', { sessionId: hangSid })).result, {}, 'cancel with no turn in flight is a harmless {}');
   assert.ok(s.lines.every(isJsonRpcLine), 'stdout carries only JSON-RPC lines');
   assert.equal(await s.end(), 0);
