@@ -9,13 +9,13 @@
 //! direction (`agent/requestPermission`, §5) has a place to land later.
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::path::PathBuf;
 use std::process::Stdio;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::{Duration, Instant, SystemTime};
 use std::sync::{Arc, Mutex};
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, ChildStdin, Command};
 use tokio::sync::oneshot;
@@ -66,6 +66,17 @@ struct Running {
 const MIN_UPTIME_FOR_RESTART: Duration = Duration::from_secs(10);
 /// How long quitting waits for the engine to close its agents on EOF.
 const SHUTDOWN_GRACE: Duration = Duration::from_secs(2);
+/// How much of the engine's stderr is kept to say why it stopped. An
+/// inherited stderr is nowhere in a Windows GUI app: the engine died on
+/// start on someone's Windows machine and all the window could say was
+/// "sidecar exited".
+const STDERR_TAIL_LINES: usize = 12;
+type Tail = Arc<Mutex<VecDeque<String>>>;
+
+/// Windows gives a console program started from a GUI one a console window
+/// of its own, which stays open as long as the engine runs.
+#[cfg(windows)]
+const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
 impl Sidecar {
     pub fn new() -> Self {
@@ -122,17 +133,46 @@ impl Sidecar {
         if let Some(dir) = method_dir {
             cmd.env("APE_METHOD_DIR", dir);
         }
+        #[cfg(windows)]
+        cmd.creation_flags(CREATE_NO_WINDOW);
         let mut child = cmd
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::inherit())
+            .stderr(Stdio::piped())
             .kill_on_drop(true)
             .spawn()
             .map_err(|e| format!("spawn {} {}: {e}", node.display(), script.display()))?;
 
         let stdout = child.stdout.take().ok_or("no stdout")?;
         let stdin = child.stdin.take().ok_or("no stdin")?;
+        let stderr = child.stderr.take().ok_or("no stderr")?;
         let pending: Pending = Arc::new(Mutex::new(HashMap::new()));
+
+        // stderr is diagnostics (sidecar-protocol.md §1): passed on to ours,
+        // as it was when inherited, and its last lines kept for the error.
+        let tail: Tail = Arc::new(Mutex::new(VecDeque::new()));
+        let stderr_tail = tail.clone();
+        let stderr_done = tauri::async_runtime::spawn(async move {
+            let mut reader = BufReader::new(stderr);
+            let mut buf = Vec::new();
+            loop {
+                buf.clear();
+                match reader.read_until(b'\n', &mut buf).await {
+                    Ok(0) | Err(_) => break,
+                    Ok(_) => {}
+                }
+                let line = String::from_utf8_lossy(&buf).trim_end().to_string();
+                if line.is_empty() {
+                    continue;
+                }
+                eprintln!("{line}");
+                let mut tail = stderr_tail.lock().unwrap();
+                if tail.len() == STDERR_TAIL_LINES {
+                    tail.pop_front();
+                }
+                tail.push_back(line);
+            }
+        });
 
         let reader_pending = pending.clone();
         let alive = Arc::new(AtomicBool::new(true));
@@ -198,10 +238,19 @@ impl Sidecar {
                 }
             }
             // stdout closed: every waiter gets an error rather than a hang,
-            // and the next call starts a new engine (`call`).
+            // and the next call starts a new engine (`call`). The error says
+            // why, as far as the process told us: its last stderr lines and
+            // its exit status, which arrive a moment after stdout closes.
             reader_alive.store(false, Ordering::SeqCst);
+            let _ = tokio::time::timeout(Duration::from_millis(500), stderr_done).await;
+            let why = why_it_stopped(&app, &reader_alive, &tail).await;
+            if let Some(why) = &why {
+                eprintln!("sidecar: {why}");
+                app.state::<Sidecar>().fail(why.clone());
+            }
+            let message = why.unwrap_or_else(|| "the engine stopped".into());
             for (_, tx) in reader_pending.lock().unwrap().drain() {
-                let _ = tx.send(Err(RpcError { code: -32001, message: "sidecar exited".into(), data: None }));
+                let _ = tx.send(Err(RpcError { code: -32001, message: message.clone(), data: None }));
             }
         });
 
@@ -269,8 +318,8 @@ impl Sidecar {
         }
         let dead = self.dead();
         if dead && self.up_for() < MIN_UPTIME_FOR_RESTART {
-            let e = "the engine stopped seconds after it started; it will be tried again shortly, or restart the app".to_string();
-            self.fail(e.clone());
+            let why = self.status().error.unwrap_or_else(|| "the engine stopped".into());
+            let e = format!("{why}\n\nIt stopped seconds after it started; it will be tried again shortly, or restart the app.");
             return Err(RpcError { code: -32001, message: e, data: None });
         }
         if dead || self.stale() {
@@ -321,6 +370,40 @@ impl Sidecar {
         }
         let _ = child.start_kill();
     }
+}
+
+/// Why the engine stopped, as well as it can be told: its exit status and
+/// the last of its stderr. None when the process that stopped is no longer
+/// the one in `inner` -- a restart or a quit closing the old one is not news.
+async fn why_it_stopped(app: &AppHandle, alive: &Arc<AtomicBool>, tail: &Tail) -> Option<String> {
+    let sidecar = app.state::<Sidecar>();
+    let mut exit = None;
+    // stdout closes as the process ends, not after: give it a moment to be reaped.
+    for _ in 0..10 {
+        {
+            let mut guard = sidecar.inner.lock().unwrap();
+            let running = guard.as_mut().filter(|r| Arc::ptr_eq(&r.alive, alive))?;
+            if let Ok(Some(status)) = running.child.try_wait() {
+                exit = Some(status);
+                break;
+            }
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    let status = match exit.map(|s| (s, s.code())) {
+        // Windows reports a crash as an NTSTATUS, which reads as one in hex
+        // (0xC0000005) and as nothing at all in decimal.
+        Some((_, Some(code))) if !(0..=255).contains(&code) => format!(" (exit code {:#X})", code as u32),
+        Some((_, Some(code))) => format!(" (exit code {code})"),
+        Some((status, None)) => format!(" ({status})"),
+        None => String::new(),
+    };
+    let said: Vec<String> = tail.lock().unwrap().iter().cloned().collect();
+    Some(if said.is_empty() {
+        format!("the engine stopped{status} without saying why")
+    } else {
+        format!("the engine stopped{status}:\n{}", said.join("\n"))
+    })
 }
 
 /// Which Node and which script. Explicit env wins (`APE_NODE`, `APE_SIDECAR`);
@@ -393,8 +476,11 @@ pub fn resolve_paths(resource_dir: Option<PathBuf>) -> Result<Paths, String> {
         .map(PathBuf::from)
         .or_else(|| if cfg!(debug_assertions) && dev_method.is_dir() { dev_method.canonicalize().ok() } else { None })
         .or_else(|| resource_dir.as_ref().map(|r| r.join("method")).filter(|p| p.join("1-extract.md").exists()));
-    let out = std::process::Command::new(&node)
-        .arg("--version")
+    let mut version_cmd = std::process::Command::new(&node);
+    version_cmd.arg("--version");
+    #[cfg(windows)]
+    std::os::windows::process::CommandExt::creation_flags(&mut version_cmd, CREATE_NO_WINDOW);
+    let out = version_cmd
         .output()
         .map_err(|e| format!("{}: {e} (set APE_NODE to a Node >= 24 binary)", node.display()))?;
     let version = String::from_utf8_lossy(&out.stdout).trim().to_string();
