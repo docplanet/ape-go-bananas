@@ -65,6 +65,16 @@ export interface StageHost {
   addFiles(): void;
 }
 
+/** What each stage that can be discarded writes beside the material, besides whatever else the agent leaves. */
+const OUTPUT: Partial<Record<StageId, string[]>> = {
+  extract: ['inventory.md'],
+  organize: ['plan.md'],
+  cards: ['deck.json'],
+  audit: ['audit.md', 'audit.json'],
+};
+/** The stage behind an artifact a gate shows. */
+const WRITER: Record<string, StageId> = { 'inventory.md': 'extract', 'plan.md': 'organize', 'deck.json': 'cards' };
+
 function esc(s: string): string {
   return s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
 }
@@ -126,6 +136,12 @@ export function mountStages(rail: HTMLOListElement, bar: HTMLElement, gate: HTML
   let stopRequested = false;
   /** The last stage did not finish its turn: stopped, cut short, or failed. */
   let halted = false;
+  /** Cancel was pressed: the run stops, then what it wrote is offered for the trash. */
+  let discardAfter = false;
+  /** The folder's files as the last run found them, so what the run added -- a converted/ folder, notes -- can be told apart. */
+  let lastRun: { dir: string; stage: StageId; before: Set<string> } | null = null;
+  /** What the discard gate on screen listed, moved to the trash on a yes. */
+  let pendingDiscard: { dir: string; stage: StageId; names: string[] } | null = null;
 
   // Each step is a button, and says so: the first person through this screen
   // read the list as a progress display and asked how to start the process.
@@ -144,7 +160,7 @@ export function mountStages(rail: HTMLOListElement, bar: HTMLElement, gate: HTML
    */
   function setBusy(label: string | null): void {
     busy = label;
-    if (label !== null) stopRequested = false;
+    if (label !== null) stopRequested = discardAfter = false;
     rail.querySelectorAll<HTMLLIElement>('li').forEach((li) => li.classList.toggle('running', li.dataset.stage === label));
     rail.setAttribute('aria-busy', label === null ? 'false' : 'true');
     startedAt = label === null ? 0 : Date.now();
@@ -292,10 +308,12 @@ export function mountStages(rail: HTMLOListElement, bar: HTMLElement, gate: HTML
         <div class="nb-text"><span class="nb-k">${
           through ? 'Running through to audit' : n > 0 ? `Running · step ${n} of ${STAGES.length}` : 'Running'
         }</span><strong>${esc(busy)}…</strong><span class="nb-hint">${
-        through ? 'Each stage starts the next; it stops at the audit for you. Stop cancels the turn and ends the run.' : 'Watch the agent below. Stop cancels its turn.'
+        through
+          ? 'Each stage starts the next; it stops at the audit for you. Stop ends the run and keeps what it wrote; Cancel ends it and offers what it wrote for the trash.'
+          : 'Watch the agent below. Stop ends its turn and keeps what it wrote; Cancel ends it and offers what it wrote for the trash.'
       }</span></div>
         <div class="nb-run"><span class="nb-elapsed">0s</span><span class="nb-idle" aria-hidden="true"></span><span class="nb-said sr-only" role="status"></span></div>
-        <div class="nb-actions"><button type="button" data-stop="1" class="quiet">Stop</button></div>`;
+        <div class="nb-actions">${OUTPUT[busy as StageId] ? '<button type="button" data-cancel="1" class="quiet">Cancel</button>' : ''}<button type="button" data-stop="1" class="quiet">Stop</button></div>`;
       tick();
       return;
     }
@@ -320,14 +338,15 @@ export function mountStages(rail: HTMLOListElement, bar: HTMLElement, gate: HTML
   bar.addEventListener('click', (e) => {
     const b = (e.target as HTMLElement).closest<HTMLButtonElement>('button');
     if (!b) return;
-    if (b.dataset.stop) {
+    if (b.dataset.stop || b.dataset.cancel) {
       // The audit and the adjudicator run in sessions of their own; the runner
       // knows which one is prompting. Between turns there is nothing to cancel,
       // and the flag still ends a run-through before its next stage.
       stopRequested = true;
+      if (b.dataset.cancel) discardAfter = true;
       const id = runner?.activeSession() ?? writerSession;
       if (id) void sidecar.cancel(id);
-      host.say(`stopping ${busy ?? 'the run'}…`);
+      host.say(`${b.dataset.cancel ? 'cancelling' : 'stopping'} ${busy ?? 'the run'}…`);
       return;
     }
     if (b.dataset.settings) return host.openSettings();
@@ -380,7 +399,9 @@ export function mountStages(rail: HTMLOListElement, bar: HTMLElement, gate: HTML
     if (reviewStep) after = next(reviewStep);
     const label = after === 'deck preview' ? 'Open the deck →' : after ? `Looks right → ${after}` : '';
     showGate(`<header class="bar"><span>${esc(artifact)}</span><span class="grow"></span>
-      ${after ? `<button type="button" data-go="${after}" ${reviewStep ? `data-reviewed="${reviewStep}"` : ''}>${esc(label)}</button>` : ''}<button type="button" data-reread="${esc(artifact)}" class="quiet">Re-read</button><button type="button" data-close="1" class="quiet">Close</button></header>
+      ${after ? `<button type="button" data-go="${after}" ${reviewStep ? `data-reviewed="${reviewStep}"` : ''}>${esc(label)}</button>` : ''}<button type="button" data-reread="${esc(artifact)}" class="quiet">Re-read</button>${
+        WRITER[artifact] && text !== null ? `<button type="button" data-discard="${WRITER[artifact]}" class="quiet" title="Move what this step wrote to the deck's trash and go back to it">Discard…</button>` : ''
+      }<button type="button" data-close="1" class="quiet">Close</button></header>
       <pre class="artifact">${text === null ? `(no ${esc(artifact)} was written — ask the agent below)` : esc(text)}</pre>`, artifact);
   }
 
@@ -408,12 +429,18 @@ export function mountStages(rail: HTMLOListElement, bar: HTMLElement, gate: HTML
       setBusy(label);
       claimed = true;
     };
+    // What was here before, so a discard takes only what this run added.
+    const snapshot = async (): Promise<void> => {
+      const before = await sidecar.listCourse(dir).then((r) => new Set(r.files.map((f) => f.relPath)), () => null);
+      lastRun = before ? { dir, stage, before } : null;
+    };
     halted = false;
     try {
       if (writing) {
         host.showAgentView();
         hideGate();
         claim(stage);
+        await snapshot();
         if (stage === 'extract') await host.prepareMaterials(dir);
         if (stopRequested) {
           halted = true;
@@ -424,7 +451,7 @@ export function mountStages(rail: HTMLOListElement, bar: HTMLElement, gate: HTML
         const r = await runner!.run(writing);
         halted = r.stopReason !== 'end_turn';
         host.say(!halted ? `${stage} finished` : `${stage} stopped: ${r.stopReason}`, halted);
-        showArtifactGate(stage, writing.artifact, r.artifactText);
+        if (!discardAfter) showArtifactGate(stage, writing.artifact, r.artifactText);
       } else if (stage === 'inventory review' || stage === 'plan review') {
         const artifact = stage === 'inventory review' ? 'inventory.md' : 'plan.md';
         const text = await sidecar.readCourse(dir, artifact).then((r) => r.text, () => null);
@@ -457,6 +484,7 @@ export function mountStages(rail: HTMLOListElement, bar: HTMLElement, gate: HTML
         host.showAgentView();
         hideGate();
         claim(stage);
+        await snapshot();
         host.say('auditing the whole deck in a fresh session…');
         const deckPath = `${dir}/deck.json`;
         // The auditor is told review.html is beside deck.json -- the run-sheet's
@@ -465,6 +493,8 @@ export function mountStages(rail: HTMLOListElement, bar: HTMLElement, gate: HTML
         await sidecar.review(deckPath, { outPath: `${dir}/review.html` }).catch(() => undefined);
         const a = await runner!.audit();
         halted = a.stopReason !== 'end_turn';
+        // A cancelled audit's findings are not merged into the owner's flags.
+        if (discardAfter) return;
         const { flags } = await sidecar.readFlags(deckPath);
         const merged: Flag[] = mergeFlags([
           ...flags,
@@ -485,9 +515,54 @@ export function mountStages(rail: HTMLOListElement, bar: HTMLElement, gate: HTML
       halted = true;
       host.say(err instanceof EngineError ? err.message : String(err), true);
     } finally {
+      const cancelled = claimed && discardAfter;
       if (claimed) setBusy(null);
       await refresh();
+      if (cancelled) await offerDiscard(stage);
     }
+  }
+
+  /**
+   * Cancel, or Discard on a review: what the stage wrote and whatever else
+   * its run added to the folder, listed, then moved to the deck's trash on a
+   * yes -- the step goes back to not done. Nothing that was there before the
+   * run is offered: the person's material stays, and so does an earlier
+   * step's output. Without a record of the run (a later step has run since,
+   * or the app restarted), only the step's own file is offered.
+   */
+  async function offerDiscard(stage: StageId): Promise<void> {
+    const dir = host.courseDir();
+    const outputs = OUTPUT[stage];
+    if (!dir || !outputs) return;
+    if (busy) return host.say(`${busy} is still running — stop it first`);
+    const own = (await Promise.all(outputs.map((name) => sidecar.readCourse(dir, name).then(() => name, () => null)))).filter((n): n is string => n !== null);
+    const run = lastRun && lastRun.dir === dir && lastRun.stage === stage ? lastRun : null;
+    const added = run ? await sidecar.listCourse(dir).then((r) => r.files.map((f) => f.relPath).filter((f) => !run.before.has(f)), () => []) : [];
+    const names = [...own, ...added];
+    if (names.length === 0) {
+      hideGate();
+      return host.say(`${stage} left nothing behind`);
+    }
+    const note = run ? 'Everything that was in the folder before the run stays.' : "Only the step's own file is listed: what else a run added is known only for the latest run, until the app closes.";
+    showGate(`<header class="bar"><span>Discard ${esc(stage)}?</span><span class="grow"></span><button type="button" data-discard-yes="1">Move ${names.length} to the trash</button><button type="button" data-close="1" class="quiet">Keep</button></header>
+      <pre class="artifact">${esc(`These go to the deck's trash, kept there 30 days:\n\n${names.map((n) => `  ${n}`).join('\n')}\n\n${note}`)}</pre>`);
+    pendingDiscard = { dir, stage, names };
+  }
+
+  async function discard(): Promise<void> {
+    const d = pendingDiscard;
+    pendingDiscard = null;
+    if (!d || d.dir !== host.courseDir()) return hideGate();
+    if (busy) return host.say(`${busy} is still running — stop it first`);
+    const failed: string[] = [];
+    for (const name of d.names) await sidecar.deleteCourse(d.dir, name, { trash: true }).catch(() => failed.push(name));
+    if (lastRun?.dir === d.dir && lastRun.stage === d.stage) lastRun = null;
+    const review = next(d.stage);
+    if (review === 'inventory review' || review === 'plan review') reviewed.delete(review);
+    if (d.stage === 'cards') previewed = false;
+    hideGate();
+    host.say(failed.length ? `could not move ${failed.join(', ')} to the trash` : `${d.stage} discarded — ${d.names.length} moved to the deck's trash`, failed.length > 0);
+    await refresh();
   }
 
   /** Send to Anki: no agent runs, so it is not a busy stage; it either lands or says why not. */
@@ -635,7 +710,9 @@ export function mountStages(rail: HTMLOListElement, bar: HTMLElement, gate: HTML
       const text = await sidecar.readCourse(dir, b.dataset.reread).then((r) => r.text, () => null);
       const pre = gate.querySelector('pre');
       if (pre) pre.textContent = text ?? `(no ${b.dataset.reread})`;
-    } else if (b.dataset.adjudicate) void adjudicate();
+    } else if (b.dataset.discard) void offerDiscard(b.dataset.discard as StageId);
+    else if (b.dataset.discardYes) void discard();
+    else if (b.dataset.adjudicate) void adjudicate();
     else if (b.dataset.apply) void applyVerdicts();
     else if (b.dataset.rerun) {
       force.add(b.dataset.rerun as StageId);
