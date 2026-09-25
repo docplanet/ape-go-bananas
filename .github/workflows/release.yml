@@ -119,6 +119,34 @@ jobs:
             x86_64-unknown-linux-gnu)  copy 'release/bundle/appimage/*.AppImage' APE-linux-x64.AppImage; copy 'release/bundle/deb/*.deb' APE-linux-x64.deb ;;
           esac
 
+  # The Windows build, installed on a clean machine and started: is its engine
+  # running? v0.1.0 through v0.1.6 shipped an engine that never started on
+  # Windows (a \\?\ path, sidecar.rs) and every other check passed, because
+  # every other check reads files, not processes. A failure here also holds
+  # back the feed refresh in `verify`, so installs already out there are not
+  # offered the broken build.
+  smoke-windows:
+    needs: build
+    if: always() && startsWith(github.ref, 'refs/tags/v')
+    runs-on: windows-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.12.0'
+      - name: install the released Windows build
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release download "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --pattern APE-windows-x64-setup.exe
+          ./APE-windows-x64-setup.exe //S
+          sleep 5
+      - name: its engine starts and stays up
+        run: node .github/smoke/windows-engine.mjs
+
   # A release that looks complete can still be broken. The four matrix jobs all
   # write to one release, and tauri-action can lose a race reconciling assets
   # ("Not Found - /releases/assets"). v0.1.2 shipped that way: the arm64 job
@@ -133,7 +161,7 @@ jobs:
   # its own -- with nothing else in flight the race cannot recur -- then re-run
   # this one.
   verify:
-    needs: build
+    needs: [build, smoke-windows]
     if: always() && startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions:
@@ -191,6 +219,12 @@ jobs:
             exit 1
           fi
           echo "$tag is complete: every platform in latest.json, every stable-name asset present."
+
+      - name: the Windows build runs
+        if: needs.smoke-windows.result != 'success'
+        run: |
+          echo "::error::smoke-windows did not pass (${{ needs.smoke-windows.result }}); the updater feed is left on the previous release. Fix, re-run smoke-windows, then re-run this job."
+          exit 1
 
       # The feed the app actually reads is the copy on ankiengine.com, so a
       # release is not finished until the site has been rebuilt with it.
