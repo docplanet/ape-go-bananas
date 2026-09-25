@@ -51,34 +51,39 @@ jobs:
           npm run build
       # The updater feed lives on our own domain, so a rename or a move off
       # GitHub cannot strand installed copies: tauri.conf points the app at
-      # ankiengine.com/latest.json and this copies the release's feed there.
+      # ankiengine.com/latest.json and this puts the feed there.
       #
-      # Only a complete feed is copied. The version bump that goes out with a
-      # tag touches package.json, which runs this workflow while the release's
-      # four builds are still uploading -- and "latest" is already the new,
-      # half-filled release. A feed missing a platform is kept off the site and
-      # the one being served now stays; release.yml's verify dispatches this
-      # again once the release is whole. No placeholder, ever: a deploy that
-      # cannot produce a good feed fails and leaves the previous site serving.
-      - name: updater feed — copy the latest release's latest.json onto the site, if it is complete
+      # Only a verified feed is published: the newest release carrying the
+      # verified-feed.json that release.yml's verify attaches once every
+      # platform is in the feed and the Windows build has been seen to run.
+      # "Latest" is not good enough -- this runs on any push to main, which
+      # can land while a release is still uploading, or after one failed its
+      # checks, and the site would then offer every install a broken update.
+      # No placeholder, ever: a deploy that cannot find a verified feed fails
+      # and leaves the previous site serving.
+      - name: updater feed — the newest verified release's
         shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          complete() {
-            for p in darwin-aarch64 darwin-x86_64 linux-x86_64 windows-x86_64; do
-              jq -e --arg p "$p" '.platforms[$p] | (.url // "") != "" and (.signature // "") != ""' "$1" >/dev/null || return 1
-            done
-          }
-          curl -fsSL -o release.json "https://github.com/${{ github.repository }}/releases/latest/download/latest.json"
-          if complete release.json; then
-            cp release.json site/dist/latest.json
-            echo "feed: $(jq -r .version release.json) from the latest release"
-          else
-            echo "::warning::the latest release's feed ($(jq -r .version release.json)) is not complete yet; keeping the one on the site"
-            curl -fsSL -o site/dist/latest.json https://ankiengine.com/latest.json
-            complete site/dist/latest.json
-            echo "feed: $(jq -r .version site/dist/latest.json), unchanged"
-          fi
+          repo="${{ github.repository }}"
+          newest=""
+          for tag in $(gh release list --repo "$repo" --exclude-drafts --exclude-pre-releases --limit 10 --json tagName --jq '.[].tagName'); do
+            newest="${newest:-$tag}"
+            if gh release download "$tag" --repo "$repo" --pattern verified-feed.json --output feed.json --clobber 2>/dev/null; then
+              for p in darwin-aarch64 darwin-x86_64 linux-x86_64 windows-x86_64; do
+                jq -e --arg p "$p" '.platforms[$p] | (.url // "") != "" and (.signature // "") != ""' feed.json >/dev/null \
+                  || { echo "::error::$tag's verified feed has no usable $p entry"; exit 1; }
+              done
+              cp feed.json site/dist/latest.json
+              echo "feed: $(jq -r .version feed.json), from $tag"
+              [ "$tag" = "$newest" ] || echo "::warning::$newest is not verified (yet, or it failed release.yml's checks); the feed stays on $tag"
+              exit 0
+            fi
+          done
+          echo "::error::none of the newest releases carries a verified feed; the site is left as it is"
+          exit 1
 
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3

@@ -123,7 +123,7 @@ jobs:
   # running? v0.1.0 through v0.1.6 shipped an engine that never started on
   # Windows (a \\?\ path, sidecar.rs) and every other check passed, because
   # every other check reads files, not processes. A failure here also holds
-  # back the feed refresh in `verify`, so installs already out there are not
+  # back the verified mark in `verify`, so installs already out there are not
   # offered the broken build.
   smoke-windows:
     needs: build
@@ -165,11 +165,20 @@ jobs:
     if: always() && startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      # write: it attaches, or withdraws, the verified feed on the release.
+      contents: write
       # `gh workflow run pages` below: without it the dispatch is a 403, the
       # job goes red on a complete release, and the site keeps the old feed.
       actions: write
     steps:
+      # The site publishes only a feed this job has attached (pages.yml). A
+      # re-run starts by taking the old one back, so a release that fails on
+      # a second look is no longer offered.
+      - name: withdraw any earlier verification
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release delete-asset "$GITHUB_REF_NAME" verified-feed.json --repo "$GITHUB_REPOSITORY" --yes || true
+
       - name: the release covers every platform
         shell: bash
         env:
@@ -225,6 +234,16 @@ jobs:
         run: |
           echo "::error::smoke-windows did not pass (${{ needs.smoke-windows.result }}); the updater feed is left on the previous release. Fix, re-run smoke-windows, then re-run this job."
           exit 1
+
+      # The mark pages.yml looks for: the very feed checked above, attached
+      # only once every check here has passed. Every other way the site gets
+      # rebuilt -- any push to main -- can publish this and nothing newer.
+      - name: mark the feed verified
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cp latest.json verified-feed.json
+          gh release upload "$GITHUB_REF_NAME" verified-feed.json --repo "$GITHUB_REPOSITORY" --clobber
 
       # The feed the app actually reads is the copy on ankiengine.com, so a
       # release is not finished until the site has been rebuilt with it.
