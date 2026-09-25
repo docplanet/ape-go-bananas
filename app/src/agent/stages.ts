@@ -140,6 +140,8 @@ export function mountStages(rail: HTMLOListElement, bar: HTMLElement, gate: HTML
   let discardAfter = false;
   /** The folder's files as the last run found them, so what the run added -- a converted/ folder, notes -- can be told apart. */
   let lastRun: { dir: string; stage: StageId; before: Set<string> } | null = null;
+  /** The stage whose artifact the gate shows, so Re-read can redraw it whole. */
+  let gateStage: StageId | null = null;
   /** What the discard gate on screen listed, moved to the trash on a yes. */
   let pendingDiscard: { dir: string; stage: StageId; names: string[] } | null = null;
 
@@ -394,15 +396,24 @@ export function mountStages(rail: HTMLOListElement, bar: HTMLElement, gate: HTML
    * stage after it, rather than showing the same file twice.
    */
   function showArtifactGate(stage: StageId, artifact: string, text: string | null): void {
+    gateStage = stage;
     let after = next(stage);
     const reviewStep = after === 'inventory review' || after === 'plan review' ? after : null;
     if (reviewStep) after = next(reviewStep);
     const label = after === 'deck preview' ? 'Open the deck →' : after ? `Looks right → ${after}` : '';
+    // No file, nothing to approve: a stopped organize offered "Looks right →
+    // cards" over "(no plan.md was written)". The way on is the step again.
+    const writer = WRITER[artifact];
+    const forward =
+      text === null
+        ? writer ? `<button type="button" data-go="${writer}">Run ${esc(writer)} again</button>` : ''
+        : after ? `<button type="button" data-go="${after}" ${reviewStep ? `data-reviewed="${reviewStep}"` : ''}>${esc(label)}</button>` : '';
+    const missing = halted && stage === writer ? `${stage} stopped before writing ${artifact}` : `no ${artifact} was written`;
     showGate(`<header class="bar"><span>${esc(artifact)}</span><span class="grow"></span>
-      ${after ? `<button type="button" data-go="${after}" ${reviewStep ? `data-reviewed="${reviewStep}"` : ''}>${esc(label)}</button>` : ''}<button type="button" data-reread="${esc(artifact)}" class="quiet">Re-read</button>${
-        WRITER[artifact] && text !== null ? `<button type="button" data-discard="${WRITER[artifact]}" class="quiet" title="Move what this step wrote to the deck's trash and go back to it">Discard…</button>` : ''
+      ${forward}<button type="button" data-reread="${esc(artifact)}" class="quiet">Re-read</button>${
+        writer && text !== null ? `<button type="button" data-discard="${writer}" class="quiet" title="Move what this step wrote to the deck's trash and go back to it">Discard…</button>` : ''
       }<button type="button" data-close="1" class="quiet">Close</button></header>
-      <pre class="artifact">${text === null ? `(no ${esc(artifact)} was written — ask the agent below)` : esc(text)}</pre>`, artifact);
+      <pre class="artifact">${text === null ? `(${esc(missing)} — run it again, or ask the agent below)` : esc(text)}</pre>`, artifact);
   }
 
   async function run(stage: StageId): Promise<void> {
@@ -708,8 +719,13 @@ export function mountStages(rail: HTMLOListElement, bar: HTMLElement, gate: HTML
       void run(b.dataset.go as StageId);
     } else if (b.dataset.reread) {
       const text = await sidecar.readCourse(dir, b.dataset.reread).then((r) => r.text, () => null);
-      const pre = gate.querySelector('pre');
-      if (pre) pre.textContent = text ?? `(no ${b.dataset.reread})`;
+      // Redrawn whole: a file the agent wrote since, asked in the chat, brings
+      // the way on with it.
+      if (gateStage && showing === b.dataset.reread) showArtifactGate(gateStage, b.dataset.reread, text);
+      else {
+        const pre = gate.querySelector('pre');
+        if (pre) pre.textContent = text ?? `(no ${b.dataset.reread})`;
+      }
     } else if (b.dataset.discard) void offerDiscard(b.dataset.discard as StageId);
     else if (b.dataset.discardYes) void discard();
     else if (b.dataset.adjudicate) void adjudicate();
