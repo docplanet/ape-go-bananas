@@ -186,6 +186,17 @@ export interface AcpSession {
    */
   cancel(): void;
   /**
+   * Puts a message into the turn that is running rather than queuing it
+   * behind: the agent reads it at its next step. The `_session/steering`
+   * extension, which claude-agent-acp advertises as
+   * `InitializeResponse._meta.steering.supported`; sent with
+   * `idleBehavior: "promptRequired"`, so an agent with no turn running
+   * answers `promptRequired` and does nothing -- the message is then the
+   * caller's to send as an ordinary prompt. Rejects without sending when
+   * the agent did not advertise the extension (`AcpClient.steering`).
+   */
+  steer(input: PromptInput): Promise<'injected' | 'promptRequired'>;
+  /**
    * Registers the handler for `session/update` notifications that arrive
    * with no prompt turn in flight to queue them into -- see file header,
    * point 5. Real examples: the slash-command catalog (#18) or the
@@ -261,6 +272,8 @@ export interface AcpClient {
   readonly authMethods: readonly AuthMethod[];
   readonly agentInfo: Implementation | undefined;
   readonly agentCapabilities: AgentCapabilities;
+  /** The agent takes `_session/steering` (see AcpSession.steer): `_meta.steering.supported` in its initialize result. */
+  readonly steering: boolean;
   newSession(params: NewSessionParams): Promise<AcpSession>;
   /**
    * Protocol-driven authentication (#5.2): sends `authenticate` with
@@ -394,6 +407,7 @@ export async function connect(options: ConnectOptions): Promise<AcpClient> {
         authMethods: parseAuthMethods(raw.authMethods),
         agentInfo: raw.agentInfo ?? undefined,
         agentCapabilities: normalizeAgentCapabilities(raw.agentCapabilities),
+        steering: (raw as { _meta?: { steering?: { supported?: unknown } } })._meta?.steering?.supported === true,
       },
       {
         command: options.command,
@@ -623,6 +637,7 @@ class AcpSessionImpl implements AcpSession {
   readonly sessionId: SessionId;
   private readonly transport: AcpTransport;
   private readonly promptCapabilities: AgentCapabilities['promptCapabilities'];
+  private readonly steering: boolean;
   private activeTurn: TurnState | undefined;
   private readonly pendingPermissions = new Map<RequestId, { cancel: () => void }>();
   // Out-of-turn `session/update`s (file header, point 5), held until
@@ -648,10 +663,12 @@ class AcpSessionImpl implements AcpSession {
     promptCapabilities: AgentCapabilities['promptCapabilities'],
     modes: SessionModeState | undefined,
     configOptions: SessionConfigOption[] | undefined,
+    steering = false,
   ) {
     this.sessionId = sessionId;
     this.transport = transport;
     this.promptCapabilities = promptCapabilities;
+    this.steering = steering;
     this.modes = modes;
     this.currentModeId = modes?.currentModeId;
     this.configOptions = configOptions;
@@ -747,6 +764,19 @@ class AcpSessionImpl implements AcpSession {
     }
   }
 
+  async steer(input: PromptInput): Promise<'injected' | 'promptRequired'> {
+    if (!this.steering) throw new Error(`session ${this.sessionId}: the agent did not advertise _session/steering`);
+    const blocks = normalizePromptInput(input);
+    assertPromptBlocksAllowed(blocks, this.promptCapabilities);
+    const result = (await this.transport.request('_session/steering', {
+      sessionId: this.sessionId,
+      prompt: blocks,
+      _meta: { steering: { idleBehavior: 'promptRequired' } },
+    })) as { outcome?: unknown };
+    if (result?.outcome === 'injected' || result?.outcome === 'promptRequired') return result.outcome;
+    throw new Error(`_session/steering: unexpected outcome ${JSON.stringify(result?.outcome)}`);
+  }
+
   cancel(): void {
     if (!this.activeTurn) return;
     this.transport.notify('session/cancel', { sessionId: this.sessionId });
@@ -835,6 +865,7 @@ interface NormalizedInitInfo {
   authMethods: readonly AuthMethod[];
   agentInfo: Implementation | undefined;
   agentCapabilities: AgentCapabilities;
+  steering: boolean;
 }
 
 /**
@@ -855,6 +886,7 @@ class AcpClientImpl implements AcpClient {
   readonly authMethods: readonly AuthMethod[];
   readonly agentInfo: Implementation | undefined;
   readonly agentCapabilities: AgentCapabilities;
+  readonly steering: boolean;
   private readonly transport: AcpTransport;
   private readonly sessions: Map<SessionId, AcpSessionImpl>;
   private readonly pendingSessionUpdates: Map<SessionId, SessionUpdate[]>;
@@ -875,6 +907,7 @@ class AcpClientImpl implements AcpClient {
     this.authMethods = init.authMethods;
     this.agentInfo = init.agentInfo;
     this.agentCapabilities = init.agentCapabilities;
+    this.steering = init.steering;
   }
 
   /** #5.2; see the AcpClient interface for why both refusals are local. */
@@ -959,6 +992,7 @@ class AcpClientImpl implements AcpClient {
       this.agentCapabilities.promptCapabilities,
       parseModeState((result as { modes?: unknown }).modes),
       parseConfigOptions((result as { configOptions?: unknown }).configOptions),
+      this.steering,
     );
     this.sessions.set(sessionId, session);
     // Flush anything that arrived for this exact sessionId before this

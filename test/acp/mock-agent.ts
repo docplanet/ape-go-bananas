@@ -188,6 +188,14 @@ function handleRequest(
       return handleLogout(id, scenario);
     case 'session/prompt':
       return handleSessionPrompt(id, params, scenario);
+    case '_session/steering': {
+      if (scenario !== SCENARIOS.STEER_HANG) return respondError(id, -32601, `mock-agent: method not found: ${method}`);
+      const sessionId = params.sessionId as string;
+      if (!pendingCancel.has(sessionId)) return respondResult(id, { outcome: 'promptRequired', reason: 'noRunningTurn' });
+      const text = ((params.prompt as Array<{ text?: string }>) ?? []).map((b) => b.text ?? '').join('');
+      notify('session/update', { sessionId, update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: `steered: ${text}` } } });
+      return respondResult(id, { outcome: 'injected' });
+    }
     default:
       respondError(id, -32601, `mock-agent: method not found: ${method}`);
   }
@@ -274,6 +282,7 @@ function handleInitialize(id: number | string | null, scenario: ScenarioName): v
     },
     agentInfo: { name: 'acp-mock-agent', version: '0.0.0-test' },
     authMethods: authMethodsFor(scenario),
+    ...(scenario === SCENARIOS.STEER_HANG ? { _meta: { steering: { supported: true } } } : {}),
   });
 }
 
@@ -485,6 +494,7 @@ function handleSessionPrompt(id: number | string | null, params: Record<string, 
       void runToolPermission(id, sessionId);
       return;
     case SCENARIOS.CANCEL_HANG:
+    case SCENARIOS.STEER_HANG:
       runCancelHang(id, sessionId);
       return;
     case SCENARIOS.ERROR_RESPONSE:

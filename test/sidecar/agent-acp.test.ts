@@ -121,6 +121,38 @@ test('authRequired: session/new failing with auth_required keeps the connection 
   assert.equal(await s.end(), 0);
 });
 
+test('where the agent takes steering, a prompt mid-turn goes into the running turn; after Stop the next prompt says so (§2)', { timeout: TIMEOUT }, async () => {
+  const { s, dataDir } = await sidecarWithMock();
+  const { result, files } = await connectMock(s, dataDir, SCENARIOS.STEER_HANG);
+  const sid = sessionOf(result.session).sessionId;
+  const sent = () => agentReceived(files.logFile);
+  const texts = () => updatesFor(s, sid).map((u) => (u.content as { text: string }).text);
+
+  const first = s.request('s1', 'agent/prompt', { sessionId: sid, blocks: text('go') });
+  await waitForLine(s, (m) => isNotification(m, 'agent/update') && (m.params as { sessionId: string }).sessionId === sid, 'first update of the running turn');
+  let settled = false;
+  const steered = s.request('s2', 'agent/prompt', { sessionId: sid, blocks: text('the slides miss some competencies') }).then((r) => ((settled = true), r));
+  await waitForLine(s, () => texts().includes('steered: the slides miss some competencies'), 'the steered message reaches the running turn');
+  assert.equal(sent().filter((f) => f.method === 'session/prompt').length, 1, 'no second turn: it went into the first');
+  assert.equal(sent().filter((f) => f.method === '_session/steering').length, 1);
+  assert.equal(settled, false, 'a steered prompt answers when the turn it joined ends');
+  assert.deepEqual(notificationParams(s, 'agent/delivery'), [{ sessionId: sid, steered: true }], 'the app is told where it went');
+
+  assert.deepEqual((await s.request('c1', 'agent/cancel', { sessionId: sid })).result, {});
+  assert.deepEqual((await first).result, { stopReason: 'cancelled' });
+  assert.deepEqual((await steered).result, { stopReason: 'cancelled', steered: true }, "the turn's own end, marked steered");
+
+  // The next prompt after Stop tells the agent, ahead of the person's words.
+  const after = s.request('s3', 'agent/prompt', { sessionId: sid, blocks: text('work?') });
+  await waitForLine(s, () => sent().filter((f) => f.method === 'session/prompt').length === 2 && texts().filter((t) => t === 'Starting work...').length === 2, 'the next turn starts');
+  const [note, ...rest] = (sent().filter((f) => f.method === 'session/prompt')[1]!.params as { prompt: Array<{ type: string; text: string }> }).prompt;
+  assert.match(note!.text, /pressed Stop.*Do not resume/s);
+  assert.deepEqual(rest, text('work?'));
+  assert.deepEqual((await s.request('c2', 'agent/cancel', { sessionId: sid })).result, {});
+  assert.deepEqual((await after).result, { stopReason: 'cancelled' });
+  assert.equal(await s.end(), 0);
+});
+
 test('agent/prompt relays every update kind as agent/update in order; a second prompt mid-turn is held and runs next (§2)', { timeout: TIMEOUT }, async () => {
   const { s, dataDir } = await sidecarWithMock();
   const { result, files } = await connectMock(s, dataDir, SCENARIOS.UPDATE_KINDS);
@@ -145,12 +177,15 @@ test('agent/prompt relays every update kind as agent/update in order; a second p
   await new Promise((r) => setTimeout(r, 200));
   assert.equal(prompts().length, 1, 'the second prompt waits while the first turn runs');
   assert.deepEqual(turnsOf(), [true]);
+  assert.deepEqual(notificationParams(s, 'agent/delivery').filter((p) => p.sessionId === hangSid), [{ sessionId: hangSid, steered: false }], 'the app is told it is held');
   assert.deepEqual((await s.request('c1', 'agent/cancel', { sessionId: hangSid })).result, {});
   assert.deepEqual((await first).result, { stopReason: 'cancelled' }, 'the in-flight prompt resolves cancelled');
   assert.ok(agentReceived(hang.files.logFile).some((f) => f.method === 'session/cancel' && f.params?.sessionId === agentSessionIds(hang.files.logFile)[0]), 'session/cancel reached the agent');
   await waitForLine(s, (m) => isNotification(m, 'agent/update') && (m.params as { sessionId: string }).sessionId === hangSid && updatesFor(s, hangSid).length === 3, 'the held turn\'s first update');
   assert.equal(prompts().length, 2, 'the held prompt reached the agent once the first turn ended');
-  assert.deepEqual((prompts()[1]!.params as { prompt: unknown }).prompt, text('again'), 'the held message, as sent');
+  const [note, ...held] = (prompts()[1]!.params as { prompt: Array<{ type: string; text: string }> }).prompt;
+  assert.match(note!.text, /pressed Stop/, 'the agent is told Stop ended its last turn');
+  assert.deepEqual(held, text('again'), 'the held message, as sent');
   assert.deepEqual((await s.request('c1b', 'agent/cancel', { sessionId: hangSid })).result, {});
   assert.deepEqual((await second).result, { stopReason: 'cancelled' });
   assert.deepEqual(turnsOf(), [true, false, true, false], 'agent/turn brackets each turn');

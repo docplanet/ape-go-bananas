@@ -415,7 +415,9 @@ test('agent/cancel mid-stream: prompt resolves cancelled, the fetch is aborted, 
   assert.ok(kept.startsWith('w0 w1 w2 '), `history carries the partial text: ${JSON.stringify(kept)}`);
   assert.equal(kept, seen, 'exactly the text that was streamed to the app');
   assert.equal(second.body.messages.at(-1).role, 'user');
-  assert.equal(textOf(second.body.messages.at(-1).content), 'again');
+  const asked = textOf(second.body.messages.at(-1).content);
+  assert.match(asked, /pressed Stop/, 'the held message comes after Stop, so the agent is told');
+  assert.ok(asked.endsWith('again'), asked);
   assert.equal(await c.s.end(), 0);
 });
 

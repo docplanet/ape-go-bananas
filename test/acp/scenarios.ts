@@ -35,6 +35,13 @@ export const SCENARIOS = {
    * rule (#14.1).
    */
   CANCEL_HANG: 'cancel-hang',
+  /**
+   * CANCEL_HANG, from an agent that advertises claude-agent-acp's steering
+   * extension (`_meta.steering.supported`): `_session/steering` during the
+   * hanging turn streams `steered: <text>` into it and answers `injected`;
+   * with no turn running it answers `promptRequired` and does nothing.
+   */
+  STEER_HANG: 'steer-hang',
   /** session/prompt resolves with a JSON-RPC error instead of a result. */
   ERROR_RESPONSE: 'error-response',
   /** session/prompt writes one line of invalid JSON to stdout, then goes quiet. */

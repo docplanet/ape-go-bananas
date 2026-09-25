@@ -247,7 +247,8 @@ export function makeSidecarClient(host: EngineHost) {
     restoreDeck: (root: string, trashed: string) => call<{ name: string; folder: string; path: string }>('decks/restore', { root, trashed }),
     /** One file beneath the course folder, text or bytes; directories are made. Confined to the folder like course/read. */
     writeCourse: (path: string, name: string, body: { text: string } | { base64: string }) => call<{ name: string; bytes: number }>('course/write', { path, name, ...body }),
-    prompt: (sessionId: string, blocks: ContentBlock[]) => call<{ stopReason: string }>('agent/prompt', { sessionId, blocks }),
+    /** `steered`: the message went into a turn already running, and this is that turn's end. */
+    prompt: (sessionId: string, blocks: ContentBlock[]) => call<{ stopReason: string; steered?: boolean }>('agent/prompt', { sessionId, blocks }),
     cancel: (sessionId: string) => call<Record<string, never>>('agent/cancel', { sessionId }),
     setMode: (sessionId: string, modeId: string) => call<{ modes: ModeState }>('agent/setMode', { sessionId, modeId }),
     setConfigOption: (sessionId: string, id: string, value: string | boolean) =>

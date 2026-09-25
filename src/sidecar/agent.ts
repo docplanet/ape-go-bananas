@@ -75,6 +75,10 @@ interface AcpSessionState {
   commands: AvailableCommand[];
   /** Settles when the last prompt handed to this session has finished; the next one waits on it. */
   tail: Promise<void>;
+  /** The turn running now, or null. */
+  current: RunningTurn | null;
+  /** Stop ended a turn and the agent has not been told yet: the next prompt carries STOPPED_NOTE. */
+  stopped: boolean;
 }
 
 interface ApiConnection {
@@ -97,7 +101,25 @@ interface ApiSessionState {
   configOptions: SessionConfigOption[];
   /** Settles when the last prompt handed to this session has finished; the next one waits on it. */
   tail: Promise<void>;
+  /** The turn running now, or null. */
+  current: RunningTurn | null;
+  /** Stop ended a turn and the agent has not been told yet: the next prompt carries STOPPED_NOTE. */
+  stopped: boolean;
 }
+
+/** A turn in progress: how it ends (for a message steered into it), and whether Stop was pressed on it. */
+interface RunningTurn {
+  ended: Promise<{ stopReason: StopReason } | { error: Error }>;
+  stopping: boolean;
+}
+
+/**
+ * Said to the agent with the first prompt after Stop. Stop ends a turn but
+ * tells the agent nothing, and it read the next short message -- "work?",
+ * the person asking whether the app worked -- as leave to carry on with the
+ * extraction it had been stopped in, outside any step the app could stop.
+ */
+const STOPPED_NOTE = '(A note from the app, not from the person: they pressed Stop, which ended your previous turn before it finished. Do not resume or continue that work unless the message below plainly asks you to. If what they want is unclear, ask them.)';
 
 type Connection = AcpConnection | ApiConnection;
 type SessionState = AcpSessionState | ApiSessionState;
@@ -175,6 +197,10 @@ export class AgentBridge {
       'agent/prompt': (raw) => this.prompt(asParams(raw)),
       'agent/cancel': (raw) => {
         const s = this.session(str(asParams(raw), 'sessionId'));
+        if (s.current) {
+          s.current.stopping = true;
+          s.stopped = true;
+        }
         s.session.cancel();
         return {};
       },
@@ -297,7 +323,7 @@ export class AgentBridge {
       throw err;
     }
     const sessionId = randomUUID();
-    const state: AcpSessionState = { kind: 'acp', sessionId, connectionId: conn.connectionId, session, commands: [], tail: Promise.resolve() };
+    const state: AcpSessionState = { kind: 'acp', sessionId, connectionId: conn.connectionId, session, commands: [], tail: Promise.resolve(), current: null, stopped: false };
     conn.byAgentId.set(session.sessionId, sessionId);
     session.onUpdate((update) => this.forwardUpdate(state, update));
     // Pinned only when the agent offers it: an agent whose modes have other
@@ -381,7 +407,7 @@ export class AgentBridge {
       },
       onPermissionRequest: (params) => this.relayPermission({ ...params, sessionId }),
     });
-    const state: ApiSessionState = { kind: 'api', sessionId, connectionId: conn.connectionId, session, modes, configOptions: [], tail: Promise.resolve() };
+    const state: ApiSessionState = { kind: 'api', sessionId, connectionId: conn.connectionId, session, modes, configOptions: [], tail: Promise.resolve(), current: null, stopped: false };
     state.configOptions = this.apiConfigOptions(conn, state);
     conn.sessions.set(sessionId, state);
     this.sessions.set(sessionId, state);
@@ -506,10 +532,26 @@ export class AgentBridge {
     if (!Array.isArray(blocks) || blocks.some((b) => typeof b !== 'object' || b === null || typeof (b as { type?: unknown }).type !== 'string')) {
       throw new InvalidParams('params.blocks must be an array of content blocks');
     }
-    // One turn at a time, and a prompt sent during one is held for the next,
-    // not refused: the chat and the stages share the writer session, and a
-    // message typed while a stage ran was once refused and never reached the
-    // agent. What was sent is received, in the order it was sent.
+    // A prompt sent during a turn is never refused: the chat and the stages
+    // share the writer session, and a message typed while a stage ran was once
+    // refused and never reached the agent. Where the agent takes steering
+    // (claude-agent-acp's _session/steering), it goes into the running turn
+    // and the agent reads it at its next step -- held until the turn ended,
+    // a note sent during a four-minute extract read as ignored. The result is
+    // that turn's, marked `steered`. A turn being stopped takes nothing.
+    const running = state.current;
+    if (state.kind === 'acp' && running && !running.stopping && (this.connection(state.connectionId) as AcpConnection).client.steering) {
+      const outcome = await state.session.steer(blocks as ContentBlock[]).catch(() => 'promptRequired' as const);
+      if (outcome === 'injected') {
+        this.app.notify('agent/delivery', { sessionId: state.sessionId, steered: true });
+        const end = await running.ended;
+        if ('error' in end) throw new Error(`the turn this message went into failed: ${end.error.message}`);
+        return { stopReason: end.stopReason, steered: true };
+      }
+    }
+    // Otherwise one turn at a time: held, and run when the turn before ends,
+    // in the order sent.
+    if (running) this.app.notify('agent/delivery', { sessionId: state.sessionId, steered: false });
     const before = state.tail;
     let finished!: () => void;
     state.tail = new Promise<void>((resolve) => (finished = resolve));
@@ -518,26 +560,38 @@ export class AgentBridge {
       finished();
       throw new Error(`session ${state.sessionId} closed before this message reached the agent`);
     }
+    let sent = blocks as ContentBlock[];
+    if (state.stopped) {
+      state.stopped = false;
+      sent = [{ type: 'text', text: STOPPED_NOTE }, ...sent];
+    }
+    let end!: (e: { stopReason: StopReason } | { error: Error }) => void;
+    state.current = { ended: new Promise((resolve) => (end = resolve)), stopping: false };
     this.app.notify('agent/turn', { sessionId: state.sessionId, running: true });
     try {
+      let stopReason: StopReason;
       if (state.kind === 'api') {
-        const stopReason = await state.session.prompt(blocks as ContentBlock[]);
-        return { stopReason };
+        stopReason = await state.session.prompt(sent);
+      } else {
+        // In-turn updates arrive only through the iterator (src/acp/session.ts
+        // handleUpdate: an active turn swallows them); out-of-turn ones reach
+        // onUpdate. Both are forwarded to the app as agent/update.
+        const turn = state.session.prompt(sent);
+        let next = await turn.next();
+        while (!next.done) {
+          this.forwardUpdate(state, next.value);
+          next = await turn.next();
+        }
+        stopReason = next.value.stopReason as StopReason;
       }
-      // In-turn updates arrive only through the iterator (src/acp/session.ts
-      // handleUpdate: an active turn swallows them); out-of-turn ones reach
-      // onUpdate. Both are forwarded to the app as agent/update.
-      const turn = state.session.prompt(blocks as ContentBlock[]);
-      let next = await turn.next();
-      while (!next.done) {
-        this.forwardUpdate(state, next.value);
-        next = await turn.next();
-      }
-      return { stopReason: next.value.stopReason as StopReason };
+      end({ stopReason });
+      return { stopReason };
     } catch (err) {
-      if (err instanceof OpenRouterError) throw new Error(err.message);
-      throw err;
+      const e = err instanceof OpenRouterError ? new Error(err.message) : err instanceof Error ? err : new Error(String(err));
+      end({ error: e });
+      throw e;
     } finally {
+      state.current = null;
       this.app.notify('agent/turn', { sessionId: state.sessionId, running: false });
       finished();
     }

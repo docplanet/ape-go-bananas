@@ -190,6 +190,14 @@ export function mountChat(host: HTMLElement, sidecar: SidecarClient, bus: Bus, c
   }
 
   const offUpdate = bus.onNotification((method, params) => {
+    if (method === 'agent/delivery') {
+      // A message sent while a turn ran: into that turn, or after it.
+      const p = params as { sessionId: string; steered: boolean };
+      if (p.sessionId !== session.sessionId) return;
+      append('tool', p.steered ? 'sent into the running turn — the agent reads it at its next step' : 'waiting — the agent reads this when its current turn ends', true);
+      current = null;
+      return;
+    }
     if (method === 'agent/turn') {
       const p = params as { sessionId: string; running: boolean };
       if (p.sessionId !== session.sessionId) return;
@@ -234,14 +242,14 @@ export function mountChat(host: HTMLElement, sidecar: SidecarClient, bus: Bus, c
     if (!text) return;
     input.value = '';
     append('user', text, true);
-    // Sent during a turn -- a stage's, or an earlier message's -- it is held
-    // by the engine and reaches the agent when that turn ends. Said, so the
-    // wait does not read as the message being ignored.
-    if (turnRunning) append('tool', 'waiting — the agent reads this when its current turn ends', true);
+    // Sent during a turn -- a stage's, or an earlier message's -- the engine
+    // puts it into that turn where the agent can take it, or holds it for the
+    // next, and says which (agent/delivery, above): either way it is said, so
+    // the wait does not read as the message being ignored.
     current = null;
     try {
       const r = await sidecar.prompt(session.sessionId, [{ type: 'text', text }]);
-      if (r.stopReason !== 'end_turn') append('tool', `(stopped: ${r.stopReason})`, true);
+      if (r.stopReason !== 'end_turn' && !r.steered) append('tool', `(stopped: ${r.stopReason})`, true);
     } catch (err) {
       append('tool', `error: ${err instanceof EngineError ? err.message : String(err)}`, true);
     } finally {

@@ -160,14 +160,26 @@ While the turn runs, every update is a notification
 `agent/update { sessionId, update: SessionUpdate }` in ACP's exact shapes
 (`agent_message_chunk`, `agent_thought_chunk`, `tool_call`,
 `tool_call_update`, `usage_update`, `available_commands_update`,
-`current_mode_update`, `config_option_update`). One turn runs at a time: a
-second `agent/prompt` on a session mid-turn is held and runs when the turn
-ends, in the order sent -- never refused, since the chat and the stages share
-the writer session and a message refused there never reached the agent. Each
-turn is bracketed by `agent/turn { sessionId, running: true | false }`, so the
-app knows a turn is running whoever started it. A held prompt whose session
-closes before its turn → `-32000` `"session <id> closed before this message
-reached the agent"`.
+`current_mode_update`, `config_option_update`). A second `agent/prompt` on a
+session mid-turn is never refused -- the chat and the stages share the writer
+session, and a message refused there never reached the agent:
+
+- where the agent advertises steering (`InitializeResponse._meta.steering.supported`,
+  claude-agent-acp's `_session/steering`), it goes into the running turn and
+  the agent reads it at its next step; the result is that turn's end, as
+  `{ stopReason, steered: true }`. Not while the turn is being cancelled.
+- otherwise it is held and runs when the turn ends, in the order sent. A held
+  prompt whose session closes first → `-32000` `"session <id> closed before
+  this message reached the agent"`.
+
+Either way the app is told at once: `agent/delivery { sessionId, steered }`.
+Each turn is bracketed by `agent/turn { sessionId, running: true | false }`,
+so the app knows a turn is running whoever started it.
+
+After `agent/cancel` ends a turn, the next prompt on that session goes out
+with a leading text block saying the person pressed Stop and the agent must
+not resume that work unless the message plainly asks: Stop alone tells the
+agent nothing, and it read the next short message as leave to carry on.
 
 ### `agent/cancel`
 params `{ sessionId }` → `{}`; the in-flight `agent/prompt` resolves
