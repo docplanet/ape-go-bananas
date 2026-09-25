@@ -462,19 +462,26 @@ pub fn resolve_paths(resource_dir: Option<PathBuf>) -> Result<Paths, String> {
             }
         },
     };
-    let script = script.canonicalize().map_err(|e| format!("engine script {}: {e} (run `npm run build` in the engine repo)", script.display()))?;
+    // dunce, not std: on Windows std's canonicalize() returns the verbatim
+    // form, \\?\C:\..., and Node cannot start a script from one -- its
+    // realpath reads \\?\C: as a network share and fails, "EISDIR: illegal
+    // operation on a directory, lstat 'C:'". No Windows install of v0.1.6 or
+    // earlier ever started its engine. dunce gives the plain C:\... form.
+    let script = dunce::canonicalize(&script).map_err(|e| format!("engine script {}: {e} (run `npm run build` in the engine repo)", script.display()))?;
 
     let node = std::env::var_os("APE_NODE")
         .map(PathBuf::from)
         .or(bundled_node)
         .unwrap_or_else(|| PathBuf::from("node"));
-    let npm_cli = std::env::var_os("APE_NPM_CLI").map(PathBuf::from).or(bundled_npm);
+    // npm-cli.js is a script Node starts too (agents/index.ts), so it gets the
+    // same plain form, whatever form Tauri's resource_dir() came in.
+    let npm_cli = std::env::var_os("APE_NPM_CLI").map(PathBuf::from).or(bundled_npm).map(|p| dunce::simplified(&p).to_path_buf());
     // Same for the method files: in dev, the method repo beside this checkout
     // (staged with SETUP.md by prepare-bundle for a real bundle).
     let dev_method = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../Anki/method");
     let method_dir = std::env::var_os("APE_METHOD_DIR")
         .map(PathBuf::from)
-        .or_else(|| if cfg!(debug_assertions) && dev_method.is_dir() { dev_method.canonicalize().ok() } else { None })
+        .or_else(|| if cfg!(debug_assertions) && dev_method.is_dir() { dunce::canonicalize(&dev_method).ok() } else { None })
         .or_else(|| resource_dir.as_ref().map(|r| r.join("method")).filter(|p| p.join("1-extract.md").exists()));
     let mut version_cmd = std::process::Command::new(&node);
     version_cmd.arg("--version");
