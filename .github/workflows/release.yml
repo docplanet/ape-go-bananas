@@ -1,6 +1,11 @@
 # Builds the app for every platform and publishes a GitHub Release with the
 # updater feed (latest.json). Trigger: push a tag `v*`, or run by hand.
 #
+# The jobs, in order: `build` (four in parallel, each uploading its bundles
+# and their .sig files), then `feed` (latest.json, written once from those
+# signatures) and `smoke-windows`, then `verify` (checks it all, marks the
+# feed verified, promotes the release).
+#
 # What each job needs and why (docs/research/tauri-packaging.md §6):
 # - the method repo checked out beside this one: the method files are bundled
 #   as prose, and the engine's differential tests spawn its Python tools;
@@ -102,7 +107,10 @@ jobs:
           # a release that is still uploading, or that failed its checks, is
           # not what anyone downloads.
           prerelease: true
-          includeUpdaterJson: true
+          # Not here: four jobs each merging their entry into one shared
+          # latest.json race, and the loser's platform drops out of the feed
+          # (v0.1.2, v0.1.8). The `feed` job writes it once, after all four.
+          includeUpdaterJson: false
           args: ${{ matrix.args }}
 
       # Version-free copies, so a link written once keeps working:
@@ -123,6 +131,34 @@ jobs:
             x86_64-pc-windows-msvc)    copy 'release/bundle/nsis/*-setup.exe' APE-windows-x64-setup.exe ;;
             x86_64-unknown-linux-gnu)  copy 'release/bundle/appimage/*.AppImage' APE-linux-x64.AppImage; copy 'release/bundle/deb/*.deb' APE-linux-x64.deb ;;
           esac
+
+  # The updater feed, from every signature the build jobs uploaded. One job
+  # writes the whole file, so there is nothing to race; the script says why
+  # tauri-action's own feed could not be used, and what shape it keeps.
+  #
+  # It runs even when a build failed, and writes whatever the release holds:
+  # `verify` is what names the missing platform. Re-running a build job
+  # re-runs this one after it, and `verify` compares every signature in the
+  # feed with the .sig on the release, so a rebuilt bundle cannot ship
+  # behind an old one.
+  feed:
+    needs: build
+    if: always() && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.12.0'
+      - name: write latest.json from the release's signatures
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          node .github/release/updater-feed.mjs "$GITHUB_REF_NAME" "$GITHUB_REPOSITORY" > latest.json
+          gh release upload "$GITHUB_REF_NAME" latest.json --repo "$GITHUB_REPOSITORY" --clobber
 
   # The Windows build, installed on a clean machine and started: is its engine
   # running? v0.1.0 through v0.1.6 shipped an engine that never started on
@@ -152,21 +188,24 @@ jobs:
       - name: its engine starts and stays up
         run: node .github/smoke/windows-engine.mjs
 
-  # A release that looks complete can still be broken. The four matrix jobs all
-  # write to one release, and tauri-action can lose a race reconciling assets
-  # ("Not Found - /releases/assets"). v0.1.2 shipped that way: the arm64 job
-  # died after uploading its bundles but before merging its entry, so
-  # latest.json carried no darwin-aarch64. The release page looked right, every
-  # file was there bar one, and every Apple silicon install would have sat on
-  # the old version forever without an error anywhere. This is the step that
-  # makes that loud instead of silent.
+  # A release that looks complete can still be broken. Until the `feed` job,
+  # the four matrix jobs each merged their entry into latest.json themselves,
+  # and two finishing together lost one ("Not Found - /releases/assets").
+  # v0.1.2 shipped that way: the arm64 job died after uploading its bundles
+  # but before merging its entry, so latest.json carried no darwin-aarch64.
+  # The release page looked right, every file was there bar one, and every
+  # Apple silicon install would have sat on the old version forever without
+  # an error anywhere. That race is gone, but a build can still fail or an
+  # upload go missing, and this is the step that makes it loud instead of
+  # silent.
   #
   # It runs even when a build job failed (always()), because that is exactly
-  # when the release needs checking. To repair: re-run the failed matrix job on
-  # its own -- with nothing else in flight the race cannot recur -- then re-run
-  # this one.
+  # when the release needs checking. To repair: "Re-run failed jobs". GitHub
+  # re-runs what needs the failed job -- `feed`, `smoke-windows` and this one
+  # -- after it; and if `feed` were ever skipped, the signature check below
+  # would say so rather than pass an old feed.
   verify:
-    needs: [build, smoke-windows]
+    needs: [build, feed, smoke-windows]
     if: always() && startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions:
@@ -186,6 +225,15 @@ jobs:
         run: |
           gh release delete-asset "$GITHUB_REF_NAME" verified-feed.json --repo "$GITHUB_REPOSITORY" --yes || true
           gh release edit "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --prerelease
+
+      # First, because everything below reads latest.json: if `feed` did not
+      # write it this time, what is on the release is an older feed, and a
+      # rebuilt bundle's new signature is not in it.
+      - name: the feed was written
+        if: needs.feed.result != 'success'
+        run: |
+          echo "::error::feed did not pass (${{ needs.feed.result }}); latest.json on the release is not this run's. Fix, re-run feed, then re-run this job."
+          exit 1
 
       - name: the release covers every platform
         shell: bash
@@ -214,6 +262,18 @@ jobs:
             bad=1
           fi
 
+          # Each entry's signature has to be the one now beside its bundle. A
+          # rebuilt bundle is signed afresh, so a feed older than its bundles
+          # names files the updater will then refuse, and says nothing.
+          mkdir sigs
+          gh release download "$tag" --repo "$repo" --pattern '*.sig' --dir sigs
+          while IFS=$'\t' read -r key file; do
+            if [ ! -f "sigs/$file.sig" ] || ! cmp -s <(jq -j --arg k "$key" '.platforms[$k].signature' latest.json) "sigs/$file.sig"; then
+              echo "::error::latest.json's $key signature is not $file.sig as it is on the release now"
+              bad=1
+            fi
+          done < <(jq -r '.platforms | to_entries[] | "\(.key)\t\(.value.url | split("/") | last)"' latest.json)
+
           want="${tag#v}"
           got=$(jq -r .version latest.json)
           if [ "$got" != "$want" ]; then
@@ -232,7 +292,7 @@ jobs:
           done
 
           if [ "$bad" -ne 0 ]; then
-            echo "::error::$tag is incomplete. Re-run the failed matrix job alone, then re-run this job."
+            echo "::error::$tag is incomplete. Re-run failed jobs; feed and this job re-run after the builds."
             exit 1
           fi
           echo "$tag is complete: every platform in latest.json, every stable-name asset present."
