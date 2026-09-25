@@ -96,7 +96,12 @@ jobs:
             "cannot be opened" → System Settings → Privacy & Security → **Open Anyway**,
             once. Windows shows a SmartScreen warning: **More info → Run anyway**.
           releaseDraft: false
-          prerelease: false
+          # A prerelease until `verify` promotes it. GitHub's "latest" is what
+          # the download page, its links (releases/latest/download/...) and the
+          # oldest builds' updater all read, and a prerelease is never latest:
+          # a release that is still uploading, or that failed its checks, is
+          # not what anyone downloads.
+          prerelease: true
           includeUpdaterJson: true
           args: ${{ matrix.args }}
 
@@ -123,8 +128,8 @@ jobs:
   # running? v0.1.0 through v0.1.6 shipped an engine that never started on
   # Windows (a \\?\ path, sidecar.rs) and every other check passed, because
   # every other check reads files, not processes. A failure here also holds
-  # back the verified mark in `verify`, so installs already out there are not
-  # offered the broken build.
+  # back `verify`'s mark and promotion, so neither installs already out there
+  # nor new downloads get the broken build.
   smoke-windows:
     needs: build
     if: always() && startsWith(github.ref, 'refs/tags/v')
@@ -171,13 +176,16 @@ jobs:
       # job goes red on a complete release, and the site keeps the old feed.
       actions: write
     steps:
-      # The site publishes only a feed this job has attached (pages.yml). A
-      # re-run starts by taking the old one back, so a release that fails on
-      # a second look is no longer offered.
+      # The site publishes only a feed this job has attached (pages.yml), and
+      # downloads come only from a release it has promoted. A re-run starts
+      # by taking both back, so a release that fails on a second look is no
+      # longer offered either way.
       - name: withdraw any earlier verification
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release delete-asset "$GITHUB_REF_NAME" verified-feed.json --repo "$GITHUB_REPOSITORY" --yes || true
+        run: |
+          gh release delete-asset "$GITHUB_REF_NAME" verified-feed.json --repo "$GITHUB_REPOSITORY" --yes || true
+          gh release edit "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --prerelease
 
       - name: the release covers every platform
         shell: bash
@@ -244,6 +252,22 @@ jobs:
         run: |
           cp latest.json verified-feed.json
           gh release upload "$GITHUB_REF_NAME" verified-feed.json --repo "$GITHUB_REPOSITORY" --clobber
+
+      # Out of prerelease, and "latest" if no promoted release is newer: set
+      # explicitly either way, since re-verifying an old release must not
+      # hand it the download page back.
+      - name: promote the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          tag="$GITHUB_REF_NAME"
+          repo="$GITHUB_REPOSITORY"
+          promoted=$(gh release list --repo "$repo" --exclude-drafts --exclude-pre-releases --limit 100 --json tagName --jq '.[].tagName' | grep -vx "$tag" || true)
+          newest=$(printf '%s\n' "$tag" $promoted | sort -V | tail -1)
+          if [ "$newest" = "$tag" ]; then latest=true; else latest=false; fi
+          gh release edit "$tag" --repo "$repo" --prerelease=false --latest=$latest
+          echo "$tag promoted (latest: $latest)"
 
       # The feed the app actually reads is the copy on ankiengine.com, so a
       # release is not finished until the site has been rebuilt with it.
