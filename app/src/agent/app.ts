@@ -94,12 +94,12 @@ export function mountAgentApp(host: EngineHost, opts: AgentAppOptions): AgentApp
   const { rail, bar, view, deck } = opts;
   rail.innerHTML = `
     <h1>A.P.E.</h1>
-    <button type="button" id="rail-home" class="quiet">All decks</button>
     <label class="railhead" for="rail-deck">Deck</label>
     <input id="rail-deck" placeholder="Course::Lecture 3" autocomplete="off" title="What the deck is called in Anki. Two colons make a subdeck.">
     <div id="rail-summary" class="muted"></div>
     <div class="railhead">Steps</div>
     <ol class="stages" id="stages"></ol>
+    <nav class="library" id="rail-library" aria-label="Folders" hidden></nav>
     <div class="railfoot">
       <div id="rail-agent" class="muted"></div>
       <button type="button" id="rail-settings" class="quiet">Settings</button>
@@ -108,6 +108,13 @@ export function mountAgentApp(host: EngineHost, opts: AgentAppOptions): AgentApp
   view.innerHTML = `<section class="home-pane" hidden></section><section class="settings-pane" hidden></section><section class="materials" hidden></section><section class="gate" hidden></section><section class="agent-host" hidden></section>`;
   bar.className = 'nextbar';
   bar.hidden = true;
+  // The way out of a deck, where the eye is when it wants out: above the
+  // next-step bar, naming where the deck sits, as Anki does.
+  const crumb = document.createElement('nav');
+  crumb.className = 'crumb';
+  crumb.setAttribute('aria-label', 'Where you are');
+  crumb.hidden = true;
+  bar.before(crumb);
   const $ = <T extends HTMLElement>(root: HTMLElement, sel: string): T => root.querySelector<T>(sel)!;
   const status = $<HTMLElement>(rail, '#status');
   const say = (text: string, isError = false): void => {
@@ -147,24 +154,152 @@ export function mountAgentApp(host: EngineHost, opts: AgentAppOptions): AgentApp
     gate.hidden = name !== 'agent' || gate.innerHTML === '';
     agentHost.hidden = name !== 'agent';
     bar.hidden = !(name === 'agent' || name === 'deck') || !courseDir;
-    for (const el of railDeckBits) el.hidden = !courseDir;
-    $<HTMLElement>(rail, '#rail-home').hidden = name === 'home';
+    crumb.hidden = bar.hidden;
+    renderCrumb();
+    // On the deck list no deck is being worked on, so the rail does not name
+    // one. The deck stays open behind it -- its agent connected -- and is
+    // marked in the list; opening it again is instant.
+    for (const el of railDeckBits) el.hidden = !courseDir || name === 'home';
+    $<HTMLElement>(rail, '#rail-library').hidden = name !== 'home';
+    home.setOpen(courseDir);
     deck.show(name === 'deck');
     if (name === 'home') void refreshHome();
   }
+
+  function renderCrumb(): void {
+    const segs = deckName.split('::');
+    const leaf = segs.pop() ?? '';
+    crumb.innerHTML =
+      `<button type="button" class="crumb-back" title="All decks (⌘[)">← Decks</button>` +
+      `<span class="crumb-path">${segs.map((s) => `<span class="crumb-folder">${esc(s)}</span><i>::</i>`).join('')}<strong>${esc(leaf)}</strong></span>`;
+  }
+  crumb.addEventListener('click', (e) => {
+    if ((e.target as HTMLElement).closest('.crumb-back')) show('home');
+  });
+  // ⌘[ (Ctrl+[ elsewhere) is back, as in a browser or Finder.
+  document.addEventListener('keydown', (e) => {
+    if ((e.metaKey || e.ctrlKey) && e.key === '[' && !crumb.hidden) {
+      e.preventDefault();
+      show('home');
+    }
+  });
 
   // ---- the deck: a workspace -----------------------------------------------------
   let courseDir: string | null = null;
   let connection: ConnectResult | null = null;
   let chat: Chat | null = null;
 
+  // A deck under the decks root keeps its name in its own folder, so the
+  // list, the rail and Anki agree; a folder the bridge was opened on is not
+  // the app's to write a record into, and keeps the older way: this window's
+  // storage.
+  const norm = (p: string): string => p.replace(/\\/g, '/').replace(/\/+$/, '');
+  const inRoot = (dir: string): boolean => norm(dir).replace(/\/[^/]*$/, '') === norm(decksRoot);
+  let deckName = '';
+
+  async function renameDeck(dir: string, name: string): Promise<string | null> {
+    // A run reads the deck's name into its prompt and writes deck.json; a
+    // rename rewrites deck.json. Not both at once.
+    const running = dir === courseDir ? stages.busy() : null;
+    if (running) {
+      say(`${running} is still running — rename the deck when it has finished`, true);
+      return null;
+    }
+    try {
+      if (!inRoot(dir)) {
+        remember.set(REMEMBER.name(dir), name);
+        return name;
+      }
+      const r = await sidecar.renameDeck(decksRoot, dir, name);
+      remember.set(REMEMBER.name(dir), null);
+      if (r.moved) say(`${r.moved} card${r.moved === 1 ? '' : 's'} now go to ${r.name}`);
+      if (dir === courseDir) {
+        deckName = deckInput.value = r.name;
+        renderCrumb();
+        if (screen === 'deck') await deck.open(dir);
+      }
+      return r.name;
+    } catch (err) {
+      say(err instanceof EngineError ? err.message : String(err), true);
+      return null;
+    }
+  }
+
   deckInput.addEventListener('change', () => {
-    if (courseDir) remember.set(REMEMBER.name(courseDir), deckInput.value.trim());
+    if (!courseDir) return;
+    const name = deckInput.value.trim();
+    if (!name || name === deckName) {
+      deckInput.value = deckName;
+      return;
+    }
+    const dir = courseDir;
+    void renameDeck(dir, name).then((named) => {
+      if (!named && dir === courseDir) deckInput.value = deckName;
+    });
   });
 
   async function refreshHome(): Promise<void> {
     try {
-      home.setDecks((await sidecar.listDecks(decksRoot)).decks);
+      let { decks, folders } = await sidecar.listDecks(decksRoot);
+      // Names given before decks kept their own were kept in this window's
+      // storage. Written into the deck the first time it is listed, unless
+      // it has cards: those already say which deck they go to.
+      let adopted = false;
+      for (const d of decks) {
+        const kept = remember.get(REMEMBER.name(d.path));
+        if (kept === null) continue;
+        remember.set(REMEMBER.name(d.path), null);
+        if (kept && kept !== d.name && !d.artifacts.deck) adopted = (await sidecar.renameDeck(decksRoot, d.path, kept).then(() => true, () => false)) || adopted;
+      }
+      if (adopted) ({ decks, folders } = await sidecar.listDecks(decksRoot));
+      home.setDecks(decks, folders ?? []);
+    } catch (err) {
+      say(err instanceof EngineError ? err.message : String(err), true);
+    }
+  }
+
+  /** Lets go of the open deck: its agent session, its place in the rail. */
+  async function closeWorkspace(): Promise<void> {
+    if (chat) {
+      // The agent's session was opened in the old folder; a new folder is a new session.
+      await chat.dispose();
+      chat = null;
+      connection = null;
+      stages.setConnection(null);
+      picker.setState({ connected: null });
+    }
+    courseDir = null;
+    deckName = deckInput.value = '';
+    materials.hideNotice();
+    home.setOpen(null);
+    remember.set(REMEMBER.deck, null);
+    picker.setState({ hasFolder: false });
+    showAgentLine();
+  }
+
+  async function deleteDeck(d: DeckSummary): Promise<void> {
+    if (d.path === courseDir) {
+      const running = stages.busy();
+      if (running) {
+        say(`${running} is still running in ${d.name} — stop it or let it finish first`, true);
+        return;
+      }
+      await closeWorkspace();
+    }
+    try {
+      const { trashed } = await sidecar.deleteDeck(decksRoot, d.path);
+      await refreshHome();
+      home.notify(`Deleted ${d.name}. Its files are kept for 30 days; nothing in Anki is touched.`, {
+        label: 'Undo',
+        run: () =>
+          void sidecar
+            .restoreDeck(decksRoot, trashed)
+            .then((r) => {
+              home.notify(`Restored ${r.name}.`);
+              return refreshHome();
+            })
+            .catch((err: unknown) => say(err instanceof EngineError ? err.message : String(err), true)),
+      });
     } catch (err) {
       say(err instanceof EngineError ? err.message : String(err), true);
     }
@@ -203,24 +338,19 @@ export function mountAgentApp(host: EngineHost, opts: AgentAppOptions): AgentApp
       say(`${running} is still running in ${deckInput.value.trim() || 'this deck'} — stop it or let it finish first`, true);
       return false;
     }
+    let named: string | null = null;
     try {
-      await sidecar.listCourse(dir);
+      named = (await sidecar.listCourse(dir)).name;
     } catch (err) {
       if (quiet) say(`${basename(dir)} is not there any more — pick a deck, or start a new one`);
       else say(err instanceof EngineError ? err.message : String(err), true);
       return false;
     }
-    if (chat) {
-      // The agent's session was opened in the old folder; a new folder is a new session.
-      await chat.dispose();
-      chat = null;
-      connection = null;
-      stages.setConnection(null);
-      picker.setState({ connected: null });
-    }
+    await closeWorkspace();
     courseDir = dir;
     remember.set(REMEMBER.deck, dir);
-    deckInput.value = remember.get(REMEMBER.name(dir)) ?? name;
+    deckName = deckInput.value = named ?? remember.get(REMEMBER.name(dir)) ?? name;
+    renderCrumb();
     picker.setState({ hasFolder: true });
     show('agent');
     await Promise.all([refreshMaterials(), stages.refresh()]);
@@ -237,8 +367,7 @@ export function mountAgentApp(host: EngineHost, opts: AgentAppOptions): AgentApp
   async function newDeck(name: string): Promise<string | null> {
     try {
       const made = await sidecar.createDeck(decksRoot, name);
-      remember.set(REMEMBER.name(made.path), name);
-      await openWorkspace(made.path, name);
+      await openWorkspace(made.path, made.name);
       return made.path;
     } catch (err) {
       say(err instanceof EngineError ? err.message : String(err), true);
@@ -302,20 +431,85 @@ export function mountAgentApp(host: EngineHost, opts: AgentAppOptions): AgentApp
     onAdd: askForFiles,
     onRemove(relPath) {
       if (!courseDir) return;
+      const dir = courseDir;
+      const name = basename(relPath);
+      const refresh = () => (dir === courseDir ? Promise.all([refreshMaterials(), stages.refresh()]) : undefined);
+      const failed = (err: unknown) => say(err instanceof EngineError ? err.message : String(err), true);
       void sidecar
-        .deleteCourse(courseDir, relPath)
-        .then(() => Promise.all([refreshMaterials(), stages.refresh()]))
-        .catch((err: unknown) => say(err instanceof EngineError ? err.message : String(err), true));
+        .deleteCourse(dir, relPath, { trash: true })
+        .then(async ({ trashed }) => {
+          await refresh();
+          if (!trashed || dir !== courseDir) return;
+          materials.notify(`Removed ${name}. It is kept for 30 days.`, {
+            label: 'Undo',
+            run: () =>
+              void sidecar
+                .restoreCourse(dir, trashed)
+                .then(async (r) => {
+                  await refresh();
+                  if (dir === courseDir) materials.notify(r.name === relPath ? `Put back ${name}.` : `Put back as ${r.name}: ${name} was added again meanwhile.`);
+                })
+                .catch(failed),
+          });
+        })
+        .catch(failed);
     },
   });
 
-  $<HTMLButtonElement>(rail, '#rail-home').addEventListener('click', () => show('home'));
   $<HTMLButtonElement>(rail, '#rail-settings').addEventListener('click', () => show('settings'));
 
   // ---- home, settings ----------------------------------------------------------
   const home: Home = mountHome(homeEl, {
+    rail: $<HTMLElement>(rail, '#rail-library'),
     onNew: (name) => void newDeck(name),
     onOpen: (d) => void openWorkspace(d.path, d.name),
+    onRename: async (d, name) => {
+      const ok = (await renameDeck(d.path, name)) !== null;
+      await refreshHome();
+      return ok;
+    },
+    async onNewFolder(name) {
+      try {
+        const r = await sidecar.createFolder(decksRoot, name);
+        await refreshHome();
+        home.notify(`Made the folder ${r.name}.`);
+        return true;
+      } catch (err) {
+        say(err instanceof EngineError ? err.message : String(err), true);
+        return false;
+      }
+    },
+    async onDeleteFolder(name) {
+      try {
+        const { removed } = await sidecar.deleteFolder(decksRoot, name);
+        await refreshHome();
+        home.notify(`Deleted the folder ${name}.`, {
+          label: 'Undo',
+          run: () =>
+            void (async () => {
+              for (const f of removed) await sidecar.createFolder(decksRoot, f);
+              await refreshHome();
+            })().catch((err: unknown) => say(err instanceof EngineError ? err.message : String(err), true)),
+        });
+      } catch (err) {
+        say(err instanceof EngineError ? err.message : String(err), true);
+      }
+    },
+    async onRenameFolder(from, to) {
+      try {
+        await sidecar.renameFolder(decksRoot, from, to);
+      } catch (err) {
+        say(err instanceof EngineError ? err.message : String(err), true);
+        return;
+      }
+      const { decks } = await sidecar.listDecks(decksRoot);
+      const inside = decks.filter((d) => d.name === from || d.name.startsWith(`${from}::`));
+      let failed = 0;
+      for (const d of inside) if ((await renameDeck(d.path, to + d.name.slice(from.length))) === null) failed += 1;
+      await refreshHome();
+      if (!failed) home.notify(`Moved ${inside.length} deck${inside.length === 1 ? '' : 's'} to ${to}.`);
+    },
+    onDelete: deleteDeck,
     openSettings: () => show('settings'),
   });
   const settings: Settings = mountSettings(settingsEl, host, {

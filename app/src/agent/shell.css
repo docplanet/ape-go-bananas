@@ -101,6 +101,28 @@
 .stages li.running { color: var(--fg); }
 .stages li.running::before { color: var(--warn); }
 .stages li.running .sstate::before { content: "running…"; color: var(--warn); }
+/* The library: on the deck list, the rail lists the folders as places to go.
+   Same bones as the steps -- mono, a left bar for where you are. */
+.library { display: grid; align-content: start; }
+.lib { list-style: none; margin: 4px 0 0; padding: 0; display: grid; gap: 1px; }
+.lib button, .lopen {
+  display: flex; align-items: baseline; gap: 8px; width: 100%; text-align: left;
+  padding: 5px 8px 5px calc(8px + var(--depth, 0) * 14px); border-radius: 0 6px 6px 0; border: 0;
+  border-left: 3px solid transparent; background: transparent; color: var(--muted);
+  font-family: var(--font-mono); font-variation-settings: var(--voice-mono); font-size: 13px; font-weight: 400;
+}
+.lib button:hover, .lopen:hover { color: var(--fg); background: var(--raised); filter: none; }
+.lib button.on { color: var(--fg); font-weight: 600; border-left-color: var(--banana); background: var(--raised); }
+.lib .lall { color: var(--fg); }
+.lname { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lcount { font-size: 11px; color: var(--muted); font-weight: 400; }
+.lnewfolder {
+  justify-self: start; margin: 6px 0 0 3px; padding: 3px 8px; background: transparent; border: 0;
+  color: var(--accent); font-size: 12px; font-weight: 500; border-radius: 6px;
+}
+.lnewfolder:hover { background: var(--raised); filter: none; }
+.lopen { color: var(--fg); border-left-color: var(--banana-edge); }
+
 .railfoot { margin-top: auto; display: grid; gap: 9px; font-size: 12px; padding-top: 16px; border-top: 1px solid var(--line); }
 .railfoot button { justify-self: start; }
 .status {
@@ -175,6 +197,23 @@
 }
 .nextbar button.quiet:hover, .nextbar button.ghost:hover { background: color-mix(in srgb, var(--on-banana) 12%, transparent); }
 
+/* ---- the crumb: out of a deck, and where it sits ---------------------------- */
+.crumb {
+  display: flex; align-items: center; gap: 12px; padding: 7px 16px; flex: none; min-width: 0;
+  background: var(--panel); border-bottom: 1px solid var(--line); font-size: 12.5px;
+}
+.crumb-back {
+  flex: none; background: transparent; color: var(--fg); border: 1px solid var(--line-strong);
+  border-radius: 15px; padding: 4px 12px 4px 10px; font-size: 12px; font-weight: 600;
+}
+.crumb-back:hover { background: var(--raised); border-color: var(--banana-edge); filter: none; }
+.crumb-path {
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted);
+  font-family: var(--font-mono); font-variation-settings: var(--voice-mono);
+}
+.crumb-path i { font-style: normal; opacity: .55; margin: 0 2px; }
+.crumb-path strong { color: var(--fg); font-weight: 600; }
+
 /* ---- home, settings ----------------------------------------------------------- */
 .home-pane, .settings-pane { padding: 8px 4px; max-width: 78ch; }
 .home h2, .settings-pane h2 {
@@ -182,6 +221,13 @@
   font-variation-settings: var(--voice-display);
 }
 .home p { margin: 0 0 14px; color: var(--muted); }
+/* Narrowed to a folder, the title is its path; the folders above it go back up. */
+.home h2 i { font-style: normal; color: var(--muted); font-weight: 400; margin: 0 10px; }
+.home h2 .tcrumb {
+  background: transparent; border: 0; padding: 0; color: var(--muted); font: inherit;
+  font-variation-settings: var(--voice-display); font-weight: 600; border-radius: 6px;
+}
+.home h2 .tcrumb:hover { color: var(--fg); text-decoration: underline; text-underline-offset: 4px; filter: none; }
 .setup-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin: 6px 0 14px; }
 .setup-row input, .newdeck input {
   flex: 1; min-width: 260px; background: var(--panel); color: var(--fg);
@@ -217,25 +263,142 @@
 .set-theme > button:hover { background: var(--raised); filter: none; }
 .set-theme > button[aria-pressed='true'] { background: var(--banana); color: var(--on-banana); font-weight: 600; }
 
-.newdeck { display: flex; gap: 10px; margin: 0 0 10px; }
-.decks { list-style: none; padding: 0; margin: 16px 0; display: grid; gap: 10px; }
+.newdeck { display: flex; gap: 10px; margin: 0 0 10px; flex-wrap: wrap; }
+
+/* Find and sort: only once there are decks enough to need them. */
+.dtools { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 18px 0 0; }
+.dtools input[type='search'] {
+  flex: 1; min-width: 200px; background: var(--panel); color: var(--fg);
+  border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; font: inherit; font-size: 13px;
+}
+.dtools input[type='search']:focus-visible { outline: 2px solid var(--banana-edge); outline-offset: 1px; border-color: var(--banana-edge); }
+.dsort { display: inline-flex; background: var(--panel); border: 1px solid var(--line); border-radius: 9px; padding: 3px; }
+.dsort > button {
+  background: transparent; color: var(--muted); border: 0; border-radius: 6px;
+  padding: 5px 11px; font-size: 12px; font-weight: 500;
+}
+.dsort > button:hover { background: var(--raised); filter: none; }
+.dsort > button[aria-pressed='true'] { background: var(--banana); color: var(--on-banana); font-weight: 600; }
+
+/* The line a deletion leaves, with its way back. */
+.dnotice {
+  display: flex; align-items: center; gap: 12px; margin: 14px 0 0; padding: 8px 8px 8px 14px;
+  background: var(--raised); border: 1px solid var(--line-strong); border-radius: 9px; font-size: 13px;
+}
+.dnotice > span { flex: 1; }
+.materials .dnotice { margin: 0 0 10px; }
+.dnotice > button.quiet { padding: 5px 12px; color: var(--fg); }
+.dnotice .dclose { background: transparent; color: var(--muted); padding: 2px 8px; font-size: 16px; font-weight: 400; }
+.dnotice .dclose:hover { color: var(--fg); filter: none; }
+
+/* A folder is Anki's `::` path, set in mono with the separators dimmed. */
+.dgroup { margin: 16px 0 0; }
+.dfolder { display: flex; align-items: center; gap: 8px; min-height: 32px; }
+.dfold {
+  display: inline-flex; align-items: center; gap: 8px; min-width: 0;
+  background: transparent; color: var(--fg); border: 0; padding: 4px 6px 4px 2px; border-radius: 6px;
+  font-family: var(--font-mono); font-variation-settings: var(--voice-mono); font-size: 13px; font-weight: 600;
+}
+.dfold:hover { background: var(--raised); filter: none; }
+.dfold .dpath { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dfold .dsep { font-style: normal; color: var(--muted); font-weight: 400; margin: 0 1px; }
+.dfold .dn { color: var(--muted); font-weight: 400; font-size: 11.5px; }
+.dchev { width: 0; height: 0; border: 4.5px solid transparent; border-left: 6px solid var(--muted); margin-left: 4px; transition: transform .12s; transform-origin: 3px 50%; }
+.dfold[aria-expanded='true'] .dchev { transform: rotate(90deg); }
+.dfolder-acts { display: inline-flex; gap: 6px; margin-left: auto; opacity: 0; transition: opacity .12s; }
+.dfolder:hover .dfolder-acts, .dfolder:focus-within .dfolder-acts { opacity: 1; }
+.dfolder-acts button { padding: 3px 10px; font-size: 11.5px; border-radius: 14px; }
+@media (hover: none) { .dfolder-acts { opacity: 1; } }
+
+.decks { list-style: none; padding: 0; margin: 8px 0 0; display: grid; gap: 10px; }
+/* The Folders view is a tree: each folder's inside hangs off a rule under its
+   name, so depth reads at a glance without a folder icon. */
+.dtree { margin-top: 8px; }
+.dtree > .dgroup:first-child, .dkids > .dgroup:first-child { margin-top: 10px; }
+.dkids { margin: 4px 0 0 9px; padding-left: 14px; border-left: 1px solid var(--line-strong); }
+.dkids > .decks:first-child { margin-top: 6px; }
+.dgroup .dgroup { margin-top: 10px; }
+.dempty { margin: 6px 0 2px; font-size: 12.5px; color: var(--muted); }
+.dnewfolder { padding: 10px 0 4px; }
+.dfolder-acts button.danger { color: var(--bad); }
 .decks li {
-  background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
-  padding: 13px 17px; cursor: pointer;
-  display: grid; grid-template-columns: 1fr max-content; align-items: center; gap: 4px 18px;
+  position: relative; background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+  display: grid; grid-template-columns: 1fr max-content; align-items: stretch;
 }
 .decks li:hover { border-color: var(--banana-edge); background: var(--raised); }
-.decks li:focus-visible { outline: 2px solid var(--banana-edge); outline-offset: 1px; }
-.decks li strong { font-size: 16.5px; font-weight: 650; font-variation-settings: var(--voice-display); }
-.decks li.empty { cursor: default; color: var(--muted); grid-template-columns: 1fr; }
+.decks li:focus-within { border-color: var(--banana-edge); }
+.decks li.empty { cursor: default; color: var(--muted); grid-template-columns: 1fr; padding: 13px 17px; }
+.decks li.empty:hover { border-color: var(--line); background: var(--panel); }
+/* The deck itself is one button; its menu is a second, beside it. */
+.dopen {
+  display: grid; grid-template-columns: 1fr max-content; align-items: center; gap: 4px 18px;
+  background: transparent; color: var(--fg); border: 0; border-radius: 10px 0 0 10px;
+  padding: 13px 4px 13px 17px; text-align: left; font-weight: 400; font-size: 14px; min-width: 0;
+  font-variation-settings: var(--voice-body);
+}
+.dopen:hover { filter: none; }
+.dopen:focus-visible { outline: 2px solid var(--banana-edge); outline-offset: -2px; }
+.decks li strong {
+  font-size: 16.5px; font-weight: 650; font-variation-settings: var(--voice-display);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
 .decks .dmeta {
   grid-column: 1; color: var(--muted); font-size: 12px;
   font-family: var(--font-mono); font-variation-settings: var(--voice-mono);
 }
+.decks .dkick {
+  grid-column: 1; color: var(--muted); font-size: 11px; margin-bottom: -2px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-family: var(--font-mono); font-variation-settings: var(--voice-mono);
+}
+.decks .dkick .dsep { font-style: normal; opacity: .6; }
+.dopen-tag {
+  display: inline-block; vertical-align: 3px; margin-left: 9px; padding: 1px 8px; border-radius: 10px;
+  background: var(--banana); color: var(--on-banana); font-size: 10.5px; font-weight: 600;
+  font-variation-settings: var(--voice-button); letter-spacing: .02em;
+}
+.decks li.current { border-color: var(--banana-edge); }
 .decks .dstate { grid-column: 1; font-size: 13px; color: var(--accent); font-weight: 500; }
+.dmore {
+  align-self: center; margin-right: 8px; background: transparent; color: var(--muted);
+  border: 0; border-radius: 7px; padding: 6px 9px; font-size: 10px; letter-spacing: .12em; font-weight: 700;
+}
+.dmore:hover, .dmore[aria-expanded='true'] { background: var(--stage); color: var(--fg); filter: none; }
+.dmenu {
+  position: absolute; z-index: 5; top: calc(100% - 10px); right: 10px; min-width: 210px; max-height: 320px; overflow: auto;
+  display: grid; padding: 5px; background: var(--panel); border: 1px solid var(--line-strong); border-radius: 10px;
+  box-shadow: 0 10px 28px color-mix(in srgb, var(--fg) 16%, transparent);
+}
+.dmenu > button {
+  background: transparent; color: var(--fg); border: 0; border-radius: 6px; text-align: left;
+  padding: 7px 10px; font-size: 13px; font-weight: 500;
+}
+.dmenu > button:hover, .dmenu > button:focus-visible { background: var(--raised); filter: none; outline: none; }
+.dmenu > button:disabled { opacity: 1; color: var(--muted); }
+.dmenu > button:disabled::after { content: ' ✓'; color: var(--good); }
+.dmenu > button[data-move] { font-family: var(--font-mono); font-variation-settings: var(--voice-mono); font-size: 12.5px; }
+.dmenu > button[data-move] em { font-style: normal; color: var(--muted); font-family: var(--font); font-variation-settings: var(--voice-body); }
+.dmenu .dsep { font-style: normal; color: var(--muted); }
+.dmenu > button.danger { color: var(--bad); }
+.dmenu-head {
+  padding: 5px 10px 4px; font-size: 10px; text-transform: uppercase; letter-spacing: .14em; color: var(--muted);
+  font-family: var(--font-mono); font-variation-settings: var(--voice-mono);
+}
+/* Renaming happens where the name is. */
+.dedit { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 10px 12px; }
+.dfolder.editing .dedit { padding: 4px 0; flex: 1; }
+.dedit input {
+  flex: 1; min-width: 220px; background: var(--bg); color: var(--fg);
+  border: 1px solid var(--banana-edge); border-radius: 7px; padding: 8px 11px; font: inherit;
+  font-family: var(--font-mono); font-variation-settings: var(--voice-mono); font-size: 13.5px;
+}
+.dedit input:focus-visible { outline: 2px solid var(--banana-edge); outline-offset: 1px; }
+.dedit .hint { flex-basis: 100%; margin: 0; font-size: 12px; }
+.decks li.editing { cursor: default; }
+.decks li.editing:hover { background: var(--panel); }
 /* How far through the eight this deck is, from the artifacts on disk. The
    banana rides at the head of the track. */
-.dsteps { grid-column: 2; grid-row: 1 / span 3; display: flex; align-items: center; gap: 9px; justify-self: end; }
+.dsteps { grid-column: 2; grid-row: 1 / -1; display: flex; align-items: center; gap: 9px; justify-self: end; }
 .dtrack { position: relative; width: 116px; height: 6px; background: var(--dim); border-radius: 3px; }
 .dtrack > i { position: absolute; inset: 0 auto 0 0; background: var(--good); border-radius: 3px; }
 .dsteps .dmark {
@@ -249,7 +412,6 @@
   font-size: 11.5px; color: var(--muted); width: 42px; white-space: nowrap;
   font-family: var(--font-mono); font-variation-settings: var(--voice-mono);
 }
-#rail-home { justify-self: start; padding: 4px 11px; font-size: 11.5px; margin-bottom: 6px; border-radius: 15px; }
 
 /* ---- materials ------------------------------------------------------------------- */
 /* A chip per file rather than a card: the deck's inputs are a short list of
@@ -263,6 +425,26 @@
 }
 .mhead h3 small { text-transform: none; letter-spacing: 0; font-weight: 400; margin-left: 8px; }
 .tiles { display: flex; flex-wrap: wrap; gap: 8px; }
+/* Shelves: a mono label on the left, its chips wrapping on the right. A
+   single shelf carries no label and is just the chips. */
+.shelf { flex-basis: 100%; display: grid; grid-template-columns: 150px 1fr; align-items: start; gap: 8px 12px; }
+.shelf:not(:has(.shelf-label)) { grid-template-columns: 1fr; }
+.shelf-tiles { display: flex; flex-wrap: wrap; gap: 8px; min-width: 0; }
+.shelf-tiles:empty { display: none; }
+.shelf-label {
+  padding-top: 8px; font-size: 11px; color: var(--muted); line-height: 1.3; white-space: nowrap;
+  font-family: var(--font-mono); font-variation-settings: var(--voice-mono);
+}
+.shelf-label small { color: var(--dim); font-size: 11px; margin-left: 4px; }
+.shelf.made .shelf-label {
+  background: none; border: 0; padding: 8px 0 0; text-align: left; font-weight: 400; border-radius: 0;
+  display: inline-flex; gap: 6px; align-items: baseline; cursor: pointer;
+}
+.shelf.made .shelf-label::before { content: '▸'; font-size: 9px; transition: transform .12s; }
+.shelf.made .shelf-label[aria-expanded='true']::before { transform: rotate(90deg); }
+.shelf.made .shelf-label:hover { color: var(--fg); filter: none; }
+.shelf.made .tile { border-style: dashed; }
+@media (max-width: 640px) { .shelf { grid-template-columns: 1fr; gap: 4px; } }
 .tile {
   position: relative; display: inline-flex; align-items: baseline; gap: 8px;
   min-height: 32px; padding: 6px 30px 6px 12px; background: var(--panel);

@@ -5,7 +5,7 @@
 // which spawnSidecar copies from process.env, so each spawn below sets or
 // deletes it on process.env for the duration of the spawn call.
 import assert from 'node:assert/strict';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 import test, { after } from 'node:test';
 
@@ -160,7 +160,7 @@ test('course/list: every regular file recursively, sorted by relPath, dotfiles a
   await s.ready;
   const res = await s.request(1, 'course/list', { path: dir });
   assert.equal(res.error, undefined, JSON.stringify(res.error));
-  assert.deepStrictEqual(res.result, { path: dir, files: EXPECTED_FILES, artifacts: NO_ARTIFACTS, extracted: [] });
+  assert.deepStrictEqual(res.result, { path: dir, name: null, files: EXPECTED_FILES, artifacts: NO_ARTIFACTS, extracted: [] });
   assert.equal(await s.end(), 0);
 });
 
@@ -171,8 +171,8 @@ test('course/list: artifacts are reported, never listed as files; *.apkg is skip
   await s.ready;
   const full = await s.request(1, 'course/list', { path: all.dir });
   assert.equal(full.error, undefined, JSON.stringify(full.error));
-  assert.deepStrictEqual(full.result, { path: all.dir, files: EXPECTED_FILES, artifacts: { inventory: true, plan: true, deck: true, flags: true, review: true }, extracted: [] });
-  assert.deepStrictEqual((await s.request(2, 'course/list', { path: planOnly.dir })).result, { path: planOnly.dir, files: EXPECTED_FILES, artifacts: { ...NO_ARTIFACTS, plan: true }, extracted: [] });
+  assert.deepStrictEqual(full.result, { path: all.dir, name: null, files: EXPECTED_FILES, artifacts: { inventory: true, plan: true, deck: true, flags: true, review: true }, extracted: [] });
+  assert.deepStrictEqual((await s.request(2, 'course/list', { path: planOnly.dir })).result, { path: planOnly.dir, name: null, files: EXPECTED_FILES, artifacts: { ...NO_ARTIFACTS, plan: true }, extracted: [] });
   assert.equal(await s.end(), 0);
 });
 
@@ -203,22 +203,118 @@ test('decks/create names a folder from the deck name, numbers a clash; decks/lis
   const root = join(makeTmpDir(), 'decks');
   const s = spawnSidecar();
   await s.ready;
-  assert.deepStrictEqual((await s.request(1, 'decks/list', { root })).result, { root, decks: [] }, 'an empty root is created and empty');
-  const a = (await s.request(2, 'decks/create', { root, name: 'Anatomy::Lecture 3 / part 1' })).result as { name: string; path: string };
-  assert.equal(a.name, 'Anatomy-Lecture 3 - part 1');
-  assert.equal(a.path, join(root, a.name));
-  const b = (await s.request(3, 'decks/create', { root, name: 'Anatomy::Lecture 3 / part 1' })).result as { name: string };
-  assert.equal(b.name, 'Anatomy-Lecture 3 - part 1 (2)', 'a clash is numbered, not overwritten');
+  assert.deepStrictEqual((await s.request(1, 'decks/list', { root })).result, { root, decks: [], folders: [] }, 'an empty root is created and empty');
+  const a = (await s.request(2, 'decks/create', { root, name: 'Anatomy :: Lecture 3 / part 1' })).result as { name: string; folder: string; path: string };
+  assert.equal(a.name, 'Anatomy::Lecture 3 / part 1', 'the name is kept as Anki would read it');
+  assert.equal(a.folder, 'Anatomy-Lecture 3 - part 1');
+  assert.equal(a.path, join(root, a.folder));
+  const b = (await s.request(3, 'decks/create', { root, name: 'Anatomy::Lecture 3 / part 1' })).result as { folder: string };
+  assert.equal(b.folder, 'Anatomy-Lecture 3 - part 1 (2)', 'a clash is numbered, not overwritten');
   writeFileSync(join(a.path, 'slides.pdf'), '%PDF-1.4\n');
   writeFileSync(join(a.path, 'inventory.md'), '# inv\n');
-  const listed = (await s.request(4, 'decks/list', { root })).result as { decks: { name: string; files: number; pdfs: number; artifacts: { inventory: boolean; deck: boolean } }[] };
-  assert.deepStrictEqual(listed.decks.map((d) => d.name).sort(), [a.name, b.name]);
-  const da = listed.decks.find((d) => d.name === a.name)!;
-  assert.equal(da.files, 1);
+  const listed = (await s.request(4, 'decks/list', { root })).result as { decks: { name: string; folder: string; files: number; pdfs: number; artifacts: { inventory: boolean; deck: boolean } }[] };
+  assert.deepStrictEqual(listed.decks.map((d) => d.folder).sort(), [a.folder, b.folder]);
+  const da = listed.decks.find((d) => d.folder === a.folder)!;
+  assert.equal(da.name, 'Anatomy::Lecture 3 / part 1', 'listed by its name, not its folder');
+  assert.equal(da.files, 1, 'the name record is not material');
   assert.equal(da.pdfs, 1);
+  mkdirSync(join(a.path, 'converted'));
+  writeFileSync(join(a.path, 'converted', 'transcript.txt'), 'made by a step');
+  writeFileSync(join(a.path, 'objectives.doc'), 'doc');
+  const kinds = ((await s.request(7, 'decks/list', { root })).result as { decks: { folder: string; kinds: Record<string, number> }[] }).decks.find((d) => d.folder === a.folder)!.kinds;
+  assert.deepStrictEqual(kinds, { pdf: 1, doc: 1 }, 'what was brought, by kind; a subfolder is not counted');
   assert.equal(da.artifacts.inventory, true);
   assert.equal(da.artifacts.deck, false);
   expectParamError(await s.request(5, 'decks/create', { root }), 'name', 'name absent');
+  expectParamError(await s.request(6, 'decks/create', { root, name: ' :: ' }), 'name', 'nothing but separators');
+  assert.equal(await s.end(), 0);
+});
+
+test('decks/rename moves the cards already written with it, and a deck is listed under the deck its cards go to', { timeout: TIMEOUT }, async () => {
+  const root = join(makeTmpDir(), 'decks');
+  const s = spawnSidecar();
+  await s.ready;
+  const a = (await s.request(1, 'decks/create', { root, name: 'biochem' })).result as { path: string };
+  // The writer chose its own deck path; that is where Send to Anki puts the cards, so that is the name.
+  const deck = { notes: [
+    { deckName: 'ISF::Biochem', fields: { Text: '{{c1::a}}' } },
+    { deckName: 'ISF::Biochem::Sub', fields: { Text: '{{c1::b}}' } },
+    { deckName: 'Elsewhere', fields: { Text: '{{c1::c}}' } },
+  ] };
+  writeFileSync(join(a.path, 'deck.json'), JSON.stringify(deck));
+  let listed = (await s.request(2, 'decks/list', { root })).result as { decks: { name: string }[] };
+  assert.equal(listed.decks[0]!.name, 'biochem', 'no shared deck across the notes: the given name stands');
+  deck.notes.pop();
+  writeFileSync(join(a.path, 'deck.json'), JSON.stringify(deck));
+  listed = (await s.request(3, 'decks/list', { root })).result as { decks: { name: string }[] };
+  assert.equal(listed.decks[0]!.name, 'ISF::Biochem', 'the deck the cards share');
+
+  const r = (await s.request(4, 'decks/rename', { root, path: a.path, name: 'Year 1::Biochem' })).result as { name: string; moved: number };
+  assert.deepStrictEqual(r, { name: 'Year 1::Biochem', path: a.path, moved: 2 });
+  const after = JSON.parse(readFileSync(join(a.path, 'deck.json'), 'utf8')) as typeof deck;
+  assert.deepStrictEqual(after.notes.map((n) => n.deckName), ['Year 1::Biochem', 'Year 1::Biochem::Sub'], 'a subdeck keeps its place beneath');
+  assert.equal(((await s.request(5, 'course/list', { path: a.path })).result as { name: string }).name, 'Year 1::Biochem');
+
+  expectParamError(await s.request(6, 'decks/rename', { root, path: root, name: 'x' }), 'path', 'the root itself');
+  expectParamError(await s.request(7, 'decks/rename', { root, path: join(root, '..', 'elsewhere'), name: 'x' }), 'path', 'outside the root');
+  expectParamError(await s.request(8, 'decks/rename', { root, path: a.path, name: '::' }), 'name', 'an empty name');
+  assert.equal(await s.end(), 0);
+});
+
+test('folders: made before any deck, nested, kept once empty; renamed with what is beneath; deleted only when empty', { timeout: TIMEOUT }, async () => {
+  const root = join(makeTmpDir(), 'decks');
+  const s = spawnSidecar();
+  await s.ready;
+  const r = (await s.request(1, 'folders/create', { root, name: 'ISF :: Test 2' })).result as { name: string; folders: string[] };
+  assert.deepStrictEqual(r, { name: 'ISF::Test 2', folders: ['ISF', 'ISF::Test 2'] }, 'its parents come with it');
+  const listed = (await s.request(2, 'decks/list', { root })).result as { decks: unknown[]; folders: string[] };
+  assert.deepStrictEqual(listed, { root, decks: [], folders: ['ISF', 'ISF::Test 2'] }, 'an empty folder is listed');
+
+  const a = (await s.request(3, 'decks/create', { root, name: 'Year 1::Pharm::Lecture 1' })).result as { path: string };
+  assert.deepStrictEqual(((await s.request(4, 'decks/list', { root })).result as { folders: string[] }).folders, ['ISF', 'ISF::Test 2', 'Year 1', 'Year 1::Pharm'], 'a deck\'s folders are kept too');
+  await s.request(5, 'decks/rename', { root, path: a.path, name: 'Lecture 1' });
+  assert.deepStrictEqual(((await s.request(6, 'decks/list', { root })).result as { folders: string[] }).folders, ['ISF', 'ISF::Test 2', 'Year 1', 'Year 1::Pharm'], 'and outlast the deck moving out');
+
+  const moved = (await s.request(7, 'folders/rename', { root, from: 'ISF', to: 'Summer::ISF' })).result as { folders: string[] };
+  assert.deepStrictEqual(moved.folders, ['Summer', 'Summer::ISF', 'Summer::ISF::Test 2', 'Year 1', 'Year 1::Pharm']);
+  expectParamError(await s.request(8, 'folders/rename', { root, from: 'Summer', to: 'Summer::Inner' }), 'to', 'into itself');
+
+  await s.request(9, 'decks/rename', { root, path: a.path, name: 'Year 1::Pharm::Lecture 1' });
+  expectParamError(await s.request(10, 'folders/delete', { root, name: 'Year 1' }), 'name', 'a folder with a deck beneath');
+  const del = (await s.request(11, 'folders/delete', { root, name: 'Summer' })).result as { removed: string[]; folders: string[] };
+  assert.deepStrictEqual(del.folders, ['Year 1', 'Year 1::Pharm'], 'an empty folder goes with its empty subfolders');
+  assert.deepStrictEqual(del.removed, ['Summer', 'Summer::ISF', 'Summer::ISF::Test 2'], 'named, so they can be made again');
+  expectParamError(await s.request(12, 'folders/create', { root, name: '::' }), 'name', 'an empty name');
+  assert.equal(await s.end(), 0);
+});
+
+test('decks/delete puts a deck in the trash, whole; decks/restore brings it back beside whatever took its folder', { timeout: TIMEOUT }, async () => {
+  const root = join(makeTmpDir(), 'decks');
+  const s = spawnSidecar();
+  await s.ready;
+  const a = (await s.request(1, 'decks/create', { root, name: 'Lecture 1' })).result as { path: string; folder: string };
+  writeFileSync(join(a.path, 'slides.pdf'), '%PDF-1.4\n');
+  const { trashed } = (await s.request(2, 'decks/delete', { root, path: a.path })).result as { trashed: string };
+  assert.equal(existsSync(a.path), false);
+  assert.equal(readFileSync(join(trashed, 'slides.pdf'), 'utf8'), '%PDF-1.4\n', 'the files went with it, not away');
+  assert.deepStrictEqual(((await s.request(3, 'decks/list', { root })).result as { decks: unknown[] }).decks, [], 'the trash is not a deck');
+
+  await s.request(4, 'decks/create', { root, name: 'Lecture 1' }); // takes the folder back meanwhile
+  const back = (await s.request(5, 'decks/restore', { root, trashed })).result as { name: string; folder: string; path: string };
+  assert.deepStrictEqual(back, { name: 'Lecture 1', folder: 'Lecture 1 (2)', path: join(root, 'Lecture 1 (2)') });
+  assert.equal(existsSync(join(back.path, 'slides.pdf')), true);
+
+  expectParamError(await s.request(6, 'decks/delete', { root, path: root }), 'path', 'the root');
+  expectParamError(await s.request(7, 'decks/delete', { root, path: join(root, '.trash') }), 'path', 'the trash');
+  expectParamError(await s.request(8, 'decks/delete', { root, path: join(dirname(root), 'x') }), 'path', 'beside the root');
+  expectParamError(await s.request(9, 'decks/restore', { root, trashed: back.path }), 'trashed', 'not in the trash');
+
+  // A deck deleted long ago is gone for good at the next listing.
+  const { trashed: old } = (await s.request(10, 'decks/delete', { root, path: back.path })).result as { trashed: string };
+  const ancient = old.replace(/~\d+$/, `~${Date.now() - 31 * 24 * 60 * 60 * 1000}`);
+  renameSync(old, ancient);
+  await s.request(11, 'decks/list', { root });
+  assert.equal(existsSync(ancient), false);
   assert.equal(await s.end(), 0);
 });
 
@@ -246,6 +342,44 @@ test('course/import copies files, and a folder\'s files one level deep minus dot
   assert.deepStrictEqual((await s.request(6, 'course/delete', { path: dir, name: 'a.pdf' })).result, { name: 'a.pdf', removed: false }, 'deleting twice is not an error');
   expectParamError(await s.request(7, 'course/delete', { path: dir, name: '../outside.md' }), 'name', 'escapes path');
   expectParamError(await s.request(8, 'course/delete', { path: dir, name: 'sub' }), 'name', 'a directory');
+  assert.equal(await s.end(), 0);
+});
+
+test('course/delete with trash: true moves a material and its extraction aside; course/restore puts them back, beside a file that took the name meanwhile', { timeout: TIMEOUT }, async () => {
+  const { dir } = makeCourseTree();
+  const s = spawnSidecar();
+  await s.ready;
+  writeFileSync(join(dir, 'a.pdf'), '%PDF-a');
+  await s.request(1, 'course/write', { path: dir, name: '_extracted/a.pdf/text.md', text: '# a' });
+  const del = (await s.request(2, 'course/delete', { path: dir, name: 'a.pdf', trash: true })).result as { removed: boolean; trashed: string };
+  assert.equal(del.removed, true);
+  assert.match(del.trashed, /^\d+$/);
+  assert.equal(existsSync(join(dir, 'a.pdf')), false);
+  assert.equal(existsSync(join(dir, '_extracted', 'a.pdf')), false);
+  const listed = (await s.request(3, 'course/list', { path: dir })).result as { files: { relPath: string }[] };
+  assert.ok(!listed.files.some((f) => f.relPath.includes('a.pdf') || f.relPath.startsWith('.trash')), 'the trash is not material');
+
+  writeFileSync(join(dir, 'a.pdf'), '%PDF-new'); // dropped again meanwhile
+  assert.deepStrictEqual((await s.request(4, 'course/restore', { path: dir, trashed: del.trashed })).result, { name: 'a (2).pdf' });
+  assert.equal(readFileSync(join(dir, 'a (2).pdf'), 'utf8'), '%PDF-a');
+  assert.equal(readFileSync(join(dir, 'a.pdf'), 'utf8'), '%PDF-new', 'the newer file is left alone');
+  assert.equal(readFileSync(join(dir, '_extracted', 'a (2).pdf', 'text.md'), 'utf8'), '# a', 'its extraction follows its new name');
+  assert.equal(existsSync(join(dir, '.trash', del.trashed)), false, 'the entry is emptied');
+
+  expectParamError(await s.request(5, 'course/restore', { path: dir, trashed: del.trashed }), 'trashed', 'restored twice');
+  expectParamError(await s.request(6, 'course/restore', { path: dir, trashed: '../x' }), 'trashed', 'not an entry id');
+  expectParamError(await s.request(7, 'course/delete', { path: dir, name: '.trash/x', trash: true }), 'name', 'inside the trash');
+
+  // Without trash: gone, as the stages want their leftovers.
+  assert.deepStrictEqual((await s.request(8, 'course/delete', { path: dir, name: 'a.pdf' })).result, { name: 'a.pdf', removed: true });
+  assert.equal(existsSync(join(dir, '.trash')) && readdirSync(join(dir, '.trash')).length > 0, false);
+
+  // A removal a month old is gone for good at the next listing.
+  const { trashed } = (await s.request(9, 'course/delete', { path: dir, name: 'a (2).pdf', trash: true })).result as { trashed: string };
+  const old = String(Date.now() - 31 * 24 * 60 * 60 * 1000);
+  renameSync(join(dir, '.trash', trashed), join(dir, '.trash', old));
+  await s.request(10, 'course/list', { path: dir });
+  assert.equal(existsSync(join(dir, '.trash', old)), false);
   assert.equal(await s.end(), 0);
 });
 

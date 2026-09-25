@@ -135,10 +135,15 @@ export interface Extracted {
 
 /** One deck workspace as decks/list reports it. */
 export interface DeckSummary {
+  /** What it is called in Anki: where its cards go once written, else the name it was given. `::` makes folders. */
   name: string;
+  /** Its folder under the decks root: an id, fixed at creation, never shown. */
+  folder: string;
   path: string;
   files: number;
   pdfs: number;
+  /** What the person brought, by CourseFile kind; what the steps made in subfolders is not counted. Absent from an older engine. */
+  kinds?: Partial<Record<CourseFile['kind'], number>>;
   artifacts: { inventory: boolean; plan: boolean; deck: boolean; flags: boolean; review: boolean };
   modified: string;
 }
@@ -217,15 +222,29 @@ export function makeSidecarClient(host: EngineHost) {
     listMethod: () => call<{ dir: string; files: { name: string; title: string; bytes: number }[] }>('method/list'),
     readMethod: (name: string) => call<{ name: string; text: string }>('method/read', { name }),
     listCourse: (path: string) =>
-      call<{ path: string; files: CourseFile[]; artifacts: { inventory: boolean; plan: boolean; deck: boolean; flags: boolean; review: boolean }; extracted: Extracted[] }>('course/list', { path }),
+      call<{ path: string; name: string | null; files: CourseFile[]; artifacts: { inventory: boolean; plan: boolean; deck: boolean; flags: boolean; review: boolean }; extracted: Extracted[] }>('course/list', { path }),
     readCourse: (path: string, name: string) => call<{ name: string; text: string; bytes: number }>('course/read', { path, name }),
     /** Copies files (or a folder's files, one level) into the course folder by name: the desktop shell's drop and picker. */
     importCourse: (path: string, files: string[]) => call<{ imported: string[] }>('course/import', { path, files }),
-    /** Removes one file beneath the course folder, and what was extracted from it. */
-    deleteCourse: (path: string, name: string) => call<{ name: string; removed: boolean }>('course/delete', { path, name }),
+    /** Removes one file beneath the course folder, and what was extracted from it; with `trash`, into the folder's trash for restoreCourse. */
+    deleteCourse: (path: string, name: string, opts: { trash?: boolean } = {}) =>
+      call<{ name: string; removed: boolean; trashed?: string | null }>('course/delete', { path, name, ...opts }),
+    /** Puts a material removed with `trash` back; its name, numbered if the old one was taken since. */
+    restoreCourse: (path: string, trashed: string) => call<{ name: string }>('course/restore', { path, trashed }),
     /** The shell's workspaces: one course folder per deck under `root`, newest first. */
-    listDecks: (root: string) => call<{ root: string; decks: DeckSummary[] }>('decks/list', { root }),
-    createDeck: (root: string, name: string) => call<{ name: string; path: string }>('decks/create', { root, name }),
+    listDecks: (root: string) => call<{ root: string; decks: DeckSummary[]; folders?: string[] }>('decks/list', { root }),
+    /** Folders are Anki's `::` paths, kept under `root` so one can exist empty; its parents are made with it. */
+    createFolder: (root: string, name: string) => call<{ name: string; folders: string[] }>('folders/create', { root, name }),
+    /** The folder record only; the decks in it are renamed one by one with renameDeck. */
+    renameFolder: (root: string, from: string, to: string) => call<{ name: string; folders: string[] }>('folders/rename', { root, from, to }),
+    /** An empty folder and its empty subfolders; refused while a deck is beneath. */
+    deleteFolder: (root: string, name: string) => call<{ name: string; removed: string[]; folders: string[] }>('folders/delete', { root, name }),
+    createDeck: (root: string, name: string) => call<{ name: string; folder: string; path: string }>('decks/create', { root, name }),
+    /** Renames (so moves, in Anki's `::` tree) a deck under `root`; cards already written follow it. */
+    renameDeck: (root: string, path: string, name: string) => call<{ name: string; path: string; moved: number }>('decks/rename', { root, path, name }),
+    /** Moves a deck under `root` to its trash, kept 30 days; `trashed` is what decks/restore takes. */
+    deleteDeck: (root: string, path: string) => call<{ trashed: string }>('decks/delete', { root, path }),
+    restoreDeck: (root: string, trashed: string) => call<{ name: string; folder: string; path: string }>('decks/restore', { root, trashed }),
     /** One file beneath the course folder, text or bytes; directories are made. Confined to the folder like course/read. */
     writeCourse: (path: string, name: string, body: { text: string } | { base64: string }) => call<{ name: string; bytes: number }>('course/write', { path, name, ...body }),
     prompt: (sessionId: string, blocks: ContentBlock[]) => call<{ stopReason: string }>('agent/prompt', { sessionId, blocks }),
