@@ -191,7 +191,14 @@ export interface Runner {
   activeSession(): string | null;
 }
 
-export function makeRunner(client: PipelineClient, conn: ConnectionLike, courseDir: string, deckName: () => string): Runner {
+/**
+ * `context`, when given, is the shell's note on where the deck stands --
+ * which steps are done, which is running, what the agent may do about it --
+ * sent after the stage's own blocks. A writer that was only ever told its
+ * current step answered a note mid-extract with "I already extracted it" and
+ * set off on the rest of the process its own way.
+ */
+export function makeRunner(client: PipelineClient, conn: ConnectionLike, courseDir: string, deckName: () => string, context?: () => string): Runner {
   const writer = conn.session!.sessionId;
   let active: string | null = null;
   const prompt = async (sessionId: string, blocks: ContentBlock[]): Promise<{ stopReason: string }> => {
@@ -205,6 +212,8 @@ export function makeRunner(client: PipelineClient, conn: ConnectionLike, courseD
   return {
     async run(stage) {
       const blocks = await stageBlocks(client, stage, courseDir, deckName());
+      const where = context?.();
+      if (where) blocks.push({ type: 'text', text: where });
       const { stopReason } = await prompt(writer, blocks);
       let artifactText: string | null = null;
       try {

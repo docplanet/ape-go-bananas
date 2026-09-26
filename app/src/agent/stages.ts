@@ -22,12 +22,13 @@ import {
 import { EngineError, type ConnectResult, type Flag, type SidecarClient, type SendToAnkiResult } from '../engine/client.js';
 import type { Bus } from './bus.js';
 import { mergeFlags } from './flags.js';
+import { STAGES, stepsNote, type Directive, type StepState } from './steps-note.js';
 
 /** Silence long enough to mention, and long enough to worry about. */
 const QUIET_MS = 60_000;
 const STALLED_MS = 240_000;
 
-export const STAGES: readonly StageId[] = ['extract', 'inventory review', 'organize', 'plan review', 'cards', 'deck preview', 'audit', 'deliver'];
+export { STAGES };
 
 /** One line per step: what it does, shown in the bar before it runs. */
 const ABOUT: Record<StageId, string> = {
@@ -72,6 +73,20 @@ const OUTPUT: Partial<Record<StageId, string[]>> = {
   cards: ['deck.json'],
   audit: ['audit.md', 'audit.json'],
 };
+/** What finishing each step means, in the note the agent is sent. */
+const FINISH: Record<StageId, string> = {
+  extract: 'writes inventory.md',
+  'inventory review': 'the person reads inventory.md and says it is right',
+  organize: 'writes plan.md',
+  'plan review': 'the person reads plan.md and says it is right',
+  cards: 'writes deck.json',
+  'deck preview': 'the person looks through every card',
+  audit: 'a fresh session reviews the whole deck; the person rules on its findings',
+  deliver: 'the person exports the deck or sends it to Anki',
+};
+/** The file a writing step leaves, which is what "done" is checked against. */
+const FILE: Partial<Record<StageId, string>> = { extract: 'inventory.md', organize: 'plan.md', cards: 'deck.json', audit: 'audit.md' };
+
 /** The stage behind an artifact a gate shows. */
 const WRITER: Record<string, StageId> = { 'inventory.md': 'extract', 'plan.md': 'organize', 'deck.json': 'cards' };
 
@@ -92,6 +107,10 @@ export interface Stages {
   refresh(): Promise<void>;
   /** What is running, or null; a deck is not switched out from under a run. */
   busy(): string | null;
+  /** The note on where the deck stands, for the agent (steps-note.ts). */
+  note(): string;
+  /** Acts on one line the agent ended a reply with, after checking it; says what happened, for the chat. */
+  act(d: Directive): Promise<string>;
 }
 
 interface Action {
@@ -697,6 +716,57 @@ export function mountStages(rail: HTMLOListElement, bar: HTMLElement, gate: HTML
     }
   }
 
+  function note(): string {
+    const nextStage = busy ? null : action().stage;
+    // The audit's sub-steps (adjudicating, applying verdicts) run under the audit.
+    const runningStage = busy ? ((STAGES as readonly string[]).includes(busy) ? (busy as StageId) : 'audit') : null;
+    const steps = STAGES.map((stage) => {
+      const state: StepState = stage === runningStage ? 'running' : done(stage) ? 'done' : stage === nextStage ? 'next' : 'not yet';
+      return { stage, state, about: FINISH[stage] };
+    });
+    return stepsNote(steps, host.deckName());
+  }
+
+  /**
+   * One line from the agent, checked before anything moves: a writing step is
+   * done only if its file is in the folder; a step is started only when it is
+   * the one the bar offers and nothing is running. Delivering is left to the
+   * person -- it puts cards into their Anki.
+   */
+  async function act(d: Directive): Promise<string> {
+    if (!host.courseDir()) return `no deck is open; ${d.stage} is left as it is`;
+    await refresh();
+    const { stage } = d;
+    if (d.verb === 'done') {
+      const file = FILE[stage];
+      if (file) return done(stage) ? `✓ ${stage} is done — ${file} is in the folder` : `${stage} is not done: there is no ${file} in the folder yet`;
+      if (stage === 'inventory review' || stage === 'plan review') {
+        const needs = stage === 'inventory review' ? 'extract' : 'organize';
+        if (!done(needs)) return `${stage} cannot be checked off: ${needs} has not written ${FILE[needs]} yet`;
+        if (done(stage)) return `✓ ${stage} was already done`;
+        reviewed.add(stage);
+        if (showing === (stage === 'inventory review' ? 'inventory.md' : 'plan.md')) hideGate();
+        await refresh();
+        return `✓ ${stage} checked off — next: ${action().stage}`;
+      }
+      if (stage === 'deck preview') {
+        if (!has.deck) return 'deck preview cannot be checked off: there is no deck.json yet';
+        previewed = true;
+        await refresh();
+        return `✓ deck preview checked off — next: ${action().stage}`;
+      }
+      return "deliver is done when the deck is exported or sent to Anki — that is the person's button";
+    }
+    if (busy) return `${busy} is still running; ${stage} waits until it finishes`;
+    if (stage === 'deliver') return "deliver puts cards into Anki — that is the person's button, in the bar above";
+    const a = action();
+    if (a.stage !== stage) return `${stage} is not next — ${a.stage} is`;
+    if (a.button === 'Add files…') return "there are no files to read yet; add the lecture's files first";
+    if (!runner && (WRITING_STAGES.some((w) => w.id === stage) || stage === 'audit')) return `${stage} needs an agent connected — see Settings`;
+    void a.go();
+    return `▸ ${a.button}`;
+  }
+
   rail.addEventListener('click', (e) => {
     const li = (e.target as HTMLElement).closest<HTMLLIElement>('li[data-stage]');
     if (li) void run(li.dataset.stage as StageId);
@@ -739,12 +809,14 @@ export function mountStages(rail: HTMLOListElement, bar: HTMLElement, gate: HTML
   return {
     setConnection(conn) {
       const dir = host.courseDir();
-      runner = conn && conn.session && dir ? makeRunner(sidecar, conn, dir, host.deckName) : null;
+      runner = conn && conn.session && dir ? makeRunner(sidecar, conn, dir, host.deckName, note) : null;
       writerSession = conn?.session?.sessionId ?? null;
       renderBar();
     },
     run,
     refresh,
     busy: () => busy,
+    note,
+    act,
   };
 }

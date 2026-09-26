@@ -10,6 +10,13 @@
 import { EngineError, type ConfigOption, type ConnectResult, type ModeState, type PermissionRequest, type SessionUpdate, type SidecarClient } from '../engine/client.js';
 import type { Bus } from './bus.js';
 import { decide } from './permission-policy.js';
+import { directives, withoutDirectives, type Directive } from './steps-note.js';
+
+/** The steps, as the chat needs them: the note sent with each message, and the lines the agent answers with. */
+export interface ChatSteps {
+  note(): string;
+  act(d: Directive): Promise<string>;
+}
 
 function esc(s: string): string {
   return s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
@@ -41,7 +48,7 @@ function isModeOption(o: ConfigOption): boolean {
   return o.type === 'select' && (o.category === 'mode' || /^mode$/i.test(o.id) || /^mode$/i.test(o.name));
 }
 
-export function mountChat(host: HTMLElement, sidecar: SidecarClient, bus: Bus, conn: ConnectResult, say: (t: string, e?: boolean) => void, courseDir: () => string | null, preferredMode?: ModePreference): Chat {
+export function mountChat(host: HTMLElement, sidecar: SidecarClient, bus: Bus, conn: ConnectResult, say: (t: string, e?: boolean) => void, courseDir: () => string | null, preferredMode?: ModePreference, steps?: ChatSteps): Chat {
   const session = conn.session!;
   /** A turn is running on this session -- the chat's own, or a stage's: they share it. The engine says so with agent/turn. */
   let turnRunning = false;
@@ -54,7 +61,7 @@ export function mountChat(host: HTMLElement, sidecar: SidecarClient, bus: Bus, c
       <header class="bar"><span>${esc(conn.agent?.name ?? conn.provider)}</span><span class="grow"></span><div id="selectors" class="selectors"></div><span id="cost" class="muted"></span></header>
       <div id="messages" class="messages"></div>
       <div id="permission" class="permission hidden"></div>
-      <form id="composer" class="composer"><textarea id="input" rows="3" placeholder="Ask the agent…"></textarea><button type="submit" id="send">Send</button><button type="button" id="stop" class="quiet hidden">Stop</button></form>
+      <form id="composer" class="composer"><textarea id="input" rows="3" placeholder="Ask the agent… (Enter sends, Shift+Enter for a new line)"></textarea><button type="submit" id="send">Send</button><button type="button" id="stop" class="quiet hidden">Stop</button></form>
     </section>`;
   const messages = host.querySelector<HTMLDivElement>('#messages')!;
   const selectors = host.querySelector<HTMLDivElement>('#selectors')!;
@@ -65,6 +72,10 @@ export function mountChat(host: HTMLElement, sidecar: SidecarClient, bus: Bus, c
 
   let current: HTMLElement | null = null;
   let currentKind = '';
+  // What the agent said in the turn now running, whoever started it, and
+  // where it was drawn: read at the turn's end for the lines that move the steps.
+  let said = '';
+  let saidIn: HTMLElement[] = [];
   function append(kind: string, text: string, asBlock = false): void {
     if (!asBlock && current && currentKind === kind) {
       current.textContent += text;
@@ -75,7 +86,26 @@ export function mountChat(host: HTMLElement, sidecar: SidecarClient, bus: Bus, c
       messages.append(current);
       currentKind = kind;
     }
+    if (kind === 'agent') {
+      said += text;
+      if (!saidIn.includes(current)) saidIn.push(current);
+    }
     messages.scrollTop = messages.scrollHeight;
+  }
+
+  /** At a turn's end: the agent's closing lines, taken out of its reply and done, each with what came of it. */
+  async function actOnTurn(): Promise<void> {
+    const found = directives(said);
+    const drawn = saidIn;
+    said = '';
+    saidIn = [];
+    if (!steps || found.length === 0) return;
+    for (const el of drawn) el.textContent = withoutDirectives(el.textContent ?? '');
+    for (const d of found) {
+      const result = await steps.act(d).catch((err: unknown) => `APE: ${d.verb} ${d.stage} failed — ${err instanceof Error ? err.message : String(err)}`);
+      append('tool', `APE: ${d.verb} ${d.stage} → ${result}`, true);
+      current = null;
+    }
   }
 
   function renderSelectors(): void {
@@ -204,7 +234,13 @@ export function mountChat(host: HTMLElement, sidecar: SidecarClient, bus: Bus, c
       turnRunning = p.running;
       // Whoever started the turn, it can be stopped from here.
       stop.classList.toggle('hidden', !turnRunning);
-      if (!turnRunning) current = null;
+      if (turnRunning) {
+        said = '';
+        saidIn = [];
+      } else {
+        current = null;
+        void actOnTurn();
+      }
       return;
     }
     if (method !== 'agent/update') return;
@@ -236,6 +272,13 @@ export function mountChat(host: HTMLElement, sidecar: SidecarClient, bus: Bus, c
     return true;
   });
 
+  // Enter sends, as in any chat; Shift+Enter is a new line. Not while an
+  // input method is composing: there Enter picks the word.
+  input.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter' || e.shiftKey || e.isComposing || e.keyCode === 229) return;
+    e.preventDefault();
+    host.querySelector<HTMLFormElement>('#composer')!.requestSubmit();
+  });
   host.querySelector<HTMLFormElement>('#composer')!.onsubmit = async (e) => {
     e.preventDefault();
     const text = input.value.trim();
@@ -248,7 +291,9 @@ export function mountChat(host: HTMLElement, sidecar: SidecarClient, bus: Bus, c
     // the wait does not read as the message being ignored.
     current = null;
     try {
-      const r = await sidecar.prompt(session.sessionId, [{ type: 'text', text }]);
+      // The note first, the person's words last: what they asked is what the turn answers.
+      const where = steps?.note();
+      const r = await sidecar.prompt(session.sessionId, where ? [{ type: 'text', text: where }, { type: 'text', text }] : [{ type: 'text', text }]);
       if (r.stopReason !== 'end_turn' && !r.steered) append('tool', `(stopped: ${r.stopReason})`, true);
     } catch (err) {
       append('tool', `error: ${err instanceof EngineError ? err.message : String(err)}`, true);

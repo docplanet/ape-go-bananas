@@ -575,7 +575,7 @@ export function mountAgentApp(host: EngineHost, opts: AgentAppOptions): AgentApp
         // The adapter names itself by its package; the person chose "Claude Agent".
         const named: ConnectResult = { ...result, agent: { name: picker.nameOf(result.provider) ?? result.agent?.name ?? result.provider, version: result.agent?.version ?? '' } };
         connection = named;
-        chat = mountChat(agentHost, sidecar, bus, named, say, () => courseDir, { get: () => remember.get(REMEMBER.mode), set: (id) => remember.set(REMEMBER.mode, id) });
+        chat = mountChat(agentHost, sidecar, bus, named, say, () => courseDir, { get: () => remember.get(REMEMBER.mode), set: (id) => remember.set(REMEMBER.mode, id) }, { note: () => stages.note(), act: (d) => stages.act(d) });
         stages.setConnection(named);
         picker.setState({ connected: result.provider, chosen: result.provider });
         remember.set(REMEMBER.agent, result.provider);

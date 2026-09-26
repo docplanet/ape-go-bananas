@@ -5,7 +5,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { describeExtracted, stageBlocks, WRITING_STAGES, type ContentBlock, type PipelineClient } from '../../dist/pipeline/index.js';
+import { describeExtracted, makeRunner, stageBlocks, WRITING_STAGES, type ContentBlock, type PipelineClient } from '../../dist/pipeline/index.js';
 
 const EXTRACT = WRITING_STAGES[0]!;
 const PDF = { relPath: 'L.pdf', kind: 'pdf', bytes: 4096, mimeType: 'application/pdf' };
@@ -63,4 +63,16 @@ test('describeExtracted: one image, images only, text only, and an empty entry',
   assert.match(describeExtracted([{ source: 'a.pdf', text: null, images: ['x/p001.png', 'x/p002.png'] }]), /- a\.pdf → 2 page images, x\/p001\.png … x\/p002\.png$/m);
   assert.match(describeExtracted([{ source: 'a.pdf', text: 'x/text.md', images: [] }]), /- a\.pdf → x\/text\.md \(/);
   assert.equal(describeExtracted([{ source: 'a.pdf', text: null, images: [] }]), '');
+});
+
+test('a stage run carries the shell\'s note on where the deck stands, after the stage\'s own blocks', async () => {
+  const sent: ContentBlock[][] = [];
+  const c = client({ prompt: async (_id, blocks) => (sent.push(blocks), { stopReason: 'end_turn' }) });
+  const conn = { connectionId: 'k', session: { sessionId: 'w' } };
+  await makeRunner(c, conn as never, '/c', () => 'Deck', () => 'Steps: extract — running').run(EXTRACT);
+  const last = sent[0]!.at(-1) as { type: string; text: string };
+  assert.deepEqual(last, { type: 'text', text: 'Steps: extract — running' });
+  sent.length = 0;
+  await makeRunner(c, conn as never, '/c', () => 'Deck').run(EXTRACT);
+  assert.ok(!sent[0]!.some((b) => 'text' in b && b.text.startsWith('Steps:')), 'no note when the shell gives none');
 });
