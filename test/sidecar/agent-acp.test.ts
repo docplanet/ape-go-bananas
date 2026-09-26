@@ -136,6 +136,9 @@ test('where the agent takes steering, a prompt mid-turn goes into the running tu
   assert.equal(sent().filter((f) => f.method === 'session/prompt').length, 1, 'no second turn: it went into the first');
   assert.equal(sent().filter((f) => f.method === '_session/steering').length, 1);
   assert.equal(settled, false, 'a steered prompt answers when the turn it joined ends');
+  // agent/delivery is sent once the agent has acknowledged the steer, which
+  // can come after the agent's own echo of it: wait for it, do not race it.
+  await waitForLine(s, (m) => isNotification(m, 'agent/delivery'), 'the app is told where it went');
   assert.deepEqual(notificationParams(s, 'agent/delivery'), [{ sessionId: sid, steered: true }], 'the app is told where it went');
 
   assert.deepEqual((await s.request('c1', 'agent/cancel', { sessionId: sid })).result, {});
